@@ -1,0 +1,87 @@
+# --- Secrets / per-PC config ---
+.env
+.env.*
+!.env.example
+.env.txt
+local_paths.py
+.venv_registry.json
+*.token
+client_secrets.json
+token.json
+*_credentials.json
+service_account*.json
+
+# --- Python ---
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# --- Virtualenvs / portable interpreters ---
+.venv/
+venv/
+env/
+python_portable/
+nodejs_portable/
+
+# --- IDE / tooling ---
+.vscode/
+.idea/
+.trae/
+.claude/settings.local.json
+
+# --- Generated media (heavy, regenerable) ---
+auto_videos/
+generated_media/
+daily_shorts/
+projects/
+project_media/
+instagram_images/
+instagram_studio_images/
+local_videos/
+thumbnails/
+thumbnails_fal/
+thumbnails_leonardo/
+thumbnails_recraft/
+transition_overlays/
+scratch/
+comfyui_workflows/output/
+
+# --- One-off scratch HTML / debug dumps ---
+bing.html
+*.tmp
+*.bak
+*.log
+
+# --- Heavy media / test artifacts in repo root ---
+*.mp4
+*.mov
+*.mkv
+*.webm
+*.wav
+*.mp3
+*.flac
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+*.ico
+# Allow small assets we explicitly want in git (whitelist as needed):
+!docs/**/*.png
+!assets/**/*.png
+
+# --- OS noise ---
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# --- Sub-project handled separately ---
+shorts-saas/node_modules/
+shorts-saas/.next/
+shorts-saas/dist/

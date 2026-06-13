@@ -1,0 +1,3326 @@
+# storyboard_generator.py
+"""
+Generador de storyboards y teasers
+Maneja la generaciÃ³n de guiones, segmentos, prompts visuales y teasers
+"""
+
+import os
+import re
+import asyncio
+import tempfile
+import time
+from pathlib import Path
+from typing import Optional, Dict, List, Tuple
+from datetime import datetime
+
+# Verificar dependencias
+PYDUB_AVAILABLE = False
+JAMENDO_AVAILABLE = False
+GOOGLE_SEARCH_AVAILABLE = False
+
+try:
+    from pydub import AudioSegment
+    PYDUB_AVAILABLE = True
+except ImportError:
+    PYDUB_AVAILABLE = False
+
+try:
+    from music_recommender import (
+        analyze_narration,
+        map_ai_to_jamendo_tags,
+        search_jamendo_api
+    )
+    JAMENDO_AVAILABLE = True
+except ImportError:
+    JAMENDO_AVAILABLE = False
+
+RESEARCH_SEARCH_AVAILABLE = False
+try:
+    from research_search import search_research_context, RESEARCH_AVAILABLE
+    RESEARCH_SEARCH_AVAILABLE = RESEARCH_AVAILABLE
+except ImportError:
+    pass
+
+# Fallback a Google Search si research_search no está disponible
+GOOGLE_SEARCH_AVAILABLE = False
+if not RESEARCH_SEARCH_AVAILABLE:
+    try:
+        from google_search_api import search_google_trends
+        GOOGLE_SEARCH_AVAILABLE = True
+    except ImportError:
+        GOOGLE_SEARCH_AVAILABLE = False
+
+from video_config import VideoConfig
+
+
+class StoryboardGenerator:
+    """
+    Generador de storyboards y teasers.
+    Maneja la generaciÃ³n de guiones, segmentos, prompts visuales y teasers.
+    """
+    
+    def __init__(self, log_callback=None, gemini_client=None, tts=None, 
+                 subtitle_gen=None, generated_media_dir=None, jamendo_client_id=None,
+                 assemble_video_callback=None):
+        """
+        Inicializa el generador de storyboards.
+        
+        Args:
+            log_callback: FunciÃ³n para logging (opcional)
+            gemini_client: Cliente de Gemini AI (opcional)
+            tts: Generador de texto a voz (opcional)
+            subtitle_gen: Generador de subtÃ­tulos (opcional)
+            generated_media_dir: Directorio para medios generados (opcional)
+            jamendo_client_id: ID de cliente de Jamendo (opcional)
+            assemble_video_callback: FunciÃ³n para ensamblar video (opcional, necesario para teasers)
+        """
+        self.log = log_callback or (lambda msg: print(msg))
+        self.gemini_client = gemini_client
+        self.tts = tts
+        self.subtitle_gen = subtitle_gen
+        self.generated_media_dir = generated_media_dir or VideoConfig.TEMP_DIR / "generated_media"
+        self.jamendo_client_id = jamendo_client_id
+        self.assemble_video_callback = assemble_video_callback
+
+    def _is_long_horizontal_request(self, platform: str, custom_duration: Optional[int]) -> bool:
+        """Determina si corresponde aplicar perfil de largo horizontal."""
+        return platform == 'youtube'
+
+    def _extract_llm_script_metadata(self) -> dict:
+        backend = None
+        if hasattr(self, 'gemini_client'):
+            backend = getattr(self.gemini_client, 'backend', self.gemini_client)
+        return getattr(backend, '_last_script_metadata', {}) if backend else {}
+
+    @staticmethod
+    def _is_short_form_platform(platform: Optional[str]) -> bool:
+        """Plataformas verticales cortas que deben respetar el limite de Shorts."""
+        return str(platform or "").strip().lower() in {"youtube_short", "tiktok", "reels"}
+
+    def _resolve_duration_and_profile(self, platform: str, custom_duration: Optional[int]) -> Dict:
+        """
+        Resuelve duración objetivo y perfil narrativo.
+        Para largos horizontales en YouTube, usa 1800s por defecto (mínimo 30 minutos).
+        """
+        profile = "default"
+        target = custom_duration or VideoConfig.PLATFORM_DURATIONS.get(platform, 60)
+        retention_targets = {}
+
+        if self._is_long_horizontal_request(platform, custom_duration):
+            profile = "long_horizontal"
+            min_long_duration = 1800
+            if custom_duration is None:
+                target = min_long_duration
+            else:
+                try:
+                    target = max(min_long_duration, int(custom_duration))
+                except Exception:
+                    target = min_long_duration
+            retention_targets = {
+                "r30_min": 55.0,
+                "r60_min": 35.0
+            }
+
+        return {
+            "profile": profile,
+            "duration_target": int(target),
+            "retention_targets": retention_targets,
+            "recommended_duration_min": 1800 if profile == "long_horizontal" else None,
+            "recommended_duration_max": 2700 if profile == "long_horizontal" else None
+        }
+
+    def _enforce_max_audio_duration(self, audio_path: str, max_seconds: float) -> tuple:
+        """
+        Si el audio excede max_seconds, lo acelera con FFmpeg atempo para que
+        encaje en el límite.  Devuelve (audio_path, speed_factor).
+        speed_factor == 1.0 indica que no se modificó.
+        """
+        import subprocess
+
+        if not audio_path or not os.path.exists(audio_path):
+            return audio_path, 1.0
+
+        # ── Probar duración real ──
+        duration = 0.0
+        ffprobe_cmd = "ffprobe"
+        try:
+            configured_probe = getattr(VideoConfig, 'FFPROBE_BINARY_PATH', None)
+            if configured_probe and os.path.exists(configured_probe):
+                ffprobe_cmd = configured_probe
+            else:
+                ffmpeg_dir = getattr(VideoConfig, 'FFMPEG_BINARY_PATH', None)
+                if ffmpeg_dir:
+                    probe_candidate = os.path.join(ffmpeg_dir, "ffprobe.exe")
+                    if os.path.exists(probe_candidate):
+                        ffprobe_cmd = probe_candidate
+        except Exception:
+            pass
+
+        try:
+            result = subprocess.run(
+                [ffprobe_cmd, "-v", "error", "-show_entries", "format=duration",
+                 "-of", "default=noprint_wrappers=1:nokey=1", audio_path],
+                capture_output=True, text=True, timeout=15,
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+            )
+            duration = float(result.stdout.strip())
+        except Exception as e:
+            self.log(f"   ️ No se pudo medir duración del audio: {e}")
+            return audio_path, 1.0
+
+        if duration <= max_seconds:
+            self.log(f"    Duración del audio ({duration:.1f}s) dentro del límite ({max_seconds:.0f}s)")
+            return audio_path, 1.0
+
+        # ── Calcular factor de aceleración ──
+        speed_factor = duration / max_seconds
+        # FFmpeg atempo soporta 0.5–2.0 por instancia; limitar a 2.0
+        if speed_factor > 2.0:
+            self.log(f"   ️ Audio demasiado largo ({duration:.1f}s). "
+                     f"Se necesitaría {speed_factor:.2f}x pero el máximo es 2.0x. "
+                     f"Se aplicará 2.0x (resultado ~{duration/2.0:.0f}s).")
+            speed_factor = 2.0
+
+        self.log(f"    Auto-velocidad: {duration:.1f}s  {duration/speed_factor:.1f}s "
+                 f"(×{speed_factor:.2f}) para encajar en {max_seconds:.0f}s")
+
+        # ── Aplicar atempo con FFmpeg ──
+        ffmpeg_cmd = "ffmpeg"
+        try:
+            ffmpeg_dir = getattr(VideoConfig, 'FFMPEG_BINARY_PATH', None)
+            if ffmpeg_dir:
+                ffmpeg_candidate = os.path.join(ffmpeg_dir, "ffmpeg.exe")
+                if os.path.exists(ffmpeg_candidate):
+                    ffmpeg_cmd = ffmpeg_candidate
+        except Exception:
+            pass
+
+        sped_path = audio_path.replace(".mp3", "_fast.mp3")
+        if sped_path == audio_path:
+            sped_path = audio_path + "_fast.mp3"
+
+        # Construir cadena atempo (si >2.0 encadenamos, pero ya limitamos a 2.0)
+        atempo_value = f"{speed_factor:.4f}"
+
+        try:
+            cmd = [
+                ffmpeg_cmd, "-y", "-i", audio_path,
+                "-filter:a", f"atempo={atempo_value}",
+                "-vn", sped_path
+            ]
+            proc = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=120,
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+            )
+            if proc.returncode == 0 and os.path.exists(sped_path):
+                # Reemplazar original
+                try:
+                    os.remove(audio_path)
+                except Exception:
+                    pass
+                os.rename(sped_path, audio_path)
+                self.log(f"    Audio acelerado ×{speed_factor:.2f} guardado: {Path(audio_path).name}")
+                return audio_path, speed_factor
+            else:
+                self.log(f"   ️ FFmpeg atempo falló: {proc.stderr[:200]}")
+                return audio_path, 1.0
+        except Exception as e:
+            self.log(f"   ️ Error aplicando atempo: {e}")
+            return audio_path, 1.0
+
+    def _measure_audio_duration_seconds(self, audio_path: str) -> float:
+        """Mide la duración de un audio usando pydub y, si hace falta, ffprobe."""
+        if not audio_path or not os.path.exists(audio_path):
+            return 0.0
+
+        if PYDUB_AVAILABLE and AudioSegment is not None:
+            try:
+                return len(AudioSegment.from_file(audio_path)) / 1000.0
+            except Exception:
+                pass
+
+        import subprocess
+
+        ffprobe_cmd = "ffprobe"
+        try:
+            configured_probe = getattr(VideoConfig, 'FFPROBE_BINARY_PATH', None)
+            if configured_probe and os.path.exists(configured_probe):
+                ffprobe_cmd = configured_probe
+            else:
+                ffmpeg_dir = getattr(VideoConfig, 'FFMPEG_BINARY_PATH', None)
+                if ffmpeg_dir:
+                    probe_candidate = os.path.join(ffmpeg_dir, "ffprobe.exe")
+                    if os.path.exists(probe_candidate):
+                        ffprobe_cmd = probe_candidate
+        except Exception:
+            pass
+
+        try:
+            result = subprocess.run(
+                [ffprobe_cmd, "-v", "error", "-show_entries", "format=duration",
+                 "-of", "default=noprint_wrappers=1:nokey=1", audio_path],
+                capture_output=True, text=True, timeout=15,
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+            )
+            return float((result.stdout or "").strip() or 0.0)
+        except Exception:
+            return 0.0
+
+    @staticmethod
+    def _infer_tts_provider(voice_id: Optional[str]) -> str:
+        """Identifica el proveedor TTS para decidir si conviene estimar por escena."""
+        voice = str(voice_id or "").strip()
+        if not voice or voice == "gtts_fallback":
+            return "gtts"
+        if "Neural" in voice and "-" in voice:
+            return "edge-tts"
+        if len(voice) >= 20:
+            return "elevenlabs"
+        return "unknown"
+
+    @staticmethod
+    def _normalize_scene_durations(scene_durations: List[float],
+                                   total_duration: float,
+                                   min_duration: float = 0.05) -> List[float]:
+        """
+        Reescala duraciones por escena para que sumen exactamente el audio total.
+        """
+        if not scene_durations:
+            return []
+
+        cleaned = []
+        for raw_duration in scene_durations:
+            try:
+                cleaned.append(max(min_duration, float(raw_duration)))
+            except Exception:
+                cleaned.append(min_duration)
+
+        if total_duration <= 0:
+            return cleaned
+
+        total_raw = sum(cleaned)
+        if total_raw <= 0:
+            even_duration = max(min_duration, total_duration / len(cleaned))
+            normalized = [even_duration] * len(cleaned)
+        else:
+            scale = total_duration / total_raw
+            normalized = [max(min_duration, duration * scale) for duration in cleaned]
+
+        drift = total_duration - sum(normalized)
+        normalized[-1] = max(min_duration, normalized[-1] + drift)
+
+        if len(normalized) > 1 and normalized[-1] <= 0:
+            normalized[-1] = min_duration
+
+        return normalized
+
+    @staticmethod
+    def _build_segments_from_scene_metadata(scene_metadata: List[Dict],
+                                            scene_durations: List[float],
+                                            total_duration: float,
+                                            timing_source: str) -> List[Dict]:
+        """Construye segmentos con timestamps coherentes para storyboard y subtítulos."""
+        if not scene_metadata:
+            return []
+
+        segments = []
+        current_time = 0.0
+        total_scenes = len(scene_metadata)
+
+        for i, meta in enumerate(scene_metadata):
+            seg_start = max(0.0, current_time)
+            planned_duration = scene_durations[i] if i < len(scene_durations) else 0.05
+            planned_duration = max(0.05, float(planned_duration))
+
+            if i == total_scenes - 1:
+                seg_end = max(seg_start, float(total_duration))
+            else:
+                seg_end = max(seg_start, min(float(total_duration), seg_start + planned_duration))
+
+            duration = max(0.05, seg_end - seg_start)
+            seg_start = round(seg_start, 6)
+            seg_end = round(seg_end, 6)
+            duration = round(duration, 6)
+
+            segments.append({
+                'start': seg_start,
+                'end': seg_end,
+                'start_time': seg_start,
+                'end_time': seg_end,
+                'timestamp_start': seg_start,
+                'timestamp_end': seg_end,
+                'duration': duration,
+                'text': meta['text'],
+                'narration_text': meta['text'],
+                'visual_prompt': meta['visual_prompt'],
+                'sfx_tag': meta['sfx_tag'],
+                'overlay_tag': meta['overlay_tag'],
+                'assigned_filename': f"segment_{i+1:03d}",
+                'timing_source': timing_source,
+            })
+
+            current_time = seg_end
+
+        return segments
+
+    @staticmethod
+    def _fill_missing_scene_durations_with_word_estimates(
+        scene_metadata: List[Dict],
+        scene_durations: List[Optional[float]],
+        min_duration: float = 0.05,
+    ) -> Optional[List[float]]:
+        """
+        Completa escenas sin medicion real usando la velocidad media por palabra
+        observada en las escenas que si devolvieron audio valido.
+        """
+        if not scene_metadata or not scene_durations or len(scene_metadata) != len(scene_durations):
+            return None
+
+        completed_durations: List[Optional[float]] = [None] * len(scene_durations)
+        missing_indexes: List[int] = []
+        measured_total = 0.0
+        measured_words = 0
+        measured_count = 0
+
+        for idx, meta in enumerate(scene_metadata):
+            raw_duration = scene_durations[idx]
+            try:
+                duration = float(raw_duration) if raw_duration is not None else 0.0
+            except Exception:
+                duration = 0.0
+
+            text = str(meta.get('text', '') or '').strip()
+            word_count = meta.get('word_count')
+            if word_count is None:
+                word_count = len(text.split())
+            try:
+                word_count = max(0, int(word_count))
+            except Exception:
+                word_count = len(text.split())
+
+            if duration > 0:
+                duration = max(min_duration, duration)
+                completed_durations[idx] = duration
+                measured_total += duration
+                measured_words += word_count
+                measured_count += 1
+            else:
+                missing_indexes.append(idx)
+
+        if not missing_indexes:
+            return [float(duration or min_duration) for duration in completed_durations]
+
+        if measured_count <= 0 or measured_total <= 0:
+            return None
+
+        avg_seconds_per_word = (measured_total / measured_words) if measured_words > 0 else None
+        avg_scene_duration = measured_total / measured_count
+
+        for idx in missing_indexes:
+            meta = scene_metadata[idx]
+            text = str(meta.get('text', '') or '').strip()
+            word_count = meta.get('word_count')
+            if word_count is None:
+                word_count = len(text.split())
+            try:
+                word_count = max(0, int(word_count))
+            except Exception:
+                word_count = len(text.split())
+
+            if avg_seconds_per_word is not None and word_count > 0:
+                estimate = word_count * avg_seconds_per_word
+            else:
+                estimate = avg_scene_duration
+
+            completed_durations[idx] = max(min_duration, float(estimate))
+
+        return [float(duration or min_duration) for duration in completed_durations]
+
+    async def _generate_edge_tts_scenes_parallel(
+        self,
+        scene_metadata: List[Dict],
+        voice_id: str,
+        rate: str,
+        temp_dir: str,
+        concurrency_limit: int = 5,
+    ) -> List[Tuple[int, Optional[str]]]:
+        """
+        Genera audio Edge-TTS para cada escena en paralelo (con semáforo para
+        no saturar a los servidores de Microsoft). Devuelve una lista con pares
+        (idx, path) en el mismo orden que scene_metadata. path es None si la
+        escena no tenía texto o falló.
+        """
+        total_scenes = len(scene_metadata)
+        semaphore = asyncio.Semaphore(max(1, int(concurrency_limit)))
+        completed = [0]  # mutable closure counter
+
+        async def _one(idx: int, meta: Dict) -> Tuple[int, Optional[str]]:
+            text = str(meta.get('text', '') or '').strip()
+            if not text:
+                completed[0] += 1
+                return idx, None
+            temp_audio_path = os.path.join(temp_dir, f"scene_{idx:03d}.mp3")
+            async with semaphore:
+                try:
+                    rendered = await self.tts._generate_edge_tts_narration(
+                        text, temp_audio_path, voice_id, rate=rate
+                    )
+                except Exception as exc:
+                    self.log(f"      Edge-TTS falló en escena {idx}: {exc}")
+                    rendered = None
+            completed[0] += 1
+            done = completed[0]
+            if (done % 2 == 0) or done == total_scenes:
+                self.log(f"      Escenas medidas: {done}/{total_scenes}")
+            return idx, rendered
+
+        tasks = [_one(i, meta) for i, meta in enumerate(scene_metadata, start=1)]
+        return await asyncio.gather(*tasks)
+
+    def _run_async_in_any_loop(self, coro):
+        """
+        Ejecuta una coroutine respetando el event loop actual si existe.
+        Permite funcionar tanto desde un QThread worker sin loop como desde
+        un hilo con loop activo.
+        """
+        try:
+            asyncio.get_running_loop()
+            # Hay un loop corriendo en este hilo -> delegar a un thread
+            # independiente para no bloquear el loop existente.
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                future = pool.submit(asyncio.run, coro)
+                return future.result()
+        except RuntimeError:
+            # No hay loop corriendo: seguro usar asyncio.run directamente.
+            return asyncio.run(coro)
+
+    def _estimate_scene_durations_with_selected_tts_legacy(self,
+                                                           scene_metadata: List[Dict],
+                                                           voice_id: Optional[str],
+                                                           language: str,
+                                                           rate: str) -> Optional[List[float]]:
+        """
+        Estima la duración de cada escena con la misma voz elegida.
+        Solo se usa con proveedores sin costo marginal relevante.
+
+        - Para edge-tts: genera escenas en paralelo con asyncio.gather
+          (semáforo de 5 para evitar rate-limit) y luego mide duraciones.
+        - Para gtts: se mantiene el flujo secuencial.
+        """
+        if not self.tts or not scene_metadata:
+            return None
+
+        provider = self._infer_tts_provider(voice_id)
+        if provider not in {'edge-tts', 'gtts'}:
+            self.log(
+                f"   ℹ️ Estimación por escena con TTS real omitida para proveedor '{provider}' "
+                f"(evita consumo extra de cuota)."
+            )
+            return None
+
+        if len(scene_metadata) > 40:
+            self.log("   ℹ️ Demasiadas escenas para medir TTS por separado; usando estimación rápida.")
+            return None
+
+        total_scenes = len(scene_metadata)
+        if provider == 'edge-tts':
+            self.log(
+                f"    Estimando tiempos por escena con la voz real ({provider}, "
+                f"{total_scenes} escenas en paralelo)..."
+            )
+        else:
+            self.log(f"    Estimando tiempos por escena con la voz real ({provider})...")
+
+        temp_root = getattr(VideoConfig, 'TEMP_DIR', None)
+        temp_dir_kwargs = {}
+        if temp_root:
+            try:
+                temp_root_path = Path(temp_root)
+                temp_root_path.mkdir(parents=True, exist_ok=True)
+                temp_dir_kwargs['dir'] = str(temp_root_path)
+            except Exception:
+                pass
+
+        try:
+            scene_durations: List[Optional[float]] = [None] * total_scenes
+            missing_scene_indexes: List[int] = []
+            start_time = time.monotonic()
+
+            with tempfile.TemporaryDirectory(prefix="scene_timing_", **temp_dir_kwargs) as temp_dir:
+                if provider == 'edge-tts':
+                    # Paralelo: lanzar todas las llamadas Edge-TTS al mismo tiempo
+                    results = self._run_async_in_any_loop(
+                        self._generate_edge_tts_scenes_parallel(
+                            scene_metadata,
+                            voice_id=voice_id,
+                            rate=rate,
+                            temp_dir=temp_dir,
+                            concurrency_limit=1,
+                        )
+                    )
+
+                    # Medir duraciones (rápido: local ffprobe/pydub)
+                    for idx, rendered_path in results:
+                        slot = idx - 1
+                        meta = scene_metadata[slot]
+                        text = str(meta.get('text', '') or '').strip()
+                        if not text:
+                            scene_durations[slot] = 0.05
+                            continue
+                        if not rendered_path or not os.path.exists(rendered_path):
+                            raise RuntimeError(
+                                f"Edge-TTS no devolvió audio para la escena {idx}"
+                            )
+                        duration = self._measure_audio_duration_seconds(rendered_path)
+                        if duration <= 0:
+                            raise RuntimeError(
+                                f"No se pudo medir la duración de la escena {idx}"
+                            )
+                        scene_durations[slot] = duration
+                else:
+                    # gtts: secuencial (no hay beneficio en paralelizar requests bloqueantes aquí)
+                    for idx, meta in enumerate(scene_metadata, start=1):
+                        text = str(meta.get('text', '') or '').strip()
+                        if not text:
+                            continue
+                        temp_audio_path = os.path.join(temp_dir, f"scene_{idx:03d}.mp3")
+                        rendered_path = self.tts.generate_narration(
+                            text,
+                            temp_audio_path,
+                            voice_id,
+                            language=language,
+                            allow_chunking=False,
+                            rate=rate,
+                            allow_provider_fallback=False,
+                        )
+                        if not rendered_path or not os.path.exists(rendered_path):
+                            raise RuntimeError(
+                                f"gTTS no devolvió audio para la escena {idx}"
+                            )
+                        duration = self._measure_audio_duration_seconds(
+                            rendered_path or temp_audio_path
+                        )
+                        if duration <= 0:
+                            raise RuntimeError(
+                                f"No se pudo medir la duración de la escena {idx}"
+                            )
+                        scene_durations[idx - 1] = duration
+                        if total_scenes >= 6 and ((idx % 5) == 0 or idx == total_scenes):
+                            self.log(f"      Escenas medidas: {idx}/{total_scenes}")
+
+            raw_total = sum(scene_durations)
+            if raw_total <= 0:
+                return None
+
+            elapsed = time.monotonic() - start_time
+            self.log(
+                f"    Duración acumulada medida por escena: {raw_total:.1f}s "
+                f"(medición completada en {elapsed:.1f}s)"
+            )
+            return scene_durations
+        except Exception as e:
+            self.log(f"   ️ No se pudieron medir las escenas con TTS real: {e}")
+            return None
+
+    def _estimate_scene_durations_with_selected_tts(self,
+                                                    scene_metadata: List[Dict],
+                                                    voice_id: Optional[str],
+                                                    language: str,
+                                                    rate: str) -> Optional[List[float]]:
+        # Bypass TTS timing estimation to prevent async hang in Windows
+        return None
+
+        provider = self._infer_tts_provider(voice_id)
+        if provider not in {'edge-tts', 'gtts'}:
+            self.log(
+                f"   Estimacion por escena con TTS real omitida para proveedor '{provider}' "
+                f"(evita consumo extra de cuota)."
+            )
+            return None
+
+        if len(scene_metadata) > 40:
+            self.log("   Demasiadas escenas para medir TTS por separado; usando estimacion rapida.")
+            return None
+
+        total_scenes = len(scene_metadata)
+        if provider == 'edge-tts':
+            self.log(
+                f"    Estimando tiempos por escena con la voz real ({provider}, "
+                f"{total_scenes} escenas en paralelo)..."
+            )
+        else:
+            self.log(f"    Estimando tiempos por escena con la voz real ({provider})...")
+
+        temp_root = getattr(VideoConfig, 'TEMP_DIR', None)
+        temp_dir_kwargs = {}
+        if temp_root:
+            try:
+                temp_root_path = Path(temp_root)
+                temp_root_path.mkdir(parents=True, exist_ok=True)
+                temp_dir_kwargs['dir'] = str(temp_root_path)
+            except Exception:
+                pass
+
+        try:
+            scene_durations: List[Optional[float]] = [None] * total_scenes
+            missing_scene_indexes: List[int] = []
+            start_time = time.monotonic()
+
+            with tempfile.TemporaryDirectory(prefix="scene_timing_", **temp_dir_kwargs) as temp_dir:
+                if provider == 'edge-tts':
+                    results = self._run_async_in_any_loop(
+                        self._generate_edge_tts_scenes_parallel(
+                            scene_metadata,
+                            voice_id=voice_id,
+                            rate=rate,
+                            temp_dir=temp_dir,
+                            concurrency_limit=5,
+                        )
+                    )
+
+                    for idx, rendered_path in results:
+                        slot = idx - 1
+                        meta = scene_metadata[slot]
+                        text = str(meta.get('text', '') or '').strip()
+                        if not text:
+                            scene_durations[slot] = 0.05
+                            continue
+                        if not rendered_path or not os.path.exists(rendered_path):
+                            missing_scene_indexes.append(slot)
+                            self.log(
+                                f"      Edge-TTS sin audio util en escena {idx}; "
+                                f"se estimara por palabras."
+                            )
+                            continue
+                        duration = self._measure_audio_duration_seconds(rendered_path)
+                        if duration <= 0:
+                            missing_scene_indexes.append(slot)
+                            self.log(
+                                f"      No se pudo medir la duracion de la escena {idx}; "
+                                f"se estimara por palabras."
+                            )
+                            continue
+                        scene_durations[slot] = duration
+                else:
+                    for idx, meta in enumerate(scene_metadata, start=1):
+                        text = str(meta.get('text', '') or '').strip()
+                        if not text:
+                            scene_durations[idx - 1] = 0.05
+                            continue
+                        temp_audio_path = os.path.join(temp_dir, f"scene_{idx:03d}.mp3")
+                        rendered_path = self.tts.generate_narration(
+                            text,
+                            temp_audio_path,
+                            voice_id,
+                            language=language,
+                            allow_chunking=False,
+                            rate=rate,
+                            allow_provider_fallback=False,
+                        )
+                        if not rendered_path or not os.path.exists(rendered_path):
+                            missing_scene_indexes.append(idx - 1)
+                            self.log(
+                                f"      gTTS sin audio util en escena {idx}; "
+                                f"se estimara por palabras."
+                            )
+                            if total_scenes >= 6 and ((idx % 5) == 0 or idx == total_scenes):
+                                self.log(f"      Escenas medidas: {idx}/{total_scenes}")
+                            continue
+                        duration = self._measure_audio_duration_seconds(
+                            rendered_path or temp_audio_path
+                        )
+                        if duration <= 0:
+                            missing_scene_indexes.append(idx - 1)
+                            self.log(
+                                f"      No se pudo medir la duracion de la escena {idx}; "
+                                f"se estimara por palabras."
+                            )
+                            if total_scenes >= 6 and ((idx % 5) == 0 or idx == total_scenes):
+                                self.log(f"      Escenas medidas: {idx}/{total_scenes}")
+                            continue
+                        scene_durations[idx - 1] = duration
+                        if total_scenes >= 6 and ((idx % 5) == 0 or idx == total_scenes):
+                            self.log(f"      Escenas medidas: {idx}/{total_scenes}")
+
+            if missing_scene_indexes:
+                scene_durations = self._fill_missing_scene_durations_with_word_estimates(
+                    scene_metadata,
+                    scene_durations,
+                )
+                if not scene_durations:
+                    self.log("    No se obtuvo ninguna escena medible con TTS real; usando fallback global.")
+                    return None
+                measured_count = total_scenes - len(missing_scene_indexes)
+                self.log(
+                    f"    Timing mixto: {measured_count}/{total_scenes} escenas medidas "
+                    f"con TTS real; {len(missing_scene_indexes)} estimadas por palabras."
+                )
+            else:
+                scene_durations = [max(0.05, float(duration or 0.05)) for duration in scene_durations]
+
+            raw_total = sum(scene_durations)
+            if raw_total <= 0:
+                return None
+
+            elapsed = time.monotonic() - start_time
+            self.log(
+                f"    Duracion acumulada medida por escena: {raw_total:.1f}s "
+                f"(medicion completada en {elapsed:.1f}s)"
+            )
+            return scene_durations
+        except Exception as e:
+            self.log(f"   No se pudieron medir las escenas con TTS real: {e}")
+            return None
+
+    def _estimate_long_intro_quality_score(self, segments: List[Dict]) -> float:
+        """
+        Heurística local para estimar calidad de retención del primer minuto.
+        Devuelve 0-100.
+        """
+        if not segments:
+            return 0.0
+
+        def _seg_start(seg):
+            try:
+                return float(seg.get('start', 0.0))
+            except Exception:
+                return 0.0
+
+        def _seg_end(seg):
+            start = _seg_start(seg)
+            try:
+                end = float(seg.get('end', start))
+            except Exception:
+                end = start
+            return end if end >= start else start
+
+        def _seg_text(seg):
+            return str(seg.get('text') or seg.get('narration_text') or seg.get('narration') or '').strip()
+
+        first_60 = [s for s in segments if _seg_start(s) < 60]
+        first_30 = [s for s in segments if _seg_start(s) < 30]
+        first_15 = [s for s in segments if _seg_start(s) < 15]
+        if not first_60:
+            return 0.0
+
+        durations_60 = [max(0.0, _seg_end(s) - _seg_start(s)) for s in first_60]
+        durations_15 = [max(0.0, _seg_end(s) - _seg_start(s)) for s in first_15] or [0.0]
+        avg_60 = sum(durations_60) / max(1, len(durations_60))
+        longest_15 = max(durations_15)
+
+        text_30 = " ".join(_seg_text(s) for s in first_30).strip()
+        words_30 = len(text_30.split())
+        hook_markers = [
+            "?", "¿", "secreto", "misterio", "descubre", "descubrir",
+            "truth", "hidden", "why", "how", "what if"
+        ]
+        text_30_l = text_30.lower()
+        has_hook = any(marker in text_30_l for marker in hook_markers)
+
+        score = 62.0
+        if len(first_15) < 4:
+            score -= (4 - len(first_15)) * 7.0
+        if len(first_30) < 7:
+            score -= (7 - len(first_30)) * 4.0
+        if longest_15 > 5.0:
+            score -= min(15.0, (longest_15 - 5.0) * 4.0)
+        if avg_60 > 4.8:
+            score -= min(12.0, (avg_60 - 4.8) * 6.0)
+        if has_hook:
+            score += 6.0
+        else:
+            score -= 6.0
+        if words_30 > 95:
+            score -= 6.0
+        elif words_30 < 35:
+            score -= 4.0
+
+        if score < 0:
+            score = 0.0
+        if score > 100:
+            score = 100.0
+        return round(score, 1)
+
+    def _build_narrative_context(self, segments: List[Dict], start_idx: int, end_idx: Optional[int] = None) -> Dict:
+        """Construye una ventana narrativa local para mejorar la coherencia del prompt visual."""
+        if not segments:
+            return {}
+
+        total_segments = len(segments)
+        start_idx = max(0, min(start_idx, total_segments - 1))
+        end_idx = start_idx if end_idx is None else max(start_idx, min(end_idx, total_segments - 1))
+
+        def _segment_text(seg: Dict) -> str:
+            return str(seg.get('text') or seg.get('narration_text') or seg.get('narration') or '').strip()
+
+        def _collect_text(from_idx: int, to_idx: int, max_chars: int) -> str:
+            if from_idx > to_idx:
+                return ""
+            joined = " ".join(
+                _segment_text(segments[idx])
+                for idx in range(from_idx, to_idx + 1)
+                if _segment_text(segments[idx])
+            ).strip()
+            if len(joined) <= max_chars:
+                return joined
+            return joined[:max_chars].rstrip() + "..."
+
+        midpoint = ((start_idx + end_idx) / 2.0) + 1.0
+        progress = midpoint / max(1, total_segments)
+        if progress <= 0.18:
+            narrative_role = "opening setup or hook"
+        elif progress <= 0.45:
+            narrative_role = "early development"
+        elif progress <= 0.72:
+            narrative_role = "core explanation or escalation"
+        elif progress <= 0.9:
+            narrative_role = "late development or payoff"
+        else:
+            narrative_role = "closing beat or conclusion"
+
+        if start_idx == end_idx:
+            segment_range = f"segment {start_idx + 1} of {total_segments}"
+        else:
+            segment_range = f"segments {start_idx + 1}-{end_idx + 1} of {total_segments}"
+
+        return {
+            "segment_range": segment_range,
+            "narrative_role": narrative_role,
+            "previous_context": _collect_text(max(0, start_idx - 2), start_idx - 1, 280),
+            "current_focus": _collect_text(start_idx, end_idx, 420),
+            "next_context": _collect_text(end_idx + 1, min(total_segments - 1, end_idx + 2), 280),
+            "continuity_note": (
+                "Use adjacent context only to preserve continuity. The image must depict the current narration beat."
+            ),
+        }
+
+    def _resolve_prompt_stride(self, generation_profile: str, duration_target: int, segment_count: int) -> int:
+        """
+        Define cuántos segmentos comparten el mismo prompt visual.
+        Reduce llamadas IA para videos largos sin perder coherencia visual.
+        """
+        if segment_count <= 0:
+            return 1
+        if generation_profile != "long_horizontal":
+            return 1
+
+        # En largos de 30-45 min, apuntar aprox. a 90-180 prompts máximos.
+        target_prompt_calls = max(90, min(180, int(max(1, duration_target) / 20)))
+        stride = max(1, int(round(segment_count / max(1, target_prompt_calls))))
+        return min(8, stride)
+
+    def _call_llm_generate(self, prompt: str, max_tokens: int = 4096):
+        """Llama al generador IA con compatibilidad entre distintas firmas."""
+        if not self.gemini_client:
+            return None
+
+        generate_fn = getattr(self.gemini_client, "_generate", None)
+        if not callable(generate_fn):
+            return None
+
+        try:
+            return generate_fn(prompt, max_tokens=max_tokens, task_type="script_quality")
+        except TypeError:
+            try:
+                return generate_fn(prompt, max_tokens=max_tokens)
+            except TypeError:
+                try:
+                    return generate_fn(prompt)
+                except Exception:
+                    return None
+        except Exception:
+            return None
+
+    def _sanitize_script_text(self, script: str, language: str = 'es') -> str:
+        """
+        Limpia artefactos de guion no narrativos (hashtags, chapter labels, markdown, etc.).
+        """
+        if not script:
+            return ""
+
+        text = str(script).replace('\r\n', '\n').replace('\r', '\n').strip()
+
+        # Bloques y encabezados markdown
+        text = re.sub(r'```[\s\S]*?```', ' ', text)
+        text = re.sub(r'(?im)^\s*#{1,6}\s+.*$', ' ', text)
+
+        # Etiquetas no narrativas comunes
+        text = re.sub(r'(?i)\b(?:chapter|cap[ií]tulo)\s*\d+\s*[:\-–]\s*', '', text)
+        text = re.sub(r'(?i)\bhashtags?\b', '', text)
+        text = re.sub(r'(?<!\w)#\w+', '', text)
+        text = re.sub(r'(?i)\b(?:narrator|narrador)\s*:\s*', '', text)
+
+        # Normalización
+        text = re.sub(r'\s+([,.;:!?])', r'\1', text)
+        text = re.sub(r'\s+', ' ', text).strip()
+        return text
+
+    def _review_script_with_ai(
+        self,
+        script: str,
+        topic: str,
+        category: str,
+        language: str,
+        duration_target: int
+    ) -> str:
+        """
+        Revisión automática del guion con la misma IA usada en generación.
+        """
+        cleaned_script = self._sanitize_script_text(script, language=language)
+        if not cleaned_script:
+            return cleaned_script
+
+        original_words = len(cleaned_script.split())
+        if original_words < 30:
+            return cleaned_script
+
+        lang_label = "English" if language == 'en' else "Spanish"
+        max_tokens = min(12000, max(1800, int(original_words * 2.2)))
+        review_prompt = f"""
+Role: Senior script QA editor for a mystery/conspiracy YouTube channel.
+Task: Review, correct and polish this narration script for a {duration_target}s video.
+
+NARRATIVE QUALITY CHECK:
+- Ensure the tone is engaging, mysterious, and intriguing throughout — NOT dry, skeptical, or dismissive.
+- The script should read like captivating storytelling, not like a fact-checking report.
+- If the script sounds too skeptical or debunking, rewrite those parts to be more exploratory and open-minded.
+- Theories and claims should be framed as "fascinating possibilities" using phrases like "some believe", "witnesses claim", "could it be that".
+- Check internal consistency: dates, names, and facts should not contradict each other within the script.
+- Fix any obviously wrong real-world facts (e.g., wrong country, wrong century) but do NOT strip out the mystery/conspiracy angle.
+
+CLEANUP RULES:
+- Return ONLY the final narration script in {lang_label}.
+- Remove artifacts like hashtags, chapter labels (e.g., "Chapter 1:", "Capítulo 1:"), markdown headings, bullets, or meta notes.
+- Fix spelling, punctuation and grammar.
+- Correct proper nouns (people, places, institutions, events) when clearly inferable from context.
+- Preserve meaning, tone, and approximately the same length.
+- Do not add explanations, titles, or comments.
+
+Topic: {topic}
+Category: {category}
+
+SCRIPT:
+{cleaned_script}
+"""
+
+        reviewed = self._call_llm_generate(review_prompt, max_tokens=max_tokens)
+        if not reviewed or not isinstance(reviewed, str):
+            return cleaned_script
+
+        reviewed = reviewed.strip()
+        if not reviewed or reviewed.startswith("ERROR"):
+            return cleaned_script
+
+        reviewed = self._sanitize_script_text(reviewed, language=language)
+        if not reviewed:
+            return cleaned_script
+
+        reviewed_words = len(reviewed.split())
+        min_words = max(20, int(original_words * 0.45))
+        max_words = int(original_words * 1.75) + 120
+        if reviewed_words < min_words or reviewed_words > max_words:
+            self.log("️ Revisión IA descartada por longitud atípica. Se mantiene guion base.")
+            return cleaned_script
+
+        return reviewed
+
+    def _sync_segment_texts_with_script(self, segments: List[Dict], script: str) -> List[Dict]:
+        """
+        Reasigna el texto de segmentos desde el guion final para evitar errores ASR.
+        """
+        if not segments or not script:
+            return segments
+
+        script_words = [w for w in str(script).split() if w]
+        total_words = len(script_words)
+        if total_words <= 0:
+            return segments
+
+        durations = []
+        baseline_counts = []
+        total_duration = 0.0
+
+        for seg in segments:
+            start = float(seg.get('start', 0.0) or 0.0)
+            end = float(seg.get('end', start) or start)
+            duration = max(0.0, end - start)
+            durations.append(duration)
+            total_duration += duration
+
+            raw_text = str(
+                seg.get('text') or seg.get('narration_text') or seg.get('narration') or ''
+            ).strip()
+            baseline_counts.append(len(raw_text.split()))
+
+        if sum(baseline_counts) <= 0:
+            if total_duration > 0:
+                baseline_counts = [
+                    int(round(total_words * (d / total_duration)))
+                    for d in durations
+                ]
+            else:
+                baseline_counts = [0 for _ in segments]
+
+        baseline_total = max(1, sum(baseline_counts))
+        min_words = 1 if total_words >= len(segments) else 0
+        allocations = [
+            max(min_words, int(round((count / baseline_total) * total_words)))
+            for count in baseline_counts
+        ]
+
+        diff = total_words - sum(allocations)
+        priority = sorted(
+            range(len(segments)),
+            key=lambda idx: (durations[idx], baseline_counts[idx]),
+            reverse=True
+        ) or list(range(len(segments)))
+
+        if diff > 0:
+            ptr = 0
+            while diff > 0:
+                idx = priority[ptr % len(priority)]
+                allocations[idx] += 1
+                diff -= 1
+                ptr += 1
+        elif diff < 0:
+            ptr = 0
+            guard = 0
+            max_guard = max(1, len(priority) * 10)
+            while diff < 0 and guard < max_guard:
+                idx = priority[ptr % len(priority)]
+                if allocations[idx] > min_words:
+                    allocations[idx] -= 1
+                    diff += 1
+                ptr += 1
+                guard += 1
+            if diff < 0:
+                for idx in reversed(priority):
+                    while diff < 0 and allocations[idx] > 0:
+                        allocations[idx] -= 1
+                        diff += 1
+
+        # Ajuste de fronteras: mover cortes a límites naturales de frase
+        # para evitar cambios abruptos entre escenas.
+        if len(segments) > 1 and total_words > 0:
+            boundaries = []
+            run = 0
+            for i in range(len(allocations) - 1):
+                run += allocations[i]
+                boundaries.append(run)
+
+            min_words_per_segment = min_words
+            punct_pattern = re.compile(r'[.!?;:]["\')\]]*$')
+            soft_punct_pattern = re.compile(r'[,]["\')\]]*$')
+
+            for b_idx in range(len(boundaries)):
+                target = boundaries[b_idx]
+                prev_boundary = 0 if b_idx == 0 else boundaries[b_idx - 1]
+                remaining_segments = len(boundaries) - b_idx
+                lower_bound = prev_boundary + min_words_per_segment
+                upper_bound = total_words - (remaining_segments * min_words_per_segment)
+                if lower_bound > upper_bound:
+                    continue
+
+                search_left = max(lower_bound, target - 8)
+                search_right = min(upper_bound, target + 8)
+                best = target
+                best_score = float("inf")
+
+                for cand in range(search_left, search_right + 1):
+                    if cand <= 0 or cand >= total_words:
+                        continue
+                    prev_token = script_words[cand - 1]
+                    score = abs(cand - target)
+
+                    if punct_pattern.search(prev_token):
+                        score -= 2.0
+                    elif soft_punct_pattern.search(prev_token):
+                        score -= 1.0
+
+                    if score < best_score:
+                        best = cand
+                        best_score = score
+
+                boundaries[b_idx] = best
+
+            # Recalcular allocations a partir de fronteras ajustadas.
+            new_allocations = []
+            prev = 0
+            for b in boundaries:
+                new_allocations.append(max(0, b - prev))
+                prev = b
+            new_allocations.append(max(0, total_words - prev))
+
+            if len(new_allocations) == len(allocations) and sum(new_allocations) == total_words:
+                allocations = new_allocations
+
+        fixed_segments = []
+        cursor = 0
+        for idx, seg in enumerate(segments):
+            take = allocations[idx]
+            if idx == len(segments) - 1:
+                take = max(0, total_words - cursor)
+            else:
+                take = max(0, min(take, total_words - cursor))
+
+            chunk = " ".join(script_words[cursor:cursor + take]).strip()
+            cursor += take
+
+            seg_copy = dict(seg)
+            seg_copy['text'] = chunk
+            seg_copy['narration_text'] = chunk
+            if 'narration' in seg_copy:
+                seg_copy['narration'] = chunk
+            fixed_segments.append(seg_copy)
+
+        if cursor < total_words and fixed_segments:
+            tail = " ".join(script_words[cursor:]).strip()
+            if tail:
+                merged = f"{fixed_segments[-1].get('text', '').strip()} {tail}".strip()
+                fixed_segments[-1]['text'] = merged
+                fixed_segments[-1]['narration_text'] = merged
+                if 'narration' in fixed_segments[-1]:
+                    fixed_segments[-1]['narration'] = merged
+
+        return fixed_segments
+
+    # ------------------------------------------------------------------
+    # Channel-bible prompt helpers (used by generate_manual_prompt_text)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _get_tone_profile_for_category(category: str) -> str:
+        """Thin wrapper over tone_profile.get_tone_profile_for_category.
+
+        Lives here for backward-compatible call sites; the canonical mapping is in
+        tone_profile.py so claude_client.py shares it.
+        """
+        from tone_profile import get_tone_profile_for_category
+        return get_tone_profile_for_category(category)
+
+    @staticmethod
+    def _build_tone_header(tone_profile: str) -> str:
+        """First line of the user prompt — sets the LLM's persona by category."""
+        if tone_profile == "mystery":
+            return (
+                'Eres un guionista experto para un canal de YouTube sobre misterios, '
+                'conspiraciones y fenómenos inexplicables llamado "Stunning Revelations".'
+            )
+        if tone_profile == "dramatic_factual":
+            return (
+                'Eres un guionista experto en documentales cinematográficos sobre eventos '
+                'naturales extremos y catástrofes, para el canal "Stunning Revelations". '
+                'Tu estilo es dramático y tenso, pero ESTRICTAMENTE FACTUAL — sin paranormal, '
+                'sin maldiciones, sin teorías sin evidencia.'
+            )
+        # documentary (default)
+        return (
+            'Eres un historiador y divulgador experto que escribe guiones de documentales '
+            'cinematográficos rigurosos para el canal "Stunning Revelations". Tu estilo es '
+            'serio, narrativo y visualmente oscuro/dramático, pero la base es ESTRICTAMENTE '
+            'HISTÓRICA Y FACTUAL — nada de maldiciones inventadas, civilizaciones imposibles, '
+            'OVNIs, ni conspiraciones sin evidencia documentada.'
+        )
+
+    @staticmethod
+    def _build_tone_section(tone_profile: str, lang_label: str) -> str:
+        """The TONO Y ESTILO block — replaces the previously hardcoded mystery-only version."""
+        if tone_profile == "mystery":
+            return """
+TONO Y ESTILO:
+- Narrativa envolvente, misteriosa e intrigante (NO documental aburrido)
+- Presenta las teorías como posibilidades fascinantes: "¿Y si...?", "Lo que pocos saben es..."
+- Usa ganchos emocionales y cliffhangers entre escenas
+- Mantén al espectador enganchado con revelaciones progresivas
+- Al final, incluye una llamada a suscribirse a "Stunning Revelations" de forma natural"""
+
+        if tone_profile == "dramatic_factual":
+            return """
+TONO Y ESTILO:
+- Narrativa cinematográfica, tensa y de alto contraste — como un documental de catástrofes premium.
+- Cada escena debe construir tensión: causa → señales tempranas → punto de inflexión → consecuencia.
+- PROHIBIDO especular sobre causas sobrenaturales, maldiciones, profecías o "fuerzas ocultas". Solo física, geología, meteorología, etc.
+- Usa cifras, fechas y testimonios reales documentados (víctimas, magnitud, áreas afectadas).
+- Ganchos basados en escala real ("el sonido se escuchó a 5000 km"), no en misterio inventado.
+- Al final, incluye una llamada a suscribirse a "Stunning Revelations" de forma natural."""
+
+        # documentary (default)
+        return """
+TONO Y ESTILO:
+- Narrativa de documental cinematográfico riguroso (estilo BBC/Netflix dark history), NO un canal de misterios.
+- Tono dramático y narrativo permitido, PERO el contenido debe ser históricamente verificable.
+- PROHIBIDO inventar maldiciones, profecías, conspiraciones modernas conectadas al tema, viajes transoceánicos no documentados, tecnologías perdidas inventadas, fenómenos paranormales, "fuerzas ocultas que aún operan hoy".
+- PROHIBIDO meter contenido de canal de misterios disfrazado de historia. Si el tema es histórico, el guion es histórico.
+- Usa eventos, batallas, personajes, fechas y lugares REALES y documentados por historiadores.
+- Puedes usar suspenso narrativo y preguntas retóricas, pero ancladas a hechos: "¿Cómo logró Aníbal cruzar los Alpes con elefantes?" SÍ; "¿Y si Aníbal tenía tecnología perdida?" NO.
+- Ganchos válidos: escala real del evento, decisiones humanas críticas, ironías históricas documentadas, consecuencias a largo plazo verificables.
+- Al final, incluye una llamada a suscribirse a "Stunning Revelations" de forma natural."""
+
+    @staticmethod
+    def _build_visual_guide_for_profile(tone_profile: str) -> str:
+        """Tone-profile-specific guidance for the visual_prompt aesthetic."""
+        if tone_profile == "mystery":
+            return (
+                "GUIA VISUAL POR PERFIL DE TONO:\n"
+                "- Perfil 'mystery': estetica de misterio cinematografico oscuro (niebla densa, luz tenue, sombras profundas, elementos sugerentes pero ambiguos). "
+                "Permitido: figuras a contraluz, ambigüedad visual deliberada, sugerencia (NO mostrar) de algo extrano. "
+                "Mantener el realismo fotografico — no derivar a fantasy/comic art ni a CGI cartoon."
+            )
+        if tone_profile == "dramatic_factual":
+            return (
+                "GUIA VISUAL POR PERFIL DE TONO:\n"
+                "- Perfil 'dramatic_factual': estetica de documental de catastrofes premium (referencias: 'Seconds From Disaster', 'Apocalypse colorizado', National Geographic disaster docs). "
+                "Enfasis en escala fisica real: humo, ceniza, agua, fuego, viento, tierra removida. Testigos humanos con expresiones genuinas de miedo/sorpresa/dolor. "
+                "PROHIBIDO: figuras espectrales, presagios sobrenaturales, halos magicos, brillos misticos."
+            )
+        # documentary (default)
+        return (
+            "GUIA VISUAL POR PERFIL DE TONO:\n"
+            "- Perfil 'documentary': estetica de documental cinematografico oscuro (referencias: BBC dark history, Apple TV+ documentaries, Ken Burns con paleta moderna desaturada). "
+            "La atmosfera oscura viene de iluminacion baja, composicion y paleta cromatica, NO de elementos fantasticos. "
+            "PROHIBIDO: brillos magicos, halos sobrenaturales, auras, niebla magica, particulas brillantes flotando sin causa fisica, simbologia esoterica visible, paisajes imposibles, geometrias imposibles, criaturas inventadas, vestimentas de fantasia. "
+            "Personas, edificios, herramientas y armas son los reales y documentados de la epoca."
+        )
+
+    @staticmethod
+    def _build_channel_bible_section(is_short: bool, lang_label: str, tone_profile: str = "mystery") -> str:
+        """Build channel-bible instructions for the unified prompt.
+
+        Includes hook patterns, narrative structure, quality rules,
+        editorial filter, and credibility guidelines — all sourced
+        from channel_strategy.py when available.
+        """
+        sections: list[str] = []
+
+        # ── Channel Bible (hooks, structure, tone) ──
+        if is_short:
+            try:
+                from channel_strategy import (
+                    build_hook_prompt_instructions,
+                    get_shorts_rules as _get_sr,
+                )
+                _sr = _get_sr()
+                _hook_instr = build_hook_prompt_instructions()
+                sections.append(f"""
+REGLAS ESTRICTAS PARA SHORTS — @Stunning-Revelations Channel Bible:
+
+DURACIÓN: {_sr.get('min_duration', 45)} a {_sr.get('max_duration', 58)} segundos. NUNCA exceder {_sr.get('hard_limit', 60)} segundos.
+
+{_hook_instr}
+
+RITMO Y ESTRUCTURA:
+- El guión debe ser de ritmo rápido, diseñado para cortes de escena cada 5-8 segundos.
+- Frases cortas y contundentes. Nada de explicaciones largas.
+- Cada 5-8 segundos debe introducir un dato nuevo o giro visual.
+- Termina con sensación de misterio o continuidad — deja al espectador queriendo más.
+
+CREDIBILIDAD:
+- NO presentes especulación como hecho.
+- Mantén rigor histórico. Usa fechas, lugares y eventos documentados.
+- El canal debe sentirse como una serie documental histórica oscura, NO un canal de listas.
+
+FILTRO EDITORIAL — Cada Short debe responder una de estas preguntas:
+¿Qué desapareció? ¿Qué fue borrado? ¿Qué salió mal? ¿Qué sigue sin explicación?
+¿Qué cambió la historia para siempre? ¿Qué intentaron ocultar? ¿Por qué esto aún importa?""")
+            except ImportError:
+                sections.append("""
+REGLAS ESTRICTAS PARA SHORTS:
+- Duración: 45 a 58 segundos. NUNCA exceder 60 segundos.
+- Los primeros 1-2 segundos son CRÍTICOS. Abre con un hook brutal o premisa imposible.
+  Ejemplo: "Una ciudad entera desapareció sin dejar rastro."
+  Ejemplo: "En el año 536, el cielo se oscureció."
+- Ritmo rápido, cortes cada 5-8 segundos.
+- Frases cortas y contundentes.
+- Termina con misterio o continuidad, nunca con resumen.""")
+
+        # ── Quality rules (apply to all formats, but tone-profile-aware) ──
+        if tone_profile == "mystery":
+            sections.append("""
+CALIDAD NARRATIVA (OBLIGATORIO):
+- Escribe en tono envolvente, misterioso e intrigante — como un narrador de canal de misterios/conspiraciones.
+- Presenta teorías, eventos inexplicables y explicaciones alternativas como posibilidades fascinantes, NO como tonterías desmentidas.
+- Usa frases como "algunos investigadores creen", "según ciertas fuentes", "¿y si...?", "¿podría ser que...?",
+  "la explicación oficial dice... pero otros sugieren", "testigos afirman", "hay quienes argumentan".
+- NO seas escéptico ni despectivo. La audiencia QUIERE explorar misterios y teorías alternativas.
+- NO escribas como un verificador de hechos. Escribe como un narrador que explora lo desconocido.
+- Sin embargo, NO presentes afirmaciones no verificadas como hechos confirmados. Enmárcalas como posibilidades intrigantes.
+- Los casos/testimonios mencionados deben haber sido REALMENTE reportados (libros, prensa, archivos, folklore documentado). NO inventes casos completos.
+- Mantén consistencia interna: si mencionas una fecha o nombre, no lo contradigas después.
+- Usa nombres, lugares y organizaciones reales cuando existan.
+- Construye suspenso y curiosidad — usa cliffhangers entre secciones.
+- Cada párrafo debe avanzar la historia; nada de relleno genérico ni repetición.
+- Evita frases vacías: "como todos sabemos", "a lo largo de la historia", "sin lugar a dudas".
+- Usa preguntas retóricas estratégicamente para enganchar al espectador.
+- Termina con una pregunta abierta o reflexión provocadora que deje al espectador queriendo más.""")
+        elif tone_profile == "dramatic_factual":
+            sections.append("""
+CALIDAD NARRATIVA (OBLIGATORIO):
+- Escribe como un narrador de documental cinematográfico de catástrofes (estilo "Seconds From Disaster"/"Megadisasters"), con tensión real basada en hechos.
+- Cada escena: causa → señales tempranas → punto de inflexión → consecuencia. Construye tensión por escala física, no por misterio inventado.
+- Usa fechas, magnitudes (Richter, km², víctimas, velocidad, temperatura), nombres de lugares y de personas reales cuando existan.
+- PROHIBIDO atribuir causas a maldiciones, profecías, fuerzas ocultas, OVNIs o conspiraciones — solo causas físicas/geológicas/meteorológicas/biológicas documentadas.
+- Permitido el suspenso ("nadie podía imaginar lo que sucedería en las próximas 12 horas") siempre anclado a la cronología real.
+- Mantén consistencia interna: cifras, fechas y nombres no se contradicen entre escenas.
+- Evita frases vacías: "como todos sabemos", "a lo largo de la historia", "sin lugar a dudas".
+- Termina con una reflexión sobre lecciones, riesgos actuales o eventos similares en curso, no con misterio inventado.""")
+        else:  # documentary
+            sections.append("""
+CALIDAD NARRATIVA (OBLIGATORIO):
+- Escribe como un historiador/divulgador serio que narra un documental cinematográfico oscuro (estilo BBC, Netflix dark history, Ken Burns), NO como un narrador de misterios/conspiraciones.
+- TODO lo que aparece debe ser históricamente verificable: personajes, fechas, batallas, lugares, decisiones, consecuencias.
+- PROHIBIDO inventar: maldiciones, OVNIs, civilizaciones cruzando océanos sin evidencia, tecnologías perdidas, profecías, conspiraciones modernas conectadas al tema histórico, "ecos que aún hoy resuenan en la política/UE/etc.", artefactos malditos.
+- PROHIBIDO meter contenido de canal de misterios disfrazado. Si el tema es histórico, el guion es 100% histórico.
+- Permitido y deseable: drama humano real (Aníbal y su juramento, decisiones de generales, errores estratégicos), ironías históricas documentadas, escala real (número de tropas, duración del asedio), consecuencias verificables (cambios en mapa, instituciones).
+- Permitido el tono cinematográfico oscuro y la tensión narrativa, anclados a la realidad: "En la noche del 2 de agosto del 216 AC, 50 000 romanos morirían antes del amanecer" SÍ; "En la noche del 2 de agosto del 216 AC, una fuerza inexplicable cambió el destino de Europa" NO.
+- Si te quedas sin hechos nuevos, PRIMERO profundiza con material documentado (contexto previo, biografías, consecuencias verificables, paralelos reales, secuelas a años). Solo acorta si después de profundizar genuinamente no hay material. NUNCA inventes.
+- Mantén consistencia: nombres, fechas, lugares y bandos no se contradicen entre escenas.
+- Evita frases vacías: "como todos sabemos", "a lo largo de la historia", "sin lugar a dudas", "lo que pocos saben".
+- Termina con una reflexión histórica real (consecuencias, paralelos documentados, qué quedó en el mapa actual), NO con preguntas tipo "¿y si los antiguos sabían algo que nosotros no?".""")
+
+        return "\n".join(sections)
+
+    @staticmethod
+    def _build_json_metadata_fields(is_short: bool) -> str:
+        """Return extra JSON fields for short-form metadata."""
+        if not is_short:
+            return ""
+        return """
+  "cover_text": "1-3 palabras poderosas para el frame de portada del video (ej: VANISHED, ERASED, LOST EMPIRE)",
+  "hook_pattern": "Patrón de hook usado: A, B, C o D",
+  "category_fit": "Categoría que mejor describe este Short",
+  "long_form_potential": "YES o NO — ¿podría este tema sostener un video de 8-12 minutos?",
+  "long_form_angle": "Si YES, un ángulo breve para la expansión (1 oración)",
+  "series_fit": "Serie a la que pertenece (ej: Lost Civilizations, Vanished Empires) o NONE","""
+
+    def generate_manual_prompt_text(self, topic, category, duration, language='es',
+                                    research_context=None, video_format=None, platform=None):
+        """
+        Genera el texto del prompt para modo manual (JSON).
+        
+        Args:
+            topic: Tema del video
+            category: CategorÃ­a del video
+            duration: DuraciÃ³n en segundos
+            language: Idioma ('es' o 'en')
+            research_context: Lista de snippets de investigaciÃ³n (opcional)
+            video_format: Formato de video ('9:16', '16:9', etc.)
+            platform: Plataforma objetivo ('youtube_short', 'youtube_vertical', etc.)
+        
+        Returns:
+            String con el prompt para la IA
+        """
+        lang_str = "SPANISH" if language == 'es' else "ENGLISH"
+        lang_label = "español" if language == 'es' else "English"
+        try:
+            duration_value = int(duration)
+        except Exception:
+            duration_value = 60
+        normalized_platform = str(platform or '').strip().lower()
+        is_vertical_format = (
+            (video_format and '9:16' in str(video_format))
+            or normalized_platform in {'youtube_short', 'youtube_vertical', 'tiktok', 'reels'}
+        )
+        is_short_vertical = self._is_short_form_platform(platform) or (
+            platform is None and is_vertical_format
+        )
+        if is_short_vertical and duration_value > 180:
+            duration_value = 180
+        if is_short_vertical:
+            # ~2.5 palabras/seg es el ritmo real de TTS (medido con edge-tts).
+            # Antes usábamos 2.2 conservador, pero eso dejaba margen tan apretado
+            # que el LLM se quedaba muy por debajo del mínimo. Subir a 2.5 da
+            # un objetivo más alcanzable y aún cabe en TTS sin recortes.
+            words_estimate = int(duration_value * 2.5)
+            estimated_scenes = max(3, min(10, int(duration_value / 7)))
+        else:
+            words_estimate = int(duration_value * 2.5)
+            estimated_scenes = max(3, int(duration_value / 4.5))
+        
+        # Sección de contexto de investigación
+        research_section = ""
+        if research_context and len(research_context) > 0:
+            research_text = "\n\n".join(f"--- Fuente {i+1} ---\n{snippet}" 
+                                        for i, snippet in enumerate(research_context))
+            research_section = f"""
+CONTEXTO DE INVESTIGACIÓN (usa estas fuentes como base para el guión):
+{research_text}
+
+IMPORTANTE: Basa el guión en la información de estas fuentes. Puedes expandir, conectar ideas y
+agregar narrativa, pero NO inventes datos que contradigan las fuentes.
+"""
+        
+        # Sección de formato de video
+        format_section = ""
+        length_contract = ""
+        if is_short_vertical:
+            # Calcular duración MÍNIMA aceptable: 80% del target. Para 60s = 48s mínimo.
+            min_duration = int(max(15, duration_value * 0.80))
+            min_words = int(min_duration * 2.5)
+            min_words_per_scene = max(12, int(min_words / max(estimated_scenes, 1)))
+            target_words_per_scene = max(min_words_per_scene + 3, int(words_estimate / max(estimated_scenes, 1)))
+
+            # CONTRATO de longitud va al TOPE del prompt para máxima saliencia.
+            # En tests anteriores, las instrucciones de duración estaban enterradas
+            # en el medio del prompt y el LLM las ignoraba (producía 35 palabras
+            # cuando el mínimo era 105). Llevarlas arriba + repetirlas con números
+            # explícitos + per-scene minimums obliga al LLM a planificar para el largo.
+            length_contract = f"""
+╔══════════════════════════════════════════════════════════════════╗
+║  CONTRATO DE LONGITUD (REQUISITO BLOQUEANTE — LEE ESTO PRIMERO)  ║
+╚══════════════════════════════════════════════════════════════════╝
+
+Este Short DEBE tener entre {min_words} y {words_estimate} palabras de narración total.
+- Mínimo absoluto: {min_words} palabras ({min_duration}s de audio)  ← NO BAJES de esto
+- Objetivo ideal: {words_estimate} palabras ({duration_value}s de audio)
+- Distribución: exactamente {estimated_scenes} escenas, cada una entre
+  {min_words_per_scene} y {target_words_per_scene + 5} palabras (objetivo: ~{target_words_per_scene}).
+
+Un guion con MENOS de {min_words} palabras será RECHAZADO automáticamente.
+Antes de finalizar, CUENTA TUS PALABRAS y verifica que el total está entre
+{min_words} y {words_estimate}.
+
+CÓMO LLEGAR AL MÍNIMO SIN INVENTAR: si tras cubrir el hecho principal
+te faltan palabras, profundiza con AL MENOS DOS de estos 6 ángulos
+documentados (todos verificables en fuentes históricas reales):
+  1. CONTEXTO PRE-EVENTO: qué pasaba en las semanas/días previos
+  2. DECISIONES CRÍTICAS: figuras reales con nombre que tomaron decisiones
+     clave (y sus consecuencias documentadas)
+  3. PUNTO DE INFLEXIÓN EN DETALLE: cronología precisa del momento crítico
+     (hora exacta, datos físicos: temperatura, velocidad, magnitud, víctimas)
+  4. SOBREVIVIENTES O TESTIGOS REALES: nombres documentados, sus relatos
+  5. CONSECUENCIAS VERIFICABLES: a 1 día, 1 año, décadas vista (cambios
+     reales en mapas, instituciones, doctrinas científicas, etc.)
+  6. LEGADO HISTÓRICO: qué cambió permanentemente como resultado
+"""
+
+            format_section = f"""
+FORMATO: YouTube Short (vertical 9:16) — duración objetivo {duration_value}s.
+- Estructura: {estimated_scenes} escenas × {min_words_per_scene}-{target_words_per_scene + 5} palabras (objetivo {target_words_per_scene}).
+- NUNCA menos de {min_words_per_scene} palabras por escena.
+- NUNCA menos de {min_words} palabras totales.
+- Ritmo rápido: engancha en los primeros 3 segundos y mantén la tensión.
+- Cada frase debe aportar valor — evita relleno genérico, pero SÍ desarrolla con material documentado.
+"""
+        elif is_vertical_format:
+            format_section = f"""
+FORMATO: Video vertical 9:16 para YouTube (largo).
+- Objetivo de duración: {duration_value} segundos.
+- Este video NO debe plantearse como un Short; puede superar 180 segundos.
+- Mantén composición vertical clara para smartphone, con visuales legibles y foco central.
+- Sostén la retención con progresión narrativa, mini-ganchos periódicos y cierres parciales entre escenas.
+"""
+
+        # Tone profile drives header, channel bible and tono section.
+        tone_profile = self._get_tone_profile_for_category(category)
+        tone_header = self._build_tone_header(tone_profile)
+        tone_section = self._build_tone_section(tone_profile, lang_label)
+
+        prompt = f"""{tone_header}
+{length_contract}
+TAREA: Escribe un guión técnico en formato JSON para un video de {duration_value} segundos sobre:
+
+TEMA: "{topic}"
+CATEGORÍA: {category}
+PERFIL DE TONO: {tone_profile}
+IDIOMA DE NARRACIÓN: {lang_label}
+{format_section}{research_section}
+REGLA FUNDAMENTAL — SOLO CASOS DOCUMENTADOS (NO INVENTES):
+- El guión debe basarse EXCLUSIVAMENTE en hechos, eventos, personajes, fechas, lugares y testimonios documentados que existan en la realidad.
+- NO inventes casos, nombres, fechas, lugares, eventos, citas, instituciones, programas, leyes ni iniciativas. Todo debe ser verificable.
+- PROHIBIDO conectar el tema con maldiciones inventadas, OVNIs (salvo categoría de misterios), civilizaciones cruzando océanos sin evidencia, "iniciativas secretas de la UE", artefactos malditos, frecuencias sónicas activadoras, ecos paranormales modernos, etc., A MENOS QUE el PERFIL DE TONO sea "mystery".
+- Para perfiles "documentary" y "dramatic_factual": cero contenido paranormal o conspiranoico, incluso disfrazado. Si dudas si algo está documentado, NO lo incluyas.
+- Para perfil "mystery": está permitido tratar reportes/testimonios/folklore como posibilidades, pero el caso o reporte mencionado debe haber existido realmente (no inventarlo completo).
+- Si mencionas una fecha, nombre o evento específico, debe ser real. Si no estás seguro, usa formulaciones como "según reportes de la época" o "testigos afirmaron que...", o directamente NO lo incluyas.
+- Puedes plantear preguntas abiertas ("¿Y si esto fuera verdad?") SOLO en perfil "mystery". En documentary, las preguntas deben ser sobre hechos reales debatidos por historiadores ("¿qué ruta exacta tomó Aníbal por los Alpes?").
+- ESTRATEGIA SI TE QUEDAS SIN HECHOS NUEVOS: NO acortes inmediatamente. PRIMERO profundiza
+  con material documentado adicional: contexto histórico previo, biografía relevante de los
+  protagonistas reales, decisiones críticas con justificación documentada, consecuencias
+  verificables (a corto plazo y a años/décadas vista), paralelos reales con eventos similares
+  documentados por historiadores, testimonios de fuentes primarias reales, datos verificables
+  sobre escala / víctimas / impacto geográfico. Solo si AGOTASTE de buena fe el material
+  documentado disponible y aun así no llegas al mínimo, ahí sí acorta. NUNCA inventes.
+
+REGLA VISUAL HISTORICA / TEMPORAL:
+- Antes de escribir las escenas, deduce la epoca, region, cultura, tecnologia disponible, vestimenta, arquitectura y objetos permitidos del TEMA y de la investigacion.
+- Cada visual_prompt debe incluir explicitamente la epoca/lugar en ingles (ej: "set in Cold War Tehran, 1976" o "set in Bronze Age Sicily, c. 214 BCE").
+- No mezcles epocas: ropa, armas, barcos, vehiculos, arquitectura, peinados, joyas, escritura, herramientas y materiales deben corresponder a esa epoca.
+- Prohibe anacronismos visibles: smartphones, autos modernos, plastico, pantallas LED, senaletica moderna, relojes, lentes, telas contemporaneas, armas/armaduras de otra epoca, salvo que el tema lo permita.
+- Si una escena es una llamada a suscribirse, mantenla dentro del mundo visual del video (pergaminos, antorchas, mapas, radios analogicas, documentos, etc.), no uses iconos modernos ni UI.
+- CONSISTENCIA NARRATIVA: los visual_prompt deben ser coherentes entre si. Si el guion menciona soldados romanos con armadura especifica, todos los segmentos siguientes que los incluyan deben mostrar exactamente el mismo tipo de soldados. No cambies el estilo visual, la raza de los personajes, la indumentaria ni la arquitectura entre escenas sin que la narrativa lo justifique.
+
+REGLA VISUAL — CALIDAD CINEMATOGRAFICA (OBLIGATORIO):
+Cada visual_prompt debe incorporar EXPLICITAMENTE estos 7 elementos, en ingles, separados por comas:
+  1. SUJETO PRINCIPAL claro y su accion (ej: "Hannibal Barca on horseback surveying the battlefield"). Evita escenas vacias sin foco.
+  2. AMBIENTE Y EPOCA (ej: "set in 3rd century BCE, plains of Cannae, southern Italy at dawn").
+  3. ENCUADRE / PLANO: usa terminologia de cine — "wide establishing shot", "medium shot", "close-up", "low-angle shot", "over-the-shoulder", "Dutch angle". Varia entre escenas.
+  4. ILUMINACION especifica (NO solo "dramatic lighting"). Ejemplos validos: "chiaroscuro side lighting from a single torch", "golden-hour rim light", "overcast diffused light", "moonlit with volumetric god rays through dust", "candlelit interior with deep shadows".
+  5. PALETA Y MOOD: paleta cromatica (ej: "muted earth tones, ochre and bronze") y mood en 1-2 palabras (ej: "foreboding", "solemn", "tense", "awe-inspiring", "contemplative").
+  6. CALIDAD FOTOGRAFICA: usa terminos que empujen hacia realismo coherente — "shot on 35mm film", "shallow depth of field with bokeh", "shot on Arri Alexa", "documentary photography style", "National Geographic photography", "Roger Deakins cinematography", "atmospheric haze with floating dust particles". NO uses "8k" ni "hyperrealistic" (causan artefactos).
+  7. ANTI-ARTEFACTO: incluye "natural anatomy, realistic proportions, coherent hands and faces" en escenas con personas visibles.
+{self._build_visual_guide_for_profile(tone_profile)}
+
+REGLA ABSOLUTA — CERO TEXTO EN LAS IMAGENES:
+- PROHIBIDO incluir texto visible de cualquier tipo en el visual_prompt: sin letreros, sin carteles, sin inscripciones legibles, sin papiros con texto, sin subtitulos, sin titulos, sin marcas de agua, sin logos, sin UI, sin numeros, sin letras de ninguna clase.
+- Esto incluye: signos, senaletica, escritura cuneiforme visible, jeroglificos legibles, pergaminos con texto, libros abiertos con texto, pizarrones, pantallas con texto, banderas con letras, monedas con inscripciones visibles.
+- EXCEPCION UNICA: si el prompt describe un objeto cuya funcion es decorativa y cuyo texto no es legible (ej: "ancient carved stone with worn indistinct symbols"), esta permitido SOLO si los simbolos son ilegibles y no identificables como texto moderno.
+- Siempre termina cada visual_prompt con: "no text, no writing, no signs, no captions, no watermarks"
+
+{tone_section}
+{self._build_channel_bible_section(is_short_vertical, lang_label, tone_profile)}
+ESTRUCTURA JSON REQUERIDA (responde SOLO con este JSON, sin texto adicional):
+{{
+  "title": "Título impactante del video en {lang_label}",{self._build_json_metadata_fields(is_short_vertical)}
+  "scenes": [
+    {{
+      "narration": "Texto completo de narración para esta escena en {lang_label}. Debe ser un párrafo sustancial (varias oraciones).",
+      "visual_prompt": "Descripción visual detallada EN INGLÉS para generar imagen con IA. DEBE incluir los 7 elementos de la REGLA VISUAL — CALIDAD CINEMATOGRAFICA (sujeto+accion, ambiente+epoca, encuadre, iluminacion especifica, paleta+mood, calidad fotografica, anti-artefacto). NUNCA incluir texto visible. EJEMPLO COMPLETO: 'Roman legionaries in lorica segmentata advancing in tight testudo formation, set in dense foggy Germanic forest at dawn c. 9 AD, low-angle medium shot looking up at their shields, chiaroscuro lighting from breaking sunlight through mist with volumetric god rays, muted earth-tone palette of moss green and tarnished bronze, tense and foreboding mood, shot on 35mm film with shallow depth of field, atmospheric haze and floating dust particles, natural anatomy and realistic proportions, coherent hands and faces, Roger Deakins cinematography, no text, no writing, no signs, no captions, no watermarks'",
+      "sfx_tag": "Efecto de sonido en inglés (ej: 'thunder', 'suspense', 'wind') o 'none'",
+      "overlay_tag": "GIF/sticker descriptivo en inglés o 'none'"
+    }}
+  ]
+}}
+
+REGLAS CRÍTICAS:
+1. Genera exactamente {estimated_scenes} escenas (aprox. {duration_value // estimated_scenes}s cada una)
+2. Toda la narración en {lang_label}, todos los visual_prompt en INGLÉS
+3. Cada escena debe tener narración de ~{words_estimate // estimated_scenes} palabras (ni mucho más, ni frases sueltas)
+4. Los visual_prompt deben ser detallados y cinematográficos, históricamente consistentes entre sí, y SIEMPRE terminar con "no text, no writing, no signs, no captions, no watermarks"
+5. Responde ÚNICAMENTE con el JSON, sin explicaciones antes o después
+6. El total de palabras de narración debe ser aproximadamente {words_estimate}
+7. Cada párrafo de narración debe avanzar la historia; nada de relleno genérico ni frases vacías como "a lo largo de la historia" o "como todos sabemos"
+8. Usa preguntas retóricas estratégicamente para enganchar ("¿Pero qué pasó realmente esa noche?")
+9. Termina con una pregunta abierta o reflexión que deje al espectador queriendo más
+
+✅ AUTO-CHECK FINAL ANTES DE ENVIAR (obligatorio):
+   - Suma mentalmente las palabras de todas las narraciones.
+   - Si el total NO está en el rango establecido al inicio de este prompt
+     (ver CONTRATO DE LONGITUD), REESCRIBE las escenas más cortas profundizando
+     con material documentado (ver los 6 ángulos del contrato) antes de enviar.
+   - Si una escena tiene menos palabras que el mínimo establecido, EXPÁNDELA
+     con detalles factuales reales de los ángulos sugeridos.
+   - SOLO envía el JSON cuando todas las escenas cumplan los mínimos."""
+        
+        return prompt
+
+    def _generate_short_structured(
+        self,
+        topic: str,
+        category: str,
+        platform: str,
+        duration_target: int,
+        voice_id: Optional[str],
+        language: str,
+        research_context: list,
+        find_auto_music: bool,
+        rate: str,
+    ) -> Optional[Dict]:
+        """Generate a Short storyboard via the unified JSON prompt.
+
+        Uses the same prompt as the manual path (generate_manual_prompt_text)
+        so both automatic and manual flows share identical quality/structure.
+        Visual prompts come inline — no per-segment API calls, no Whisper.
+
+        Falls back to None so the caller can retry with the legacy plain-text
+        path if parsing fails.
+        """
+        import json as _json
+        import re as _re
+
+        self.log("   🎯 Modo JSON estructurado para Short (prompt unificado)")
+
+        # 1. Build the unified prompt (same one the user copies for manual)
+        prompt = self.generate_manual_prompt_text(
+            topic=topic,
+            category=category,
+            duration=duration_target,
+            language=language,
+            research_context=research_context or None,
+            video_format="9:16",
+            platform=platform,
+        )
+
+        # 2. Send to LLM with task_type='script_quality' so Groq prefers gpt-oss-120b
+        # (mejor para seguir restricciones de longitud que llama-3.3-70b-versatile).
+        raw = self.gemini_client._generate(prompt, max_tokens=8000, task_type="script_quality")
+        if not raw or str(raw).startswith("ERROR"):
+            self.log(f"   ⚠️ LLM no devolvió respuesta válida para JSON estructurado")
+            return None
+
+        # 3. Parse JSON from the response
+        clean = raw.strip()
+        if "```json" in clean:
+            clean = clean.split("```json", 1)[1].split("```", 1)[0]
+        elif "```" in clean:
+            clean = clean.split("```", 1)[1].split("```", 1)[0]
+        clean = _re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F]', '', clean)
+        if '{' in clean and '}' in clean:
+            start = clean.find('{')
+            end = clean.rfind('}') + 1
+            if start >= 0 and end > start:
+                clean = clean[start:end]
+
+        try:
+            json_data = _json.loads(clean)
+        except _json.JSONDecodeError as e:
+            self.log(f"   ⚠️ Error parseando JSON del LLM: {e}")
+            self.log(f"   ⚠️ Fallback al flujo clásico (texto plano + Whisper)")
+            return None
+
+        if "scenes" not in json_data or not json_data["scenes"]:
+            self.log("   ⚠️ JSON no contiene escenas válidas — fallback al flujo clásico")
+            return None
+
+        scenes = json_data["scenes"]
+        self.log(f"   ✅ JSON parseado: {len(scenes)} escenas, título: {json_data.get('title', '?')}")
+
+        # 3.4 Validación de longitud BIDIRECCIONAL (min y max) + auto-retry.
+        # En pruebas: gpt-oss-120b se quedaba 5x corto; llama-3.3-70b corrigió pero
+        # se pasó 2.5x del techo. Necesitamos validar ambos extremos y hacer
+        # expansión O compresión según el caso.
+        try:
+            min_acceptable_words = int(max(duration_target, 30) * 0.80 * 2.5)
+            target_words = int(max(duration_target, 30) * 2.5)
+            # Techo absoluto: 110% del target. Si pasamos esto, el video excede
+            # la duración objetivo de Shorts (60s YouTube hard limit).
+            max_acceptable_words = int(target_words * 1.10)
+        except Exception:
+            min_acceptable_words = 90
+            target_words = 120
+            max_acceptable_words = 132
+
+        def _count_words(scs):
+            total = 0
+            for s in scs:
+                txt = str(s.get("narration") or s.get("text") or "")
+                total += len([w for w in txt.split() if w])
+            return total
+
+        def _reparse_json(raw_text):
+            clean_r = raw_text.strip()
+            if "```json" in clean_r:
+                clean_r = clean_r.split("```json", 1)[1].split("```", 1)[0]
+            elif "```" in clean_r:
+                clean_r = clean_r.split("```", 1)[1].split("```", 1)[0]
+            clean_r = _re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F]', '', clean_r)
+            if '{' in clean_r and '}' in clean_r:
+                rs = clean_r.find('{')
+                re_ = clean_r.rfind('}') + 1
+                if rs >= 0 and re_ > rs:
+                    clean_r = clean_r[rs:re_]
+            try:
+                return _json.loads(clean_r)
+            except _json.JSONDecodeError:
+                return None
+
+        current_words = _count_words(scenes)
+        attempt = 0
+        MAX_TOTAL_RETRIES = 2  # Total expansion + compression attempts combined
+
+        while attempt < MAX_TOTAL_RETRIES:
+            below_min = current_words < min_acceptable_words
+            above_max = current_words > max_acceptable_words
+            if not below_min and not above_max:
+                break  # within [min, max] band — done
+
+            attempt += 1
+            action = "expansión" if below_min else "compresión"
+            self.log(
+                f"   ⚠️ Guion fuera de banda: {current_words} palabras "
+                f"(necesita {min_acceptable_words}–{max_acceptable_words}). "
+                f"Solicitando {action} al LLM (intento {attempt}/{MAX_TOTAL_RETRIES})..."
+            )
+
+            min_per_scene = max(12, int(target_words / max(len(scenes), 1)))
+            max_per_scene = max(min_per_scene + 5, int(max_acceptable_words / max(len(scenes), 1)))
+
+            scene_word_counts = []
+            for idx, s in enumerate(scenes, start=1):
+                txt = str(s.get("narration") or s.get("text") or "")
+                scene_word_counts.append((idx, len([w for w in txt.split() if w])))
+
+            existing_json_str = _json.dumps(json_data, ensure_ascii=False, indent=2)
+
+            if below_min:
+                # EXPANSION prompt
+                short_scenes = [
+                    f"  - Escena {idx}: {wc} palabras (necesita {min_per_scene}–{max_per_scene})"
+                    for idx, wc in scene_word_counts if wc < min_per_scene
+                ]
+                short_block = "\n".join(short_scenes) if short_scenes else "  (todas las escenas tienen algo, pero el total sigue corto)"
+                # Tu respuesta anterior fue X. Necesitas Y. Diferencia = Y - X palabras
+                # nuevas a añadir. Reparto entre las escenas cortas.
+                deficit = target_words - current_words
+                action_prompt = (
+                    "❌ Tu respuesta anterior tuvo SOLO " + str(current_words) +
+                    " palabras de narración total.\n"
+                    "✅ Necesitas AL MENOS " + str(min_acceptable_words) + " palabras "
+                    "(ideal: " + str(target_words) + ", máximo: " + str(max_acceptable_words) + ").\n"
+                    "📈 Tienes que AGREGAR ~" + str(deficit) + " palabras de contenido documentado.\n\n"
+                    "INSTRUCCIÓN DIRECTA:\n"
+                    "Para CADA escena que aparece abajo como 'corta', DEBES DOBLAR o TRIPLICAR\n"
+                    "su narración actual hasta llegar a " + str(min_per_scene) + "-" + str(max_per_scene) +
+                    " palabras por escena. NO basta con cambiar 2-3 palabras: tienes que\n"
+                    "AGREGAR datos documentados reales que actualmente faltan.\n\n"
+                    "PROFUNDIZA con MATERIAL DOCUMENTADO ADICIONAL (escoge 2-3 ángulos\n"
+                    "RELEVANTES por escena, NO inventes):\n"
+                    "  1. Contexto pre-evento: qué pasaba en las semanas/días previos\n"
+                    "  2. Figuras reales nombradas y sus decisiones documentadas\n"
+                    "  3. Cronología precisa: hora exacta, magnitud, velocidad, víctimas\n"
+                    "  4. Sobrevivientes/testigos con nombre y testimonio\n"
+                    "  5. Consecuencias verificables: a 1 día, 1 año, décadas\n"
+                    "  6. Legado: qué cambió permanentemente en historia/ciencia\n\n"
+                    "Escenas QUE NECESITAN DOBLAR/TRIPLICAR longitud:\n" + short_block + "\n\n"
+                    "⚠️ EJEMPLO DE EXPANSIÓN CORRECTA:\n"
+                    "   ANTES (4 palabras): 'The volcano erupted suddenly.'\n"
+                    "   DESPUÉS (18 palabras): 'On May 8 at 7:50 AM, Mount Pelée's "
+                    "northwest flank exploded, releasing a pyroclastic flow at 670 km/h.'\n\n"
+                    "⛔ TECHO MÁXIMO: NO superes " + str(max_acceptable_words) + " palabras totales.\n"
+                    "⚠️ Tu próxima respuesta SERÁ MEDIDA. Si vuelve a estar bajo " +
+                    str(min_acceptable_words) + ", se considera REGRESIÓN y se rechaza."
+                )
+            else:
+                # COMPRESSION prompt
+                long_scenes = [
+                    f"  - Escena {idx}: {wc} palabras (máximo {max_per_scene})"
+                    for idx, wc in scene_word_counts if wc > max_per_scene
+                ]
+                long_block = "\n".join(long_scenes) if long_scenes else "  (todas las escenas están dentro del máximo individual pero el total se pasa)"
+                action_prompt = (
+                    "Tu respuesta anterior tenía " + str(current_words) +
+                    " palabras de narración, PERO el techo máximo es " + str(max_acceptable_words) +
+                    " palabras (ideal: " + str(target_words) + "). "
+                    "Te pasaste por " + str(current_words - max_acceptable_words) + " palabras.\n\n"
+                    "COMPRIME las escenas más largas conservando los hechos esenciales documentados:\n"
+                    "- Recorta detalles secundarios, ejemplos redundantes, frases adornadas.\n"
+                    "- Mantén nombres, fechas, datos físicos clave, cifras verificables.\n"
+                    "- Cada escena debe quedar entre " + str(min_per_scene) + " y " +
+                    str(max_per_scene) + " palabras.\n\n"
+                    "Escenas que DEBES comprimir:\n" + long_block + "\n\n"
+                    "⛔ MÍNIMO ABSOLUTO: NO bajes de " + str(min_acceptable_words) + " palabras totales."
+                )
+
+            full_retry_prompt = (
+                action_prompt + "\n\n"
+                "REGLAS COMUNES:\n"
+                "- NO cambies los visual_prompt, sfx_tag ni overlay_tag.\n"
+                "- NO cambies el número de escenas — mantén exactamente " + str(len(scenes)) + ".\n"
+                "- Mantén el idioma original (" + language + ").\n"
+                "- Tras ajustar, CUENTA tus palabras y verifica que el total está entre " +
+                str(min_acceptable_words) + " y " + str(max_acceptable_words) + ".\n\n"
+                "Devuelve el JSON COMPLETO ajustado, en el mismo formato.\n"
+                "Sin explicaciones antes ni después. Solo JSON.\n\n"
+                "JSON actual a ajustar:\n" + existing_json_str
+            )
+
+            raw_retry = self.gemini_client._generate(
+                full_retry_prompt, max_tokens=8000, task_type="script_quality"
+            )
+            if not raw_retry or str(raw_retry).startswith("ERROR"):
+                self.log(f"   ⚠️ Reintento {attempt}: LLM no respondió. Quedando con guion actual.")
+                break
+
+            json_data_retry = _reparse_json(raw_retry)
+            if not json_data_retry:
+                self.log(f"   ⚠️ Reintento {attempt}: JSON inválido. Quedando con guion previo.")
+                break
+
+            scenes_retry = json_data_retry.get("scenes") or []
+            if len(scenes_retry) != len(scenes):
+                self.log(
+                    f"   ⚠️ Reintento {attempt}: el LLM cambió el número de escenas "
+                    f"({len(scenes)} → {len(scenes_retry)}). Quedando con guion previo."
+                )
+                break
+
+            new_words = _count_words(scenes_retry)
+            arrow = "↑" if new_words > current_words else ("↓" if new_words < current_words else "=")
+            self.log(
+                f"   📊 Reintento {attempt}: {current_words} {arrow} {new_words} palabras "
+                f"(banda objetivo {min_acceptable_words}–{max_acceptable_words})"
+            )
+
+            # Aceptar si: (a) está dentro de la banda, o (b) está MÁS CERCA de la banda que antes
+            def _band_distance(words):
+                if words < min_acceptable_words:
+                    return min_acceptable_words - words
+                if words > max_acceptable_words:
+                    return words - max_acceptable_words
+                return 0
+            if _band_distance(new_words) < _band_distance(current_words):
+                json_data = json_data_retry
+                scenes = scenes_retry
+                current_words = new_words
+            else:
+                self.log(f"   ⚠️ Reintento {attempt} no mejoró respecto a la banda. Quedando con guion previo.")
+                break
+
+        if current_words < min_acceptable_words:
+            self.log(
+                f"   ⚠️ Guion final: {current_words} palabras (< mínimo {min_acceptable_words}). "
+                f"El video saldrá más corto que el target."
+            )
+        elif current_words > max_acceptable_words:
+            self.log(
+                f"   ⚠️ Guion final: {current_words} palabras (> máximo {max_acceptable_words}). "
+                f"El video durará más que el target — verificá."
+            )
+        else:
+            self.log(
+                f"   ✅ Guion dentro de banda: {current_words} palabras "
+                f"(banda {min_acceptable_words}–{max_acceptable_words})"
+            )
+
+        # 3.5 Extract metadata from top-level JSON fields
+        _meta_cover_text = str(json_data.get("cover_text", "")).strip().upper()
+        _meta_hook_pattern = str(json_data.get("hook_pattern", "")).strip().upper()[:1]
+        _meta_category = str(json_data.get("category_fit", category)).strip()
+        _meta_long_form = str(json_data.get("long_form_potential", "NO")).strip().upper()
+        _meta_long_angle = str(json_data.get("long_form_angle", "")).strip()
+        _meta_series = str(json_data.get("series_fit", "NONE")).strip()
+
+        # 4. Process through the manual-JSON pipeline (TTS + word-ratio timing)
+        result = self.process_manual_json(
+            json_data,
+            voice_id=voice_id,
+            language=language,
+            rate=rate,
+            max_duration=180.0,
+        )
+        if not result:
+            self.log("   ⚠️ process_manual_json falló — fallback al flujo clásico")
+            return None
+
+        # 5. Enrich result with metadata and channel strategy validation
+        result["topic"] = json_data.get("title", topic)
+        result["category"] = _meta_category or category
+        result["generation_profile"] = "short_structured"
+        result["duration_target"] = duration_target
+
+        # Store metadata on the result for downstream use
+        result["script_metadata"] = {
+            "cover_text": _meta_cover_text,
+            "hook_pattern": _meta_hook_pattern if _meta_hook_pattern in "ABCD" else "",
+            "category": _meta_category,
+            "long_form_potential": _meta_long_form,
+            "long_form_angle": _meta_long_angle,
+            "series_fit": _meta_series,
+        }
+
+        # 5.5 Duration validation via channel_strategy
+        try:
+            from channel_strategy import validate_duration as _validate_dur
+            _measured = self._measure_audio_duration_seconds(str(result.get("audio_path", "")))
+            if _measured > 0:
+                _ok, _msg = _validate_dur(_measured)
+                self.log(f"   {_msg}")
+        except ImportError:
+            pass
+
+        # 6. Music search (same as legacy path)
+        if find_auto_music and JAMENDO_AVAILABLE:
+            self.log("🎵 Buscando música de fondo...")
+            try:
+                cat, sent = analyze_narration(result.get("script", ""))
+                if not cat:
+                    cat = category
+                    sent = -0.5 if category in ["Misterios", "Paranormal", "Conspiraciones"] else 0.5
+                if cat:
+                    tags = map_ai_to_jamendo_tags(cat, sent)
+                    tracks = search_jamendo_api(tags, self.jamendo_client_id, limit=1)
+                    if tracks:
+                        result["music_data"] = tracks[0]
+                        self.log(f"   ✅ Música encontrada: '{tracks[0]['title']}'")
+            except Exception as e:
+                self.log(f"   ⚠️ Error buscando música: {e}")
+
+        # 7. Cover frame injection (same as legacy path)
+        try:
+            from channel_strategy import get_cover_frame_config
+            cf_config = get_cover_frame_config()
+            if cf_config.get("enabled", False):
+                from cover_frame_generator import select_cover_text
+                cover_text = select_cover_text(
+                    topic, category,
+                    llm_suggestion=_meta_cover_text or None,
+                )
+                cf_duration = float(cf_config.get("duration_seconds", 0.7))
+                cover_segment = {
+                    "start": 0.0,
+                    "end": cf_duration,
+                    "text": "",
+                    "narration_text": "",
+                    "visual_prompt": f"Cinematic dark vertical cover frame for: {topic}",
+                    "sfx_tag": "none",
+                    "overlay_tag": "none",
+                    "assigned_filename": "cover_frame",
+                    "cover_frame": True,
+                    "cover_text": cover_text,
+                }
+                segments = result.get("segments", [])
+                for seg in segments:
+                    seg["start"] = float(seg.get("start", 0) or 0) + cf_duration
+                    seg["end"] = float(seg.get("end", 0) or 0) + cf_duration
+                segments.insert(0, cover_segment)
+                result["cover_frame"] = {"cover_text": cover_text, "duration": cf_duration}
+                self.log(f"   [Cover Frame] Inserted: '{cover_text}' ({cf_duration}s)")
+        except ImportError:
+            pass
+
+        self.log("✅ STORYBOARD ESTRUCTURADO COMPLETADO (JSON unificado)")
+        return result
+
+    def _generate_long_structured(
+        self,
+        topic: str,
+        category: str,
+        platform: str,
+        duration_target: int,
+        voice_id: Optional[str],
+        language: str,
+        research_context: list,
+        find_auto_music: bool,
+        style: str,
+        rate: str,
+    ) -> Optional[Dict]:
+        """Generate a long-form storyboard via batched JSON (same prompt quality as manual).
+
+        Flow:
+          1. generate_scenes_json_batched() → script via Groq → batch-convert to JSON scenes
+          2. process_manual_json() → TTS + timing (no Whisper)
+          3. Music search + retention gate
+
+        Falls back to None so caller can retry with legacy path.
+        """
+        self.log("   🎯 Modo JSON batched para video largo (prompt unificado)")
+
+        # 1. Generate JSON scenes via batched approach
+        json_data = self.generate_scenes_json_batched(
+            topic=topic,
+            category=category,
+            duration=duration_target,
+            language=language,
+            research_context=research_context or None,
+            video_format="16:9",
+            platform=platform,
+        )
+        if not json_data or not json_data.get("scenes"):
+            self.log("   ⚠️ generate_scenes_json_batched no produjo escenas")
+            return None
+
+        scenes = json_data["scenes"]
+        self.log(f"   ✅ JSON batched: {len(scenes)} escenas, título: {json_data.get('title', '?')[:60]}")
+
+        # 2. Process through manual-JSON pipeline (TTS + word-ratio timing)
+        result = self.process_manual_json(
+            json_data,
+            voice_id=voice_id,
+            language=language,
+            rate=rate,
+            max_duration=0,  # no limit for long videos
+        )
+        if not result:
+            self.log("   ⚠️ process_manual_json falló — fallback al flujo clásico")
+            return None
+
+        # 3. Enrich result
+        result["topic"] = json_data.get("title", topic)
+        result["category"] = category
+        result["generation_profile"] = "long_structured"
+        result["duration_target"] = duration_target
+
+        # 4. Retention gate (for long horizontal)
+        intro_score = self._estimate_long_intro_quality_score(result.get("segments", []))
+        result["retention_intro_score"] = intro_score
+        self.log(f"📈 Gate retención (0-60s) estimado: {intro_score}/100")
+
+        # 5. Music search
+        if find_auto_music and JAMENDO_AVAILABLE:
+            self.log("🎵 Buscando música de fondo...")
+            try:
+                cat, sent = analyze_narration(result.get("script", ""))
+                if not cat:
+                    cat = category
+                    sent = -0.5 if category in ["Misterios", "Paranormal", "Conspiraciones"] else 0.5
+                if cat:
+                    tags = map_ai_to_jamendo_tags(cat, sent)
+                    if "Cinematic" in style:
+                        tags.append("cinematic")
+                    tracks = search_jamendo_api(tags, self.jamendo_client_id, limit=1)
+                    if tracks:
+                        result["music_data"] = tracks[0]
+                        self.log(f"   ✅ Música encontrada: '{tracks[0]['title']}'")
+            except Exception as e:
+                self.log(f"   ⚠️ Error buscando música: {e}")
+
+        self.log("✅ STORYBOARD LARGO ESTRUCTURADO COMPLETADO (JSON batched)")
+        return result
+
+    def generate_scenes_json_batched(self, topic, category, duration, language='es',
+                                     research_context=None, video_format=None, platform=None,
+                                     progress_callback=None):
+        """
+        Genera el JSON completo de escenas usando llamadas batch a Groq para evitar
+        el límite de tokens de salida (~12 000 tokens).
+
+        Flujo:
+          1. Genera el guion narrativo completo (texto plano) con el LLM.
+          2. Divide el guion en grupos de ~BATCH_WORDS palabras.
+          3. Por cada grupo llama al LLM pidiéndole JSON de escenas para ese fragmento.
+          4. Concatena todas las escenas y devuelve el dict completo.
+
+        Returns:
+            dict  { "title": ..., "scenes": [...] }  o None si falla.
+        """
+        import json as _json
+        import re as _re
+
+        BATCH_WORDS = 300   # palabras por batch → ~40-50 escenas de ~6-8 palabras c/u
+        # Bumped from 6000 → 12000: visual_prompts now follow the 7-element CALIDAD
+        # CINEMATOGRAFICA rule and are ~80 words each (vs ~30 before). For ~50 scenes
+        # per batch that's ~4000 narration words + ~4000 visual_prompt words → can easily
+        # exceed 6000 output tokens, causing JSON truncation and parsing failure.
+        MAX_TOKENS_PER_BATCH = 12000
+
+        log = self.log
+        log("=" * 70)
+        log(f"  GENERANDO JSON DE ESCENAS (batch) — {duration}s, {language.upper()}")
+        log("=" * 70)
+
+        if not self.gemini_client:
+            log("  Error: cliente LLM no disponible.")
+            return None
+
+        # --- 1. Generar guion narrativo ---
+        log("  Paso 1/3: generando guion narrativo...")
+        try:
+            duration_int = int(duration)
+        except Exception:
+            duration_int = 60
+
+        if research_context:
+            script = self.gemini_client.generate_video_script_with_research(
+                topic, category, duration_int, research_context,
+                language=language,
+                narrative_profile="long_horizontal" if duration_int >= 600 else None
+            )
+        else:
+            script = self.gemini_client.generate_video_script(
+                topic, category, duration_int,
+                language=language,
+                narrative_profile="long_horizontal" if duration_int >= 600 else None
+            )
+
+        if not script or (isinstance(script, str) and script.startswith("ERROR")):
+            log(f"  Error generando guion: {str(script)[:120]}")
+            return None
+
+        words = script.split()
+        log(f"  Guion generado: {len(words)} palabras.")
+
+        # Extraer título tentativo (primera oración / primeras 12 palabras)
+        first_sentence = script.split('.')[0].strip()
+        tentative_title = ' '.join(first_sentence.split()[:12]) if first_sentence else topic
+
+        # --- 2. Dividir en batches ---
+        batches = []
+        for start in range(0, len(words), BATCH_WORDS):
+            chunk = ' '.join(words[start:start + BATCH_WORDS])
+            batches.append(chunk)
+
+        log(f"  Paso 2/3: {len(batches)} batches de ~{BATCH_WORDS} palabras cada uno.")
+
+        # --- 3. Convertir cada batch a JSON de escenas ---
+        lang_label = "español" if language == 'es' else "English"
+        all_scenes = []
+        title_from_llm = tentative_title
+
+        # Tone profile drives header, visual guide, and anti-invention rules per batch.
+        tone_profile = self._get_tone_profile_for_category(category)
+        tone_header = self._build_tone_header(tone_profile)
+        visual_guide = self._build_visual_guide_for_profile(tone_profile)
+
+        for idx, chunk_text in enumerate(batches):
+            batch_num = idx + 1
+            log(f"  Batch {batch_num}/{len(batches)}...")
+            if progress_callback:
+                progress_callback(batch_num, len(batches))
+
+            # Cuántas escenas para este chunk
+            batch_word_count = len(chunk_text.split())
+            scenes_in_batch = max(3, int(batch_word_count / 6))
+
+            # Contexto anterior para continuidad
+            prev_context = ""
+            if all_scenes:
+                last_scene = all_scenes[-1]
+                prev_context = (
+                    f"\nCONTINUACIÓN: las escenas anteriores terminaron con: "
+                    f"\"{last_scene.get('narration', '')[-200:]}\"\n"
+                    f"Mantén la continuidad narrativa y visual.\n"
+                )
+
+            title_instruction = (
+                f"Esta es la primera parte del video — incluye un campo 'title' con el título del video en {lang_label}."
+                if idx == 0 else "NO incluyas campo 'title'."
+            )
+            response_format = (
+                'Responde con JSON así: {"title": "...", "scenes": [...]}'
+                if idx == 0 else
+                "Responde SOLO con un array JSON de escenas: [{...}, ...]"
+            )
+            words_per_scene = batch_word_count // scenes_in_batch
+
+            batch_prompt = f"""{tone_header}
+Tarea: convierte este fragmento de guion en escenas JSON, conservando el contenido del guion (sin omitir ni inventar texto narrativo).
+
+TEMA DEL VIDEO: "{topic}"
+CATEGORÍA: {category}
+PERFIL DE TONO: {tone_profile}
+IDIOMA DE NARRACIÓN: {lang_label}
+{prev_context}
+FRAGMENTO DE GUION A CONVERTIR:
+{chunk_text}
+
+Genera exactamente {scenes_in_batch} escenas JSON para este fragmento.
+{title_instruction}
+
+REGLAS DE CONVERSIÓN:
+1. Cada escena cubre una porción del fragmento — NO omitas, NO añadas contenido nuevo, NO inventes hechos. Solo divide el guion en escenas.
+2. narration: el texto de narración en {lang_label}, ~{words_per_scene} palabras.
+3. visual_prompt: descripción visual cinematográfica EN INGLÉS (ver REGLA VISUAL más abajo). Finaliza con "no text, no writing, no signs, no captions, no watermarks".
+4. sfx_tag: efecto de sonido en inglés o "none".
+5. overlay_tag: GIF/sticker en inglés o "none".
+
+REGLA VISUAL HISTÓRICA / TEMPORAL:
+- Cada visual_prompt debe incluir explícitamente la época/lugar en inglés (ej: "set in 3rd century BCE Carthage" o "set in Cold War Tehran, 1976").
+- No mezcles épocas: ropa, armas, arquitectura y objetos deben corresponder a la época del tema.
+- Prohíbe anacronismos visibles: smartphones, autos modernos, plástico, pantallas LED, señalética moderna.
+- CONSISTENCIA: los visual_prompt deben ser coherentes entre sí y con los batches anteriores. No cambies estilo visual, indumentaria, raza de personajes ni arquitectura entre escenas sin que la narrativa lo justifique.
+
+REGLA VISUAL — CALIDAD CINEMATOGRAFICA (OBLIGATORIO):
+Cada visual_prompt debe incorporar EXPLICITAMENTE estos 7 elementos en inglés:
+  1. SUJETO PRINCIPAL + acción (ej: "Hannibal Barca on horseback surveying the battlefield"). Evita escenas vacías.
+  2. AMBIENTE + ÉPOCA (ej: "set in 3rd century BCE, plains of Cannae southern Italy at dawn").
+  3. ENCUADRE: "wide establishing shot", "medium shot", "close-up", "low-angle shot", "over-the-shoulder". Varía entre escenas.
+  4. ILUMINACION específica: "chiaroscuro side lighting from a single torch", "golden-hour rim light", "moonlit with volumetric god rays", "candlelit interior with deep shadows" — NO solo "dramatic lighting".
+  5. PALETA + MOOD: paleta cromática + 1-2 palabras de mood ("muted earth tones, foreboding").
+  6. CALIDAD FOTOGRAFICA: "shot on 35mm film", "shallow depth of field", "Roger Deakins cinematography", "documentary photography style", "atmospheric haze with floating dust particles". NO uses "8k" ni "hyperrealistic".
+  7. ANTI-ARTEFACTO: incluye "natural anatomy, realistic proportions, coherent hands and faces" en escenas con personas visibles.
+
+{visual_guide}
+
+REGLA ANTI-INVENCION:
+- NO añadas elementos visuales que NO estén en el fragmento de guion (no inventes maldiciones, halos sobrenaturales, OVNIs ni símbolos esotéricos si no aparecen en el texto).
+- Para perfil "documentary" y "dramatic_factual": NUNCA inyectes elementos paranormales/fantasy/CGI cartoon en los visual_prompt, aunque el texto narrativo sea ambiguo.
+- Para perfil "mystery": ambigüedad visual permitida (sombras, niebla, contraluz), pero sin derivar a fantasy art.
+
+CERO TEXTO EN IMÁGENES:
+- PROHIBIDO texto visible en visual_prompt. Sin letreros, carteles, inscripciones, subtítulos, logos, UI, números ni letras.
+- SIEMPRE termina cada visual_prompt con: "no text, no writing, no signs, no captions, no watermarks"
+
+{response_format}
+Sin explicaciones antes ni después. Solo JSON válido."""
+
+            raw = self._call_llm_generate(batch_prompt, max_tokens=MAX_TOKENS_PER_BATCH)
+            if not raw:
+                log(f"  Batch {batch_num}: LLM no respondió, saltando.")
+                # fallback: crear escenas mínimas con el texto
+                chunk_words_list = chunk_text.split()
+                chunk_per = max(1, len(chunk_words_list) // scenes_in_batch)
+                for si in range(scenes_in_batch):
+                    narr = ' '.join(chunk_words_list[si*chunk_per:(si+1)*chunk_per])
+                    if narr:
+                        all_scenes.append({
+                            "narration": narr,
+                            "visual_prompt": f"cinematic shot related to {topic}, dramatic lighting, no text, no writing, no signs, no captions, no watermarks",
+                            "sfx_tag": "none",
+                            "overlay_tag": "none",
+                        })
+                continue
+
+            # Parsear JSON de la respuesta (tolerante a varios defectos comunes del LLM)
+            parsed_scenes = None
+            parsed_title = None
+            clean = raw.strip()
+
+            # Intentar extraer bloque de código markdown
+            md = _re.search(r'```(?:json)?\s*([\s\S]*?)```', clean)
+            if md:
+                clean = md.group(1).strip()
+
+            # Strip trailing commas before `]` or `}` — common LLM mistake that breaks json.loads.
+            def _strip_trailing_commas(s: str) -> str:
+                return _re.sub(r',\s*(?=[}\]])', '', s)
+
+            # Use raw_decode so a valid JSON object/array followed by trailing garbage
+            # (e.g. extra prose, a second object glued on, partial closing bracket) still parses.
+            decoder = _json.JSONDecoder()
+
+            def _try_parse_at(text: str, start_pos: int):
+                """Return (parsed_value, end_pos) or (None, None) on failure."""
+                try:
+                    return decoder.raw_decode(text[start_pos:])
+                except _json.JSONDecodeError:
+                    return None, None
+
+            def _try_parse_with_repairs(text: str, start_pos: int):
+                """Try parsing as-is, then with trailing-comma repair."""
+                value, _end = _try_parse_at(text, start_pos)
+                if value is not None:
+                    return value
+                # Repair pass: strip trailing commas from the substring starting at start_pos.
+                repaired = _strip_trailing_commas(text[start_pos:])
+                try:
+                    return decoder.raw_decode(repaired)[0]
+                except _json.JSONDecodeError:
+                    return None
+
+            # Caso: objeto con title + scenes (primer batch)
+            if idx == 0:
+                for m in _re.finditer(r'\{', clean):
+                    obj = _try_parse_with_repairs(clean, m.start())
+                    if isinstance(obj, dict) and 'scenes' in obj:
+                        parsed_scenes = obj['scenes']
+                        parsed_title = obj.get('title', tentative_title)
+                        break
+
+            # Caso: array de escenas (o fallback para primer batch)
+            if parsed_scenes is None:
+                for m in _re.finditer(r'\[', clean):
+                    arr = _try_parse_with_repairs(clean, m.start())
+                    if isinstance(arr, list) and arr:
+                        parsed_scenes = arr
+                        break
+
+            # Final salvage: if the JSON is truncated mid-array (max_tokens hit),
+            # try to extract as many complete scene objects as possible.
+            if parsed_scenes is None:
+                salvaged = []
+                # Greedy match of balanced {...} objects with a "narration" field
+                for obj_match in _re.finditer(r'\{[^{}]*"narration"[^{}]*"visual_prompt"[^{}]*\}', clean, _re.DOTALL):
+                    try:
+                        candidate = _strip_trailing_commas(obj_match.group(0))
+                        scene = _json.loads(candidate)
+                        if isinstance(scene, dict) and scene.get('narration'):
+                            salvaged.append(scene)
+                    except _json.JSONDecodeError:
+                        continue
+                if salvaged:
+                    log(f"  Batch {batch_num}: JSON truncado, rescatadas {len(salvaged)} escenas completas.")
+                    parsed_scenes = salvaged
+
+            if parsed_scenes:
+                if parsed_title and idx == 0:
+                    title_from_llm = parsed_title
+                valid = [s for s in parsed_scenes
+                         if isinstance(s, dict) and s.get('narration')]
+                all_scenes.extend(valid)
+                log(f"  Batch {batch_num}: {len(valid)} escenas añadidas (total: {len(all_scenes)}).")
+            else:
+                log(f"  Batch {batch_num}: no se pudo parsear JSON. Raw: {raw[:200]}")
+
+        if not all_scenes:
+            log("  No se generaron escenas válidas.")
+            return None
+
+        result = {"title": title_from_llm, "scenes": all_scenes}
+        log(f"  JSON completo: {len(all_scenes)} escenas, título: {title_from_llm[:60]}")
+        return result
+
+    def process_manual_json(self, json_data, voice_id=None, language='es', rate="+0%",
+                            max_duration: float = 0):
+        """
+        Procesa el JSON manual: genera UN audio completo y segmenta con Whisper.
+        Usa el mismo flujo probado que generate_storyboard_data.
+        
+        Args:
+            json_data: Diccionario con el JSON del guion manual
+            voice_id: ID de voz para TTS (opcional)
+            language: Idioma ('es' o 'en')
+            rate: Velocidad de habla Edge-TTS, ej: '+0%', '+30%'
+            max_duration: Duración máxima en segundos (0 = sin límite). Para shorts 9:16, usar 180.
+        
+        Returns:
+            Diccionario con storyboard o None si falla
+        """
+        self.log("\n" + "="*70)
+        self.log(" PROCESANDO JSON MANUAL...")
+        self.log("="*70)
+
+        if 'scenes' not in json_data:
+            self.log(" Error: El JSON no contiene la clave 'scenes'")
+            return None
+        
+        scenes = json_data['scenes']
+        total_scenes = len(scenes)
+        self.log(f" JSON contiene {total_scenes} escenas")
+        
+        # 1. Combinar todas las narraciones en un guión completo
+        full_script = ""
+        scene_metadata = []
+        for i, scene in enumerate(scenes):
+            text = scene.get('narration', '').strip()
+            if not text:
+                continue
+            full_script += text + " "
+            scene_metadata.append({
+                'index': i,
+                'text': text,
+                'word_count': len(text.split()),
+                'visual_prompt': scene.get('visual_prompt', 'Cinematic mysterious shot, dark atmosphere, 8k quality'),
+                'sfx_tag': scene.get('sfx_tag', 'none'),
+                'overlay_tag': scene.get('overlay_tag', 'none'),
+            })
+        
+        full_script = full_script.strip()
+        total_words = len(full_script.split())
+        self.log(f" Guión combinado: {total_words} palabras de {len(scene_metadata)} escenas")
+        
+        if not full_script:
+            self.log(" Error: No se encontró narración en las escenas")
+            return None
+        
+        # 2. Generar UN solo audio TTS (mismo método que flujo normal)
+        self.log(f"️ Generando narración completa ({language})...")
+        audio_filename = f"manual_{int(time.time())}.mp3"
+        audio_path_str = str(VideoConfig.AUDIO_DIR / audio_filename)
+        
+        audio_path = self.tts.generate_narration(
+            full_script, audio_path_str, voice_id, language=language, rate=rate
+        )
+        
+        if not audio_path:
+            self.log(" Error al generar audio.")
+            return None
+        self.log(f"    Audio guardado: {audio_path}")
+
+        # 2.5. Auto-velocidad si hay límite de duración (ej: 180s para Shorts 9:16)
+        if max_duration > 0:
+            audio_path, speed_factor = self._enforce_max_audio_duration(audio_path, max_duration)
+            if speed_factor > 1.0:
+                self.log(f"    Narración acelerada ×{speed_factor:.2f} para encajar en {max_duration:.0f}s")
+
+        # 3. Calcular duración total del audio y distribuir tiempos por escena
+        #    Para JSON manual intentamos medir cada escena con la voz real.
+        #    Si no es seguro o falla, caemos a una distribución por palabras.
+        self.log("️ Calculando tiempos por escena...")
+        total_duration = self._measure_audio_duration_seconds(str(audio_path))
+        if total_duration <= 0:
+            total_duration = total_words / 2.5  # ~2.5 palabras/segundo
+        
+        self.log(f"   ️ Duración total del audio: {total_duration:.1f}s")
+
+        timing_source = 'word_ratio'
+        scene_durations = self._estimate_scene_durations_with_selected_tts(
+            scene_metadata,
+            voice_id=voice_id,
+            language=language,
+            rate=rate
+        )
+
+        if scene_durations and len(scene_durations) == len(scene_metadata):
+            raw_scene_total = sum(scene_durations)
+            scene_durations = self._normalize_scene_durations(scene_durations, total_duration)
+            timing_source = 'tts_scene_estimate'
+            if raw_scene_total > 0:
+                self.log(
+                    f"    Tiempos por escena ajustados: {raw_scene_total:.1f}s medidos "
+                    f" {total_duration:.1f}s finales"
+                )
+        else:
+            self.log("   ℹ️ Usando distribución por palabras como fallback de timing.")
+            scene_durations = []
+            for meta in scene_metadata:
+                word_ratio = meta['word_count'] / total_words if total_words > 0 else 1.0 / len(scene_metadata)
+                scene_durations.append(total_duration * word_ratio)
+            scene_durations = self._normalize_scene_durations(scene_durations, total_duration)
+
+        segments = self._build_segments_from_scene_metadata(
+            scene_metadata,
+            scene_durations,
+            total_duration=total_duration,
+            timing_source=timing_source
+        )
+        
+        self.log(f" Storyboard manual listo: {len(segments)} segmentos")
+        
+        return {
+            "topic": json_data.get('title', 'Video Manual'),
+            "category": "Manual",
+            "script": full_script,
+            "audio_path": str(audio_path),
+            "segments": segments,
+            "music_data": None,
+            "voice_id": voice_id,
+            "language": language,
+            "segment_timing_source": timing_source
+        }
+    
+    def generate_storyboard_data(self, topic: str, category: str, platform: str = 'youtube',
+                                 custom_duration: Optional[int] = None,
+                                 voice_id: Optional[str] = None,
+                                 find_auto_music: bool = True,
+                                 style: str = "Estilo Realista / Cinematográfico",
+                                 language: str = 'es',
+                                 pre_research_snippets: list = None,
+                                 rate: str = "+0%"):
+        """
+        PASO 1: Genera todos los datos de pre-producción (guion, audio, prompts).
+        
+        Args:
+            topic: Tema del video
+            category: CategorÃ­a del video
+            platform: Plataforma objetivo ('youtube', 'tiktok', etc.)
+            custom_duration: DuraciÃ³n personalizada en segundos (opcional)
+            voice_id: ID de voz para TTS (opcional)
+            find_auto_music: Si buscar mÃºsica automÃ¡ticamente
+            style: Estilo visual
+            language: Idioma ('es' o 'en')
+            pre_research_snippets: Lista de snippets de investigaciÃ³n pre-seleccionados por el usuario (opcional)
+        
+        Returns:
+            Diccionario con storyboard o None si falla
+        """
+        self.log("\n" + "="*70)
+        self.log(f"ðŸŽ¬ INICIANDO PASO 1: GENERACIÃ“N DE STORYBOARD (Idioma: {language.upper()})")
+        self.log("="*70)
+        
+        if not self.gemini_client:
+            self.log("âŒ Error CrÃ­tico: Cliente Groq no disponible.")
+            return None
+        
+        # --- 1. Determinar DuraciÃ³n y Perfil ---
+        profile_info = self._resolve_duration_and_profile(platform, custom_duration)
+        duration_target = profile_info["duration_target"]
+        generation_profile = profile_info["profile"]
+        retention_targets = profile_info["retention_targets"]
+        self.log(f"â³ DuraciÃ³n objetivo: {duration_target}s")
+        if generation_profile == "long_horizontal":
+            self.log(" Perfil activo: long_horizontal (retención para video largo horizontal)")
+            if custom_duration and not (1800 <= int(custom_duration) <= 2700):
+                self.log("   â„¹ï¸ Recomendación: usar entre 1800s y 2700s para este perfil")
+        
+        # --- 2. Generar Guion con Gemini (Basado en InvestigaciÃ³n) ---
+        self.log(f"ðŸ§  Generando guion ({language})...")
+        
+        research_context = []
+        
+        # Usar snippets pre-seleccionados por el usuario si existen
+        if pre_research_snippets and len(pre_research_snippets) > 0:
+            self.log(f"    Usando {len(pre_research_snippets)} fuentes de investigación seleccionadas por el usuario")
+            research_context = list(pre_research_snippets)
+        
+        # Si no hay snippets pre-seleccionados, buscar automáticamente
+        # Opción 1: Wikipedia + DuckDuckGo (gratis, sin API key)
+        elif RESEARCH_SEARCH_AVAILABLE:
+            self.log("    Investigando en Wikipedia + DuckDuckGo...")
+            try:
+                research_results = search_research_context(
+                    topic, category=category, language=language, max_results=8
+                )
+                for result in research_results:
+                    title = ""
+                    snippet = ""
+                    source_url = ""
+                    if "Título:" in result:
+                        title = result.split("Título:")[1].split("\n")[0].strip()
+                    if "Snippet:" in result:
+                        snippet = result.split("Snippet:")[1].split("\n")[0].strip()
+                    if "URL:" in result:
+                        source_url = result.split("URL:")[1].split("\n")[0].strip()
+
+                    if snippet:
+                        context_line = snippet
+                        if title:
+                            context_line = f"{title}. {context_line}"
+                        if source_url:
+                            context_line = f"{context_line} (Fuente: {source_url})"
+                        research_context.append(context_line)
+            except Exception as e:
+                self.log(f"   ️ Error en búsqueda Wikipedia/DDG: {e}")
+        
+        # Opcion 2: Google Search si Wikipedia/DDG no aportaron contexto.
+        if not research_context and GOOGLE_SEARCH_AVAILABLE:
+            self.log("    Sin resultados de Wikipedia/DDG; investigando en Google...")
+            try:
+                google_results = search_google_trends(f"{topic} {category}", max_results=8)
+                for result in google_results[:6]:
+                    title = ""
+                    snippet = ""
+                    source_url = ""
+                    if "Título:" in result:
+                        title = result.split("Título:")[1].split("\n")[0].strip()
+                    if "Snippet:" in result:
+                        snippet = result.split("Snippet:")[1].split("\n")[0].strip()
+                    if "URL:" in result:
+                        source_url = result.split("URL:")[1].split("\n")[0].strip()
+
+                    if snippet:
+                        context_line = snippet
+                        if title:
+                            context_line = f"{title}. {context_line}"
+                        if source_url:
+                            context_line = f"{context_line} (Fuente: {source_url})"
+                        research_context.append(context_line)
+            except Exception as e:
+                self.log(f"   ️ Error en búsqueda Google: {e}")
+            
+        # --- 2a. FLUJO JSON ESTRUCTURADO (shorts y largos) ---
+        # Genera JSON con escenas + visual_prompt inline.
+        # Elimina Whisper y las llamadas separadas de visual prompt.
+        # Fallback al flujo clásico si falla.
+        if self._is_short_form_platform(platform):
+            structured_result = self._generate_short_structured(
+                topic=topic,
+                category=category,
+                platform=platform,
+                duration_target=duration_target,
+                voice_id=voice_id,
+                language=language,
+                research_context=research_context,
+                find_auto_music=find_auto_music,
+                rate=rate,
+            )
+            if structured_result:
+                return structured_result
+            self.log("   ⚠️ Flujo JSON estructurado (short) falló — usando flujo clásico como fallback")
+        else:
+            # Long-form: usar flujo batched (script → batches → JSON scenes)
+            structured_result = self._generate_long_structured(
+                topic=topic,
+                category=category,
+                platform=platform,
+                duration_target=duration_target,
+                voice_id=voice_id,
+                language=language,
+                research_context=research_context,
+                find_auto_music=find_auto_music,
+                style=style,
+                rate=rate,
+            )
+            if structured_result:
+                return structured_result
+            self.log("   ⚠️ Flujo JSON batched (largo) falló — usando flujo clásico como fallback")
+
+        # --- 2b. Flujo clásico (fallback): texto plano → TTS → Whisper → visual prompts ---
+        if research_context:
+            script = self.gemini_client.generate_video_script_with_research(
+                topic,
+                category,
+                duration_target,
+                research_context,
+                language=language,
+                narrative_profile=generation_profile
+            )
+        else:
+            script = self.gemini_client.generate_video_script(
+                topic,
+                category,
+                duration_target,
+                language=language,
+                narrative_profile=generation_profile
+            )
+
+        if not script or script.startswith("ERROR"):
+            if script == "ERROR_QUOTA_EXCEEDED":
+                error_msg = "Error generando guion: Groq no disponible o sin respuesta vÃ¡lida"
+                self.log(f"âŒ {error_msg}")
+                self.log("   ðŸ’¡ Verifica GROQ_API_KEY o intenta nuevamente en unos minutos")
+                self.log("   ðŸ’¡ Las cuotas se repondrÃ¡n automÃ¡ticamente. Intenta mÃ¡s tarde.")
+                raise Exception(error_msg)
+            elif script:
+                self.log(f"âŒ Error de Groq: {script}")
+            else:
+                self.log("âŒ Error de Groq: No se pudo generar el guion")
+            return None
+        self.log(f"   ðŸ“œ Guion generado ({len(script.split())} palabras)")
+
+        # --- 2.5. Revisión IA + limpieza final del guion ---
+        self.log("ðŸ§ª Revisando guion con IA para corregir artefactos y ortografía...")
+        reviewed_script = self._review_script_with_ai(
+            script,
+            topic=topic,
+            category=category,
+            language=language,
+            duration_target=duration_target
+        )
+        if reviewed_script and reviewed_script != script:
+            self.log(
+                f"   âœ… Guion corregido automÃ¡ticamente ({len(script.split())} â†’ {len(reviewed_script.split())} palabras)"
+            )
+            script = reviewed_script
+        else:
+            script = self._sanitize_script_text(script, language=language)
+            self.log("   â„¹ï¸ Revisión IA no aplicó cambios relevantes; se usa limpieza local.")
+
+        # --- 3. Generar Audio (Voz) ---
+        self.log(f"ðŸŽ™ï¸ Generando narraciÃ³n ({language})...")
+        # Abortar si el guion sigue siendo críticamente corto tras la revisión.
+        # Mínimo: 40% de las palabras objetivo (150 palabras/min).
+        _min_words_required = max(40, int((duration_target / 60) * 150 * 0.4))
+        if len(script.split()) < _min_words_required:
+            self.log(
+                f"   ❌ Guion insuficiente ({len(script.split())} palabras) para el objetivo "
+                f"de {duration_target}s (mínimo ~{_min_words_required} palabras). "
+                f"El modelo no generó contenido suficiente. Intenta de nuevo."
+            )
+            return None
+
+        audio_filename = f"auto_{int(time.time())}.mp3"
+        audio_path_str = str(VideoConfig.AUDIO_DIR / audio_filename)
+
+        # Pasamos el idioma al generador de voz
+        audio_path = self.tts.generate_narration(
+            script, 
+            audio_path_str, 
+            voice_id, 
+            language=language,
+            rate=rate
+        )
+        
+        if not audio_path:
+            self.log("âŒ Error al generar audio.")
+            return None
+        self.log(f"   ðŸŽµ Audio guardado: {audio_path}")
+
+        # --- 3.5. Auto-velocidad para Shorts (9:16) ---
+        if self._is_short_form_platform(platform):
+            max_short_seconds = 180.0
+            audio_path, speed_factor = self._enforce_max_audio_duration(audio_path, max_short_seconds)
+            if speed_factor > 1.0:
+                self.log(f"    Narración acelerada ×{speed_factor:.2f} para formato vertical corto")
+
+        # --- 3.6. Validación de duración con channel strategy ---
+        if self._is_short_form_platform(platform):
+            try:
+                from channel_strategy import validate_duration as _validate_dur
+                _measured = self._measure_audio_duration_seconds(str(audio_path))
+                if _measured > 0:
+                    _ok, _msg = _validate_dur(_measured)
+                    self.log(f"   {_msg}")
+                    # Abortar si el audio es críticamente corto (< 35% del objetivo)
+                    if "WARNING" in _msg and _measured < duration_target * 0.35:
+                        self.log(
+                            f"   ❌ Audio demasiado corto ({_measured:.1f}s vs objetivo {duration_target}s). "
+                            f"El fallback clásico no generó suficiente contenido. Intenta de nuevo."
+                        )
+                        return None
+            except ImportError:
+                pass
+
+        # --- 4. Generar Segmentos (Whisper) ---
+        self.log(f"ðŸŽ¤ Transcribiendo para obtener tiempos...")
+        # Pasamos el idioma a Whisper para mejorar la precisiÃ³n
+        segments = self.subtitle_gen.transcribe_audio(audio_path, language=language)
+        
+        if not segments:
+            self.log("âŒ Error al transcribir audio.")
+            return None
+        self.log(f"   â±ï¸ {len(segments)} segmentos identificados.")
+        
+        # --- 4.5. Corregir Errores Comunes de TranscripciÃ³n ---
+        self.log(f"ðŸ”§ Corrigiendo errores comunes de transcripciÃ³n...")
+        try:
+            from text_correction_engine import TextCorrectionEngine
+            corrector = TextCorrectionEngine()
+            segments = corrector.correct_segments(segments)
+        except ImportError:
+            self.log("âš ï¸ Motor de correcciÃ³n no disponible, continuando sin correcciones...")
+        except Exception as e:
+            self.log(f"âš ï¸ Error en correcciÃ³n automÃ¡tica: {e}")
+
+        # --- 4.7. Sincronizar texto final de segmentos con el guion revisado ---
+        segments = self._sync_segment_texts_with_script(segments, script)
+        self.log("   âœ… Texto de segmentos sincronizado con el guion final")
+
+        # --- 4.6. Gate de Retención para largos horizontales (con reintento estricto) ---
+        if generation_profile == "long_horizontal":
+            intro_score = self._estimate_long_intro_quality_score(segments)
+            self.log(f" Gate retención (0-60s) estimado: {intro_score}/100")
+
+            if intro_score < 55:
+                self.log("️ Intro débil detectada para largo horizontal. Reintentando guion en modo estricto...")
+                retry_script = None
+                if research_context:
+                    retry_script = self.gemini_client.generate_video_script_with_research(
+                        topic,
+                        category,
+                        duration_target,
+                        research_context,
+                        language=language,
+                        narrative_profile="long_horizontal_strict"
+                    )
+                else:
+                    retry_script = self.gemini_client.generate_video_script(
+                        topic,
+                        category,
+                        duration_target,
+                        language=language,
+                        narrative_profile="long_horizontal_strict"
+                    )
+
+                if retry_script and not str(retry_script).startswith("ERROR"):
+                    retry_script = self._review_script_with_ai(
+                        retry_script,
+                        topic=topic,
+                        category=category,
+                        language=language,
+                        duration_target=duration_target
+                    )
+                    retry_audio_filename = f"auto_retry_{int(time.time())}.mp3"
+                    retry_audio_path_str = str(VideoConfig.AUDIO_DIR / retry_audio_filename)
+                    retry_audio_path = self.tts.generate_narration(
+                        retry_script,
+                        retry_audio_path_str,
+                        voice_id,
+                        language=language,
+                        rate=rate
+                    )
+                    if retry_audio_path:
+                        retry_segments = self.subtitle_gen.transcribe_audio(retry_audio_path, language=language)
+                        if retry_segments:
+                            try:
+                                from text_correction_engine import TextCorrectionEngine
+                                corrector = TextCorrectionEngine()
+                                retry_segments = corrector.correct_segments(retry_segments)
+                            except Exception:
+                                pass
+
+                            retry_segments = self._sync_segment_texts_with_script(
+                                retry_segments,
+                                retry_script
+                            )
+
+                            retry_score = self._estimate_long_intro_quality_score(retry_segments)
+                            self.log(f" Gate retención (reintento): {retry_score}/100")
+                            if retry_score >= intro_score:
+                                script = retry_script
+                                audio_path = retry_audio_path
+                                segments = retry_segments
+                                intro_score = retry_score
+                                self.log(" Reintento aplicado: mejoró o igualó la calidad de intro")
+                            else:
+                                self.log("ℹ️ Reintento descartado: no mejoró la calidad de intro")
+                        else:
+                            self.log("️ Reintento: no se pudieron transcribir segmentos")
+                    else:
+                        self.log("️ Reintento: no se pudo generar audio")
+
+        # --- 5. Generar Prompts Visuales ---
+        self.log(f"ðŸ§  Generando prompts visuales, SFX y Overlays...")
+        segments_with_prompts = []
+        visual_context = None
+        extract_visual_context = getattr(self.gemini_client, "_extract_historical_context", None)
+        if callable(extract_visual_context):
+            try:
+                visual_context = extract_visual_context(topic, script, research_context)
+                if visual_context:
+                    period = visual_context.get("time_period") or "period detected"
+                    culture = visual_context.get("cultural_context") or visual_context.get("location") or ""
+                    detail = f"{period} ({culture})" if culture else str(period)
+                    self.log(f"   Contexto visual temporal detectado: {detail}")
+            except Exception as e:
+                self.log(f"   No se pudo precalcular contexto visual temporal: {e}")
+        prompt_stride = self._resolve_prompt_stride(generation_profile, duration_target, len(segments))
+        prompt_requests = 0
+        if prompt_stride > 1:
+            estimated_requests = (len(segments) + prompt_stride - 1) // prompt_stride
+            self.log(
+                f"   ️ Modo eficiente para largo horizontal: "
+                f"{len(segments)} segmentos, 1 prompt cada {prompt_stride} segmentos "
+                f"(~{estimated_requests} llamadas IA)"
+            )
+
+        for i in range(0, len(segments), prompt_stride):
+            segment_group = segments[i:i + prompt_stride]
+            start_idx = i + 1
+            end_idx = i + len(segment_group)
+            if start_idx == end_idx:
+                self.log(f"   ... Segmento {start_idx}/{len(segments)}")
+            else:
+                self.log(f"   ... Segmentos {start_idx}-{end_idx}/{len(segments)}")
+
+            # Para largos, agrupamos texto de varios segmentos para un único prompt visual.
+            grouped_text = " ".join(
+                str(seg.get('text', '')).strip() for seg in segment_group if seg.get('text')
+            ).strip()
+            base_text = grouped_text or str(segment_group[0].get('text', '')).strip()
+            narrative_context = self._build_narrative_context(
+                segments,
+                i,
+                i + len(segment_group) - 1
+            )
+
+            # Los prompts visuales se piden siempre en inglÃ©s internamente en gemini_ai_client.
+            prompt_data = self.gemini_client.generate_prompts_for_segment(
+                base_text, category, style,
+                topic=topic,  # Tema completo del video
+                full_script=script,  # Guion completo para contexto
+                research_context=research_context,  # Contexto de investigaciÃ³n
+                narrative_context=narrative_context,
+                is_long_horizontal=(generation_profile == "long_horizontal"),
+            )
+            prompt_requests += 1
+            if not isinstance(prompt_data, dict):
+                prompt_data = {}
+
+            for offset, segment in enumerate(segment_group):
+                segment.update(prompt_data)
+                segment['assigned_filename'] = f"segment_{i + offset + 1:03d}"
+                segments_with_prompts.append(segment)
+
+        if prompt_stride > 1:
+            self.log(f"    Prompts IA generados: {prompt_requests} (antes: {len(segments)})")
+            
+        # --- 6. Encontrar MÃºsica de Fondo (Jamendo) ---
+        music_data = None
+        if find_auto_music and JAMENDO_AVAILABLE:
+            self.log("ðŸŽµ Buscando mÃºsica de fondo...")
+            try:
+                # 1. Intentar anÃ¡lisis de sentimiento profundo (Requiere Google Cloud)
+                cat, sent = analyze_narration(script)
+                
+                # 2. Fallback Inteligente: Si Google Cloud falla o no estÃ¡ config, usar la categorÃ­a del usuario
+                if not cat:
+                    self.log("   â„¹ï¸ AnÃ¡lisis de sentimiento no disponible (Google Cloud). Usando categorÃ­a base.")
+                    # Mapear categorÃ­a de la GUI a algo que entienda el recomendador
+                    cat = category  # Ej: "Historia", "Misterios"
+                    sent = -0.5 if category in ["Misterios", "Paranormal", "Conspiraciones"] else 0.5
+                
+                # 3. Buscar en Jamendo
+                if cat:
+                    tags = map_ai_to_jamendo_tags(cat, sent)
+                    # AÃ±adir tags extra segÃºn el estilo visual para afinar
+                    if "Cinematic" in style: 
+                        tags.append("cinematic")
+                    
+                    self.log(f"   ðŸ” Tags de bÃºsqueda: {', '.join(tags)}")
+                    tracks = search_jamendo_api(tags, self.jamendo_client_id, limit=1)
+                    
+                    if tracks:
+                        music_data = tracks[0]
+                        self.log(f"   âœ… MÃºsica encontrada: '{music_data['title']}'")
+                    else:
+                        self.log("   âš ï¸ No se encontraron pistas en Jamendo.")
+            except Exception as e:
+                self.log(f"   âš ï¸ Error en mÃ³dulo de mÃºsica: {e}")
+
+        # --- Cover frame injection for Shorts ---
+        cover_frame_data = None
+        if self._is_short_form_platform(platform):
+            try:
+                from channel_strategy import get_cover_frame_config
+                cf_config = get_cover_frame_config()
+                if cf_config.get("enabled", False):
+                    from cover_frame_generator import select_cover_text
+                    llm_cover_text = getattr(self.gemini_client, '_last_cover_text', None) if hasattr(self, 'gemini_client') else None
+                    if not llm_cover_text and hasattr(self, 'gemini_client') and hasattr(self.gemini_client, 'backend'):
+                        llm_cover_text = getattr(self.gemini_client.backend, '_last_cover_text', None)
+                    cover_text = select_cover_text(topic, category, llm_suggestion=llm_cover_text)
+                    cf_duration = float(cf_config.get("duration_seconds", 0.7))
+
+                    cover_segment = {
+                        "start": 0.0,
+                        "end": cf_duration,
+                        "text": "",
+                        "narration_text": "",
+                        "visual_prompt": f"Cinematic dark vertical cover frame for: {topic}",
+                        "sfx_tag": "none",
+                        "overlay_tag": "none",
+                        "assigned_filename": "cover_frame",
+                        "cover_frame": True,
+                        "cover_text": cover_text,
+                    }
+
+                    for seg in segments_with_prompts:
+                        seg["start"] = float(seg.get("start", 0) or 0) + cf_duration
+                        seg["end"] = float(seg.get("end", 0) or 0) + cf_duration
+
+                    segments_with_prompts.insert(0, cover_segment)
+                    cover_frame_data = {"cover_text": cover_text, "duration": cf_duration}
+                    self.log(f"   [Cover Frame] Inserted: '{cover_text}' ({cf_duration}s)")
+            except ImportError:
+                pass
+
+        self.log("âœ… PASO 1: STORYBOARD COMPLETADO")
+        self.log("â„¹ï¸ NOTA: Las imÃ¡genes NO se generan en este paso.")
+        self.log("   Para generar imÃ¡genes, usa el Paso 1.5 (Generar ImÃ¡genes) despuÃ©s de este.")
+        return {
+            "topic": topic,
+            "category": category,
+            "script": script,
+            "audio_path": audio_path,
+            "segments": segments_with_prompts,
+            "music_data": music_data,
+            "voice_id": voice_id,  # Guardar voice_id para uso en ensamblaje
+            "voice_rate": rate,  # Guardar rate para uso en ensamblaje/teaser
+            "generation_profile": generation_profile,
+            "duration_target": duration_target,
+            "retention_targets": retention_targets,
+            "retention_intro_score": intro_score if generation_profile == "long_horizontal" else None,
+            "language": language,
+            "visual_context": visual_context,
+            "cover_frame": cover_frame_data,
+            "script_metadata": self._extract_llm_script_metadata(),
+        }
+    
+    def generate_short_teaser_from_long_video(self, long_video_storyboard, language='es', voice_id=None,
+                                               disable_wikimedia=False, existing_teaser_storyboard=None,
+                                               rate="+0%"):
+        """
+        Genera un Short teaser (30-60 segundos) en formato vertical 9:16 a partir de un video largo.
+        El teaser incluye un hook, resumen del contenido y CTA al final.
+
+        Args:
+            long_video_storyboard: Storyboard del video largo completo
+            language: Idioma del teaser
+            voice_id: ID de voz para TTS (opcional)
+            disable_wikimedia: (OBSOLETO) ParÃ¡metro mantenido por compatibilidad - Openverse (Gratis) y Wikimedia eliminados
+            existing_teaser_storyboard: Storyboard del teaser previo (para reutilizar audio/segmentos/imÃ¡genes)
+
+        Returns:
+            dict con 'video_path', 'script', 'topic', 'category' del short teaser, o None si falla
+        """
+        self.log("\n" + "="*70)
+        self.log("ðŸŽ¬ GENERANDO SHORT TEASER (Formato Vertical 9:16)")
+        self.log("="*70)
+
+        topic = long_video_storyboard.get('topic', 'Video')
+        category = long_video_storyboard.get('category', 'General')
+        full_script = long_video_storyboard.get('script', '')
+
+        # REUTILIZACIÃ“N: Si existe un teaser previo con audio y segmentos vÃ¡lidos, reutilizarlos
+        if existing_teaser_storyboard:
+            existing_audio = existing_teaser_storyboard.get('audio_path')
+            existing_segments = existing_teaser_storyboard.get('segments', [])
+            existing_script = existing_teaser_storyboard.get('script', '')
+
+            # Verificar que el audio existe y los segmentos tienen imÃ¡genes
+            if existing_audio and os.path.exists(existing_audio) and existing_segments:
+                segments_with_images = [s for s in existing_segments if s.get('image_path') and os.path.exists(s.get('image_path', ''))]
+
+                if len(segments_with_images) == len(existing_segments):
+                    self.log("â™»ï¸ REUTILIZANDO TEASER PREVIO (audio, segmentos e imÃ¡genes)")
+                    self.log(f"   ðŸ“œ Guion: {len(existing_script.split())} palabras")
+                    self.log(f"   ðŸŽµ Audio: {existing_audio}")
+                    self.log(f"   ðŸ–¼ï¸ {len(segments_with_images)} imÃ¡genes reutilizadas")
+
+                    # Ir directamente al ensamblaje con el storyboard existente
+                    return self._assemble_existing_teaser(
+                        existing_teaser_storyboard,
+                        long_video_storyboard,
+                        disable_wikimedia
+                    )
+                else:
+                    self.log(f"   âš ï¸ Solo {len(segments_with_images)}/{len(existing_segments)} imÃ¡genes disponibles, regenerando...")
+
+        if not self.gemini_client:
+            self.log("âŒ Error: Cliente Groq no disponible para generar teaser.")
+            return None
+
+        # 1. Generar guion corto del teaser (EXTREMADAMENTE LLAMATIVO tipo trailer)
+        self.log("ðŸ§  Generando guion del teaser (TRAILER CINEMATOGRÃFICO EXTREMO)...")
+        lang_instr = "WRITE IN ENGLISH." if language == 'en' else "ESCRIBE EN ESPAÃ‘OL."
+        
+        # Obtener mÃ¡s contexto del script completo
+        script_context = full_script[:1000] if len(full_script) > 1000 else full_script
+        
+        teaser_prompt = f"""
+        Role: EXPERT TRAILER SCRIPTWRITER for YouTube Shorts.
+        Task: Create an EXTREMELY COMPELLING and CINEMATIC TRAILER script (45-60 seconds) for a longer video about "{topic}".
+        
+        Context from full video script:
+        {script_context}
+        
+        CRITICAL REQUIREMENTS FOR MAXIMUM IMPACT:
+        
+        1. HOOK (First 3-5 seconds) - MUST BE EXTREMELY GRABBING:
+           - Start with a SHOCKING question, bold statement, or intriguing mystery
+           - Use dramatic pauses and emphasis
+           - Examples: "Â¿SabÃ­as que...?", "Esto cambiarÃ¡ todo lo que creÃ­as sobre...", "La verdad oculta que nadie te ha contado..."
+           - MUST create immediate curiosity and stop-scrolling effect
+        
+        2. TRAILER NARRATIVE (20-40 seconds) - CINEMATIC BUILD-UP:
+           - Create SUSPENSE and INTRIGUE, not just a summary
+           - Use rhetorical questions: "Â¿QuÃ© pasarÃ­a si...?", "Â¿Y si te dijera que...?"
+           - Build emotional tension: "Descubre los secretos que...", "La revelaciÃ³n que cambiarÃ¡ tu perspectiva..."
+           - Highlight the MOST SHOCKING or INTERESTING points from the full video
+           - Use dramatic language: "revelaciÃ³n", "secreto oculto", "verdad impactante", "descubrimiento asombroso"
+           - Create a sense of URGENCY and EXCLUSIVITY: "Solo en el video completo...", "Lo que nadie mÃ¡s te dirÃ¡..."
+        
+        3. STRONG CALL-TO-ACTION (Last 8-12 seconds) - DIRECT INVITATION:
+           - Be VERY DIRECT and CLEAR about watching the full video
+           - Use imperative language: "Mira el video completo", "No te pierdas el video completo"
+           - Create FOMO: "Descubre toda la verdad en el video completo", "La historia completa te espera en el video principal"
+           - Include subscription invitation: "SuscrÃ­bete a Stunning Revelations para mÃ¡s contenido fascinante"
+           - End with urgency: "Haz clic en el enlace de arriba ahora", "El video completo estÃ¡ en el enlace de arriba"
+        
+        STYLE REQUIREMENTS:
+        - Language: {lang_instr}
+        - CRITICAL: ALL narration text MUST be in {'English' if language == 'en' else 'Spanish'}
+        - Do NOT mix languages. Use ONLY {'English' if language == 'en' else 'Spanish'} throughout the entire script.
+        - This applies to ALL parts: hook, build-up, and call-to-action.
+        - Total length: ~100-180 words (for 45-60 seconds of narration)
+        - Tone: DRAMATIC, CINEMATIC, MYSTERIOUS, COMPELLING
+        - Pace: Fast-paced but clear, with strategic pauses for emphasis
+        - Format: ONLY the narration text, NO intro/outro notes, NO brackets, NO stage directions
+        
+        EXAMPLE STRUCTURE (Spanish):
+        [Hook impactante] "Â¿SabÃ­as que existe un secreto oculto sobre {topic} que cambiarÃ¡ todo lo que creÃ­as?"
+        [Build-up] "En este video descubrirÃ¡s revelaciones asombrosas que nadie mÃ¡s te ha contado. La verdad detrÃ¡s de {topic} es mÃ¡s impactante de lo que imaginas. Â¿QuÃ© pasarÃ­a si te dijera que...?"
+        [CTA directo] "Mira el video completo en el enlace de arriba para descubrir toda la verdad. SuscrÃ­bete a Stunning Revelations para mÃ¡s contenido fascinante. No te pierdas esta revelaciÃ³n impactante."
+        
+        NOW CREATE THE TRAILER SCRIPT:
+        """
+        
+        teaser_script = self.gemini_client._generate(teaser_prompt)
+        
+        # Verificar si la generaciÃ³n fue exitosa
+        if not teaser_script:
+            self.log("âŒ Error generando guion del teaser: Groq no devolviÃ³ contenido")
+            self.log("   ðŸ’¡ Verifica que GROQ_API_KEY estÃ© configurada y que Groq responda correctamente")
+            return None
+        
+        # Detectar error especÃ­fico de cuotas agotadas
+        if isinstance(teaser_script, str) and teaser_script == "ERROR_QUOTA_EXCEEDED":
+            error_msg = "Error generando guion del teaser: Groq no disponible o sin respuesta vÃ¡lida"
+            self.log(f"âŒ {error_msg}")
+            self.log("   ðŸ’¡ Verifica GROQ_API_KEY o intenta nuevamente en unos minutos")
+            self.log("   ðŸ’¡ Las cuotas se repondrÃ¡n automÃ¡ticamente. Intenta mÃ¡s tarde.")
+            raise Exception(error_msg)
+        
+        if isinstance(teaser_script, str) and teaser_script.startswith("ERROR"):
+            self.log(f"âŒ Error generando guion del teaser: {teaser_script}")
+            return None
+        
+        self.log(f"   ðŸ“œ Guion teaser generado ({len(teaser_script.split())} palabras)")
+        
+        # 2. Generar audio del teaser
+        self.log("ðŸŽ™ï¸ Generando narraciÃ³n del teaser...")
+        teaser_audio_filename = f"teaser_{int(time.time())}.mp3"
+        teaser_audio_path_str = str(VideoConfig.AUDIO_DIR / teaser_audio_filename)
+        
+        teaser_audio_path = self.tts.generate_narration(
+            teaser_script,
+            teaser_audio_path_str,
+            voice_id,
+            language=language,
+            rate=rate
+        )
+        
+        if not teaser_audio_path:
+            self.log("âŒ Error al generar audio del teaser.")
+            return None
+        self.log(f"   ðŸŽµ Audio teaser guardado: {teaser_audio_path}")
+        
+        # 3. Transcribir para obtener segmentos
+        self.log("ðŸŽ¤ Transcribiendo audio del teaser...")
+        teaser_segments = self.subtitle_gen.transcribe_audio(teaser_audio_path, language=language)
+        
+        if not teaser_segments:
+            self.log("âŒ Error al transcribir audio del teaser.")
+            return None
+        self.log(f"   â±ï¸ {len(teaser_segments)} segmentos identificados en el teaser")
+        
+        # 4. Crear segmentos visuales del teaser basados en los segmentos de audio del teaser
+        # IMPORTANTE: El teaser generarÃ¡ sus propias imÃ¡genes en formato 9:16 (576x1024)
+        # Usaremos los prompts visuales del video largo como referencia, pero generaremos imÃ¡genes nuevas
+        long_segments = long_video_storyboard.get('segments', [])
+        teaser_visual_segments = []
+
+        self.log(f"   ðŸ–¼ï¸ Se generarÃ¡n nuevas imÃ¡genes en formato vertical 9:16 para el teaser")
+
+        # Mapear cada segmento de audio del teaser a un prompt visual del video largo
+        for i, teaser_audio_seg in enumerate(teaser_segments):
+            # Buscar el segmento visual del video largo mÃ¡s apropiado para obtener el prompt
+            # Usar el Ã­ndice correspondiente o el primero si no hay suficientes
+            long_seg_idx = min(i, len(long_segments) - 1) if long_segments else 0
+            long_seg = long_segments[long_seg_idx] if long_segments else {}
+
+            # Crear segmento visual para el teaser
+            # NO reutilizar imÃ¡genes del video largo - se generarÃ¡n nuevas en formato 9:16
+            teaser_visual_seg = {
+                'start': teaser_audio_seg['start'],
+                'end': teaser_audio_seg['end'],
+                'text': teaser_audio_seg['text'],
+                'visual_prompt': long_seg.get('visual_prompt', 'dramatic scene, cinematic lighting'),
+                'sfx_tag': long_seg.get('sfx_tag', 'none'),
+                'overlay_tag': long_seg.get('overlay_tag', 'none'),
+                'assigned_filename': f"teaser_seg_{i+1:03d}",
+                'image_path': None,  # Se generarÃ¡ nueva imagen en formato 9:16
+                'image_source': None  # Se determinarÃ¡ al generar
+            }
+
+            teaser_visual_segments.append(teaser_visual_seg)
+        
+        # 5. Generar prompts visuales EXTREMADAMENTE LLAMATIVOS para el teaser
+        self.log("ðŸ§  Generando prompts visuales CINEMATOGRÃFICOS para el teaser...")
+        style = "Estilo Realista / CinematogrÃ¡fico"  # Usar estilo por defecto
+        
+        for i, seg in enumerate(teaser_visual_segments):
+            # Mejorar prompts visuales para que sean mÃ¡s llamativos y tipo trailer
+            existing_prompt = seg.get('visual_prompt', '')
+            
+            if not existing_prompt or len(existing_prompt) < 50:
+                # Generar nuevo prompt mejorado con contexto global
+                # Obtener el guion completo del video largo si estÃ¡ disponible
+                full_script = long_video_storyboard.get('script', '') if long_video_storyboard else None
+                narrative_context = self._build_narrative_context(teaser_visual_segments, i, i)
+                prompt_data = self.gemini_client.generate_prompts_for_segment(
+                    seg.get('text', ''), category, style,
+                    topic=topic,  # Tema completo del video
+                    full_script=full_script,  # Guion completo para contexto
+                    research_context=None,  # No hay investigaciÃ³n para teaser
+                    narrative_context=narrative_context,
+                    is_long_horizontal=False,  # teaser es 9:16 vertical
+                )
+                seg.update(prompt_data)
+            
+            # Mejorar el prompt existente para hacerlo mÃ¡s cinematogrÃ¡fico y llamativo
+            current_prompt = seg.get('visual_prompt', '')
+            if current_prompt:
+                # AÃ±adir elementos cinematogrÃ¡ficos tipo trailer
+                enhanced_prompt = f"{current_prompt}, dramatic cinematic lighting, intense atmosphere, movie trailer style, high contrast, epic composition, professional film photography, captivating visual, attention-grabbing, stunning visuals"
+                seg['visual_prompt'] = enhanced_prompt
+        
+        # 6. Ensamblar el short teaser (formato vertical 9:16)
+        self.log("ðŸŽ¬ Ensamblando short teaser (formato vertical 9:16)...")
+
+        # Asegurar que los subtÃ­tulos dinÃ¡micos estÃ©n activos para el teaser
+        # (estilo capcut para shorts)
+        # Nota: Esto requiere acceso a la instancia principal, se manejarÃ¡ en la clase principal
+
+        # Buscar mÃºsica de fondo ya descargada del video largo
+        # IMPORTANTE: Usar SOLO temp_bgm.mp3 (mÃºsica pura), NO mix.mp3 (que contiene narraciÃ³n + mÃºsica)
+        # Si usamos mix.mp3, la narraciÃ³n del video largo se superpone a la del teaser
+        bgm_path = None
+        temp_bgm_path = str(self.generated_media_dir / "temp_bgm.mp3")
+        if os.path.exists(temp_bgm_path):
+            bgm_path = temp_bgm_path
+            self.log(f"   ðŸŽµ Reutilizando mÃºsica de fondo (solo mÃºsica): {os.path.basename(temp_bgm_path)}")
+
+        # Crear storyboard para el teaser
+        teaser_storyboard = {
+            "topic": f"{topic} - Teaser",
+            "category": category,
+            "script": teaser_script,
+            "audio_path": teaser_audio_path,
+            "segments": teaser_visual_segments,
+            "music_data": long_video_storyboard.get('music_data')  # Fallback si no hay archivo local
+        }
+
+        # Verificar que tenemos el callback para ensamblar
+        if not self.assemble_video_callback:
+            self.log("âŒ Error: No se proporcionÃ³ callback para ensamblar video")
+            return None
+
+        # Ensamblar usando el mÃ©todo principal pero con plataforma 'youtube_short'
+        # IMPORTANTE: No generar otro teaser (generate_short_teaser=False)
+        # Para teasers, usar solo imÃ¡genes estÃ¡ticas (mÃ¡s rÃ¡pido y confiable que videos)
+        teaser_result = self.assemble_video_callback(
+            storyboard_data=teaser_storyboard,
+            platform='youtube_short',  # Formato vertical
+            add_subtitles=True,
+            subtitle_style='capcut',  # Estilo dinÃ¡mico para shorts
+            add_overlays=True,
+            manual_bgm_path=bgm_path,  # Usar mÃºsica ya descargada si existe
+            transition_type='ðŸŒŠ Zoom DinÃ¡mico',  # TransiciÃ³n mÃ¡s dinÃ¡mica para teaser
+            transition_duration=0.6,  # Transiciones mÃ¡s rÃ¡pidas y dinÃ¡micas
+            assembly_mode='auto',
+            visual_mode='static',  # âš¡ Solo imÃ¡genes estÃ¡ticas para teaser (mÃ¡s rÃ¡pido y confiable)
+            apply_cinematic=True,  # Aplicar efectos cinematogrÃ¡ficos para mÃ¡ximo impacto
+            cinematic_preset='dramatic',  # Preset dramÃ¡tico para teaser llamativo
+            generate_short_teaser=False,  # No generar teaser del teaser
+            use_wikimedia=False,  # El teaser no usa Wikimedia por defecto
+            disable_wikimedia=disable_wikimedia,  # Respetar la configuraciÃ³n de desactivaciÃ³n
+            use_real_images=False,  # El teaser no usa imÃ¡genes reales por defecto
+            use_google_images=False,  # (OBSOLETO) Openverse (Gratis) eliminado
+            enable_real_images_mix=False  # El teaser no usa mezcla inteligente por defecto
+        )
+        
+        if teaser_result:
+            self.log("âœ… SHORT TEASER GENERADO EXITOSAMENTE")
+            self.log(f"ðŸ“¹ Teaser guardado en: {teaser_result['video_path']}")
+            return teaser_result
+        else:
+            self.log("âŒ Error al ensamblar el short teaser")
+            return None
+
+    def _assemble_existing_teaser(self, existing_teaser_storyboard, long_video_storyboard, disable_wikimedia=False):
+        """
+        Ensambla un teaser reutilizando el storyboard existente (audio, segmentos, imÃ¡genes).
+
+        Args:
+            existing_teaser_storyboard: Storyboard del teaser previo con audio y segmentos
+            long_video_storyboard: Storyboard del video largo (para mÃºsica)
+            disable_wikimedia: (OBSOLETO) ParÃ¡metro mantenido por compatibilidad - Openverse (Gratis) y Wikimedia eliminados
+
+        Returns:
+            dict con resultado del teaser o None si falla
+        """
+        self.log("ðŸŽ¬ Ensamblando teaser con datos existentes...")
+
+        topic = long_video_storyboard.get('topic', 'Video')
+        category = long_video_storyboard.get('category', 'General')
+
+        # Buscar mÃºsica de fondo ya descargada
+        # IMPORTANTE: Usar SOLO temp_bgm.mp3 (mÃºsica pura), NO mix.mp3 (que contiene narraciÃ³n + mÃºsica)
+        bgm_path = None
+        temp_bgm_path = str(self.generated_media_dir / "temp_bgm.mp3")
+        if os.path.exists(temp_bgm_path):
+            bgm_path = temp_bgm_path
+            self.log(f"   ðŸŽµ Reutilizando mÃºsica de fondo (solo mÃºsica): {os.path.basename(temp_bgm_path)}")
+
+        # Usar el storyboard existente directamente
+        teaser_storyboard = {
+            "topic": f"{topic} - Teaser",
+            "category": category,
+            "script": existing_teaser_storyboard.get('script', ''),
+            "audio_path": existing_teaser_storyboard.get('audio_path'),
+            "segments": existing_teaser_storyboard.get('segments', []),
+            "music_data": long_video_storyboard.get('music_data')
+        }
+
+        # Verificar que tenemos el callback para ensamblar
+        if not self.assemble_video_callback:
+            self.log("âŒ Error: No se proporcionÃ³ callback para ensamblar video")
+            return None
+
+        # Ensamblar usando el mÃ©todo principal
+        # Para teasers, usar solo imÃ¡genes estÃ¡ticas (mÃ¡s rÃ¡pido y confiable que videos)
+        teaser_result = self.assemble_video_callback(
+            storyboard_data=teaser_storyboard,
+            platform='youtube_short',
+            add_subtitles=True,
+            subtitle_style='capcut',
+            add_overlays=True,
+            manual_bgm_path=bgm_path,
+            transition_type='ðŸŒŠ Zoom DinÃ¡mico',
+            transition_duration=0.6,
+            assembly_mode='auto',
+            visual_mode='static',  # âš¡ Solo imÃ¡genes estÃ¡ticas para teaser (mÃ¡s rÃ¡pido y confiable)
+            apply_cinematic=True,
+            cinematic_preset='dramatic',
+            generate_short_teaser=False,
+            use_wikimedia=False,
+            disable_wikimedia=disable_wikimedia,
+            use_real_images=False,
+            use_google_images=False,
+            enable_real_images_mix=False
+        )
+
+        if teaser_result:
+            self.log("âœ… SHORT TEASER REGENERADO EXITOSAMENTE")
+            self.log(f"ðŸ“¹ Teaser guardado en: {teaser_result['video_path']}")
+            return teaser_result
+        else:
+            self.log("âŒ Error al ensamblar el short teaser")
+            return None
+
+
+
+
+
+
+

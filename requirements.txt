@@ -1,0 +1,56 @@
+# Core GUI & App Framework
+PyQt6==6.7.1
+pygame==2.6.0; python_version < "3.13"  # Evitar build desde fuente en 3.13+
+python-vlc>=3.0.20123  # Reproductor de audio potente (fallback cuando QMediaPlayer falla)
+
+# Video Editing & Generation
+moviepy==1.0.3
+Pillow==10.1.0; python_version < "3.13"
+Pillow>=11.3.0,<13; python_version >= "3.13"  # Wheels compatibles con Python 3.13/3.14+
+numpy==1.26.4; python_version < "3.13"
+numpy>=2.1,<3; python_version >= "3.13"  # 1.26.x no trae wheels para 3.13/3.14
+imageio==2.35.1  # Dep de moviepy
+
+# Audio Processing
+pydub==0.25.1
+gTTS==2.5.1
+edge-tts==7.2.7  # Microsoft Edge voices (GRATIS - muchas voces)
+librosa==0.10.2; python_version < "3.13"
+librosa>=0.11.0,<0.12; python_version >= "3.13"
+scipy==1.13.1; python_version < "3.13"
+scipy>=1.15,<2; python_version >= "3.13"
+
+# Transcription & AI
+openai-whisper==20250625  # Versión latest disponible (Jun 2025)
+torch==2.4.1; python_version < "3.13"  # CPU; agrega --index-url https://download.pytorch.org/whl/cpu si lento
+torch>=2.9.0,<3; python_version >= "3.13"  # 2.4.x no publica wheels para Python 3.13/3.14
+
+# AI Clients & APIs
+google-generativeai==0.8.3
+openai==1.51.0
+groq==1.0.0
+google-api-python-client==2.149.0
+google-auth>=2.0,<3.0
+google-auth-oauthlib==1.2.1
+google-auth-httplib2==0.2.0
+httplib2==0.22.0
+pytrends==4.9.2
+wikipedia-api==0.7.1
+duckduckgo-search==6.3.0
+
+# Utilities
+requests==2.32.3
+python-dotenv==1.0.1
+tqdm==4.66.5
+setuptools==75.1.0
+ffmpeg-python==0.2.0  # Wrapper para FFmpeg calls
+json_repair>=0.25.0  # Robust JSON parser for LLM outputs
+
+# Fal.ai Client (FLUX.1 schnell)
+fal-client>=0.5.0
+
+# YouTube Video Downloader
+yt-dlp>=2024.1.0
+
+# Nota: Claude Code CLI no requiere dependencias Python adicionales
+# Se ejecuta como proceso local del sistema operativo

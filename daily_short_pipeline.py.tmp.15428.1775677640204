@@ -1,0 +1,1045 @@
+#!/usr/bin/env python3
+"""
+daily_short_pipeline.py — Pipeline automatizado para producir Shorts diarios.
+
+Flujo:
+  1. Detecta temas trending (Google Trends + IA)
+  2. Cruza tendencias con las categorías del canal
+  3. Selecciona la mejor idea
+  4. Genera storyboard (guión + audio + timing + prompts visuales)
+  5. Ensambla el video final con subtítulos
+  6. Genera thumbnail optimizado
+  7. Genera metadata para YouTube (título, descripción, tags)
+  8. Deja todo listo para subir manualmente
+
+Uso:
+  python daily_short_pipeline.py                  # Genera 1 Short automático
+  python daily_short_pipeline.py --count 3        # Genera 3 Shorts
+  python daily_short_pipeline.py --topic "..."    # Fuerza un tema específico
+  python daily_short_pipeline.py --voice "..."    # Especifica voz TTS
+  python daily_short_pipeline.py --list-voices    # Lista voces disponibles
+"""
+
+import sys
+import os
+import json
+import argparse
+import time
+from pathlib import Path
+from datetime import datetime
+
+# ── Configurar encoding para Windows ──────────────────────────────────────
+for _stream_name in ("stdout", "stderr"):
+    _stream = getattr(sys, _stream_name, None)
+    if _stream and hasattr(_stream, "reconfigure"):
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+os.environ["PYTHONUTF8"] = "1"
+os.environ["PYTHONIOENCODING"] = "utf-8"
+
+# ── Agregar directorio del proyecto al path ───────────────────────────────
+PROJECT_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(PROJECT_DIR))
+
+# ── Cargar variables de entorno ───────────────────────────────────────────
+from env_loader import load_project_env
+load_project_env()
+
+# ── Configurar FFmpeg ─────────────────────────────────────────────────────
+from video_config import VideoConfig
+try:
+    VideoConfig.ensure_ffmpeg_in_path()
+except Exception as e:
+    print(f"⚠️ FFmpeg no configurado: {e}")
+
+# ═══════════════════════════════════════════════════════════════════════════
+# CONFIGURACIÓN DEL CANAL
+# ═══════════════════════════════════════════════════════════════════════════
+
+CHANNEL_CONFIG = {
+    "channel_id": "UC66EnGiys6V3gKe-J0XD-_Q",
+    "channel_handle": "Stunning-Revelations",
+    "language": "en",
+    "categories": [
+        "Ancient History",
+        "Military Secrets",
+        "Natural Disasters",
+        "Science & Technology",
+        "Mysteries & Conspiracies",
+    ],
+    # Duración objetivo para Shorts (segundos)
+    "target_duration": 45,
+    # Estilo visual
+    "visual_style": "Photorealism",
+    # Estilo de subtítulos (ver estilos disponibles con --list-subtitle-styles)
+    "subtitle_style": "capcut",
+    # Transición entre escenas (ver opciones con --list-transitions)
+    "transition_type": "Fade Smooth",
+    "transition_duration": 0.3,
+    # Voz por defecto (Edge-TTS, inglés)
+    "default_voice": "en-US-GuyNeural",
+    # Velocidad de narración
+    "tts_rate": "+5%",
+    # Regiones para buscar tendencias
+    "trend_regions": ["US", "GB", "GLOBAL"],
+}
+
+# Categorías que mejor funcionan (datos del análisis del canal)
+BEST_PERFORMING_CATEGORIES = [
+    "Natural Disasters & Extreme Events",
+    "Science & Technology News",
+    "Ancient History & Civilizations",
+    "Military Operations & Secrets",
+    "Mysteries & Unexplained",
+]
+
+# ── Cargar datos de rendimiento del canal ────────────────────────────────
+CHANNEL_PERFORMANCE_PATH = PROJECT_DIR / "daily_shorts" / "channel_performance.json"
+CHANNEL_PERFORMANCE = {}
+try:
+    if CHANNEL_PERFORMANCE_PATH.exists():
+        with open(CHANNEL_PERFORMANCE_PATH, "r", encoding="utf-8") as _f:
+            CHANNEL_PERFORMANCE = json.load(_f)
+except Exception:
+    pass
+
+# ═══════════════════════════════════════════════════════════════════════════
+# UTILIDADES
+# ═══════════════════════════════════════════════════════════════════════════
+
+def log(msg: str, level: str = "INFO"):
+    """Logging con timestamp."""
+    ts = datetime.now().strftime("%H:%M:%S")
+    prefix = {"INFO": "ℹ️", "OK": "✅", "WARN": "⚠️", "ERROR": "❌", "STEP": "🔹"}.get(level, "  ")
+    print(f"[{ts}] {prefix} {msg}")
+
+
+def create_output_dir() -> Path:
+    """Crea directorio de salida para el Short de hoy."""
+    today = datetime.now().strftime("%Y-%m-%d")
+    base = PROJECT_DIR / "daily_shorts" / today
+    # Si ya existe, agregar sufijo incremental
+    output_dir = base
+    counter = 1
+    while output_dir.exists():
+        output_dir = base.parent / f"{today}_{counter}"
+        counter += 1
+    output_dir.mkdir(parents=True, exist_ok=True)
+    return output_dir
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# DEDUPLICACIÓN: recopilar títulos ya usados
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _normalize_title(title: str) -> str:
+    """Normaliza un título para comparación (minúsculas, sin puntuación extra)."""
+    import re
+    t = title.lower().strip()
+    t = re.sub(r'[^\w\s]', ' ', t)      # quitar puntuación
+    t = re.sub(r'\s+', ' ', t).strip()   # colapsar espacios
+    return t
+
+
+def _titles_are_similar(title_a: str, title_b: str, threshold: float = 0.55) -> bool:
+    """Compara dos títulos por similitud (Jaccard sobre palabras). Umbral por defecto 55%."""
+    words_a = set(_normalize_title(title_a).split())
+    words_b = set(_normalize_title(title_b).split())
+    if not words_a or not words_b:
+        return False
+    intersection = words_a & words_b
+    union = words_a | words_b
+    similarity = len(intersection) / len(union)
+    return similarity >= threshold
+
+
+def get_used_titles() -> list:
+    """
+    Recopila todos los títulos ya usados desde dos fuentes:
+      1. Summaries locales en daily_shorts/
+      2. Videos publicados en el canal de YouTube
+    Devuelve una lista de strings (títulos).
+    """
+    titles = []
+
+    # ── Fuente 1: summaries locales ──────────────────────────────────────
+    shorts_dir = PROJECT_DIR / "daily_shorts"
+    if shorts_dir.exists():
+        for summary_file in shorts_dir.rglob("summary.json"):
+            try:
+                with open(summary_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                topic = data.get("topic") or ""
+                meta_title = (data.get("metadata") or {}).get("title") or ""
+                # Agregar ambos si difieren
+                if topic:
+                    titles.append(topic)
+                if meta_title and _normalize_title(meta_title) != _normalize_title(topic):
+                    titles.append(meta_title)
+            except Exception:
+                continue
+
+    # ── Fuente 2: videos del canal de YouTube ────────────────────────────
+    try:
+        from youtube_channel_analyzer import YouTubeChannelAnalyzer
+        analyzer = YouTubeChannelAnalyzer(
+            channel_id=CHANNEL_CONFIG.get("channel_id"),
+            channel_handle=CHANNEL_CONFIG.get("channel_handle"),
+        )
+        videos = analyzer.get_channel_videos(max_results=200)
+        for v in videos:
+            t = v.get("title", "").strip()
+            if t:
+                titles.append(t)
+    except Exception as e:
+        log(f"No se pudieron obtener videos del canal: {e}", "WARN")
+
+    # Deduplicar manteniendo orden
+    seen = set()
+    unique = []
+    for t in titles:
+        key = _normalize_title(t)
+        if key and key not in seen:
+            seen.add(key)
+            unique.append(t)
+
+    return unique
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# PASO 1: DETECTAR TENDENCIAS
+# ═══════════════════════════════════════════════════════════════════════════
+
+def detect_trends(ai_client) -> list:
+    """Obtiene temas trending de múltiples regiones."""
+    log("Detectando tendencias globales...", "STEP")
+
+    from trend_spotter import get_trending_topics
+
+    all_trends = []
+    for region in CHANNEL_CONFIG["trend_regions"]:
+        try:
+            topics = get_trending_topics(region=region, ai_client=ai_client)
+            if topics:
+                log(f"  {region}: {len(topics)} tendencias encontradas")
+                all_trends.extend(topics)
+        except Exception as e:
+            log(f"  {region}: falló ({e})", "WARN")
+
+    # Deduplicar manteniendo orden
+    seen = set()
+    unique = []
+    for t in all_trends:
+        key = t.strip().lower()
+        if key not in seen:
+            seen.add(key)
+            unique.append(t.strip())
+
+    log(f"Total tendencias únicas: {len(unique)}", "OK")
+    return unique
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# PASO 2: GENERAR IDEAS DE VIDEO
+# ═══════════════════════════════════════════════════════════════════════════
+
+def generate_video_ideas(trends: list, ai_client, used_titles: list = None) -> list:
+    """Cruza tendencias con categorías del canal para generar ideas."""
+    log("Generando ideas de video con IA...", "STEP")
+
+    from trend_spotter import analyze_trends_for_video_ideas
+
+    ideas_result = analyze_trends_for_video_ideas(
+        trends_list=trends,
+        categories=CHANNEL_CONFIG["categories"],
+        ai_client=ai_client,
+        channel_performance=CHANNEL_PERFORMANCE,
+        used_titles=used_titles,
+    )
+
+    if "error" in ideas_result:
+        log(f"Error generando ideas: {ideas_result['error']}", "ERROR")
+        return []
+
+    ideas = ideas_result.get("ideas", [])
+    log(f"Ideas generadas: {len(ideas)}", "OK")
+
+    for i, idea in enumerate(ideas, 1):
+        log(f"  {i}. {idea.get('title', 'Sin título')} [{idea.get('category', '?')}]")
+
+    return ideas
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# PASO 3: SELECCIONAR MEJOR IDEA
+# ═══════════════════════════════════════════════════════════════════════════
+
+def select_best_idea(ideas: list, forced_topic: str = None,
+                     used_titles: list = None) -> dict:
+    """Selecciona la mejor idea, priorizando categorías con mejor rendimiento
+    en el canal y descartando ideas demasiado similares a títulos ya usados."""
+    if forced_topic:
+        log(f"Usando tema forzado: {forced_topic}", "STEP")
+        return {
+            "title": forced_topic,
+            "category": "General",
+            "justification": "Tema seleccionado manualmente por el usuario.",
+        }
+
+    if not ideas:
+        log("No hay ideas disponibles, usando tema de respaldo", "WARN")
+        return {
+            "title": "The Most Powerful Earthquake Ever Recorded: Chile 1960",
+            "category": "Natural Disasters",
+            "justification": "Tema evergreen con alto rendimiento histórico.",
+        }
+
+    # ── Filtrar ideas duplicadas contra títulos ya usados ─────────────
+    if used_titles:
+        filtered = []
+        for idea in ideas:
+            title = idea.get("title", "")
+            is_dup = False
+            for used in used_titles:
+                if _titles_are_similar(title, used):
+                    log(f"  ⛔ Descartada (similar a existente): {title}", "WARN")
+                    log(f"       ↳ similar a: {used}")
+                    is_dup = True
+                    break
+            if not is_dup:
+                filtered.append(idea)
+
+        if filtered:
+            ideas = filtered
+            log(f"  {len(ideas)} ideas pasan el filtro de deduplicación", "OK")
+        else:
+            log("  Todas las ideas son similares a videos existentes. Usando la mejor de todas formas.", "WARN")
+
+    # ── Filtrar ideas duplicadas entre sí (dentro del mismo batch) ────
+    unique_ideas = []
+    for idea in ideas:
+        title = idea.get("title", "")
+        is_dup_internal = False
+        for accepted in unique_ideas:
+            if _titles_are_similar(title, accepted.get("title", "")):
+                log(f"  ⛔ Descartada (duplicado interno): {title}", "WARN")
+                is_dup_internal = True
+                break
+        if not is_dup_internal:
+            unique_ideas.append(idea)
+    ideas = unique_ideas if unique_ideas else ideas
+
+    # Re-rank ideas based on channel performance data
+    top_cats = CHANNEL_PERFORMANCE.get("best_performing_categories", [])
+    if top_cats:
+        cat_scores = {}
+        for i, cat in enumerate(top_cats):
+            # Higher score for better-performing categories
+            cat_scores[cat["name"].lower()] = len(top_cats) - i
+
+        def idea_score(idea):
+            cat = idea.get("category", "").lower()
+            # Check if the idea's category partially matches any top category
+            score = 0
+            for cat_name, cat_val in cat_scores.items():
+                if cat in cat_name or cat_name in cat:
+                    score = cat_val
+                    break
+            # Bonus for titles with numbers (52% of top performers have them)
+            title = idea.get("title", "")
+            if any(c.isdigit() for c in title):
+                score += 1
+            # Bonus for titles with colons (63% of top performers)
+            if ":" in title:
+                score += 1
+            return score
+
+        ideas.sort(key=idea_score, reverse=True)
+
+    best = ideas[0]
+    log(f"Idea seleccionada: {best.get('title', 'Sin título')} [{best.get('category', '?')}]", "OK")
+    return best
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# PASO 4: GENERAR STORYBOARD (guión + audio + timing)
+# ═══════════════════════════════════════════════════════════════════════════
+
+def generate_storyboard(idea: dict, voice_id: str = None,
+                        bgm_path: str = None, visual_style: str = None) -> dict:
+    """Genera el storyboard completo: guión, audio, segmentos con timing."""
+    log(f"Generando storyboard para: {idea['title']}", "STEP")
+
+    from auto_video_generator_v2 import AutoVideoGenerator
+
+    generator = AutoVideoGenerator(parent_window=None)
+
+    # Activar subtítulos dinámicos (necesario para que assemble los aplique)
+    try:
+        from dynamic_subtitle_wrapper import patch_subtitle_generation
+        patch_subtitle_generation(generator, CHANNEL_CONFIG["subtitle_style"])
+        log("  Subtítulos dinámicos activados", "OK")
+    except Exception as e:
+        log(f"  Subtítulos dinámicos no disponibles: {e}", "WARN")
+
+    topic = idea["title"]
+    category = idea.get("category", "History")
+    voice = voice_id or CHANNEL_CONFIG["default_voice"]
+
+    # Si hay BGM manual, no buscar música automática
+    auto_music = not bgm_path
+
+    style = visual_style or CHANNEL_CONFIG["visual_style"]
+
+    storyboard = generator.generate_storyboard_data(
+        topic=topic,
+        category=category,
+        platform="youtube_short",
+        custom_duration=CHANNEL_CONFIG["target_duration"],
+        voice_id=voice,
+        find_auto_music=auto_music,
+        style=style,
+        language=CHANNEL_CONFIG["language"],
+        rate=CHANNEL_CONFIG["tts_rate"],
+    )
+
+    if not storyboard:
+        log("Error generando storyboard", "ERROR")
+        return None
+
+    script = storyboard.get("script", "")
+    segments = storyboard.get("segments", [])
+    audio = storyboard.get("audio_path", "")
+
+    log(f"  Guión: {len(script)} caracteres", "OK")
+    log(f"  Segmentos: {len(segments)}", "OK")
+    log(f"  Audio: {audio}", "OK")
+
+    # Inyectar topic/category para que thumbnail y metadata los usen
+    storyboard["topic"] = topic
+    storyboard["category"] = category
+
+    # BGM manual si fue proporcionado
+    if bgm_path:
+        storyboard["_manual_bgm_path"] = bgm_path
+
+    # Guardar referencia al generador para reusar en assembly
+    storyboard["_generator"] = generator
+
+    return storyboard
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# PASO 5: ENSAMBLAR VIDEO
+# ═══════════════════════════════════════════════════════════════════════════
+
+def assemble_video(storyboard: dict, output_dir: Path,
+                    image_provider: str = "auto",
+                    subtitle_style: str = None,
+                    transition_type: str = None,
+                    transition_duration: float = None) -> str:
+    """Ensambla el video final con imágenes, audio y subtítulos."""
+    log("Ensamblando video final...", "STEP")
+
+    generator = storyboard.pop("_generator", None)
+    manual_bgm = storyboard.pop("_manual_bgm_path", None)
+
+    if not generator:
+        from auto_video_generator_v2 import AutoVideoGenerator
+        generator = AutoVideoGenerator(parent_window=None)
+
+    if manual_bgm:
+        log(f"  BGM manual: {manual_bgm}", "INFO")
+
+    # Resolver valores: CLI > CHANNEL_CONFIG > defaults
+    effective_subtitle = subtitle_style or CHANNEL_CONFIG.get("subtitle_style", "capcut")
+    effective_transition = transition_type or CHANNEL_CONFIG.get("transition_type", "Fade Smooth")
+    effective_trans_dur = transition_duration if transition_duration is not None else CHANNEL_CONFIG.get("transition_duration", 0.3)
+
+    log(f"  Image provider: {image_provider}", "INFO")
+    log(f"  Subtitle style: {effective_subtitle}", "INFO")
+    log(f"  Transition: {effective_transition} ({effective_trans_dur}s)", "INFO")
+
+    # Pre-generar imágenes con el provider seleccionado ANTES de ensamblar.
+    # assemble_video_from_storyboard no usa image_provider internamente;
+    # genera_all_images_for_storyboard sí lo respeta (Recraft, Fal, etc.)
+    # y escribe image_path en cada segmento para que el ensamblador las use.
+    style = CHANNEL_CONFIG.get("visual_style", "Photorealism")
+    try:
+        storyboard = generator.generate_all_images_for_storyboard(
+            storyboard_data=storyboard,
+            platform="youtube_short",
+            use_real_images=True,
+            use_google_images=True,
+            image_provider=image_provider,
+            style=style,
+        )
+        log("  Imágenes pre-generadas correctamente", "OK")
+    except Exception as e:
+        log(f"  Error pre-generando imágenes: {e}", "WARN")
+        log("  El ensamblador generará las imágenes con su flujo por defecto", "WARN")
+
+    result = generator.assemble_video_from_storyboard(
+        storyboard_data=storyboard,
+        platform="youtube_short",
+        add_subtitles=True,
+        subtitle_style=effective_subtitle,
+        add_overlays=True,
+        apply_cinematic=False,
+        transition_type=effective_transition,
+        transition_duration=effective_trans_dur,
+        use_real_images=True,
+        use_google_images=True,
+        image_provider=image_provider,
+        manual_bgm_path=manual_bgm,
+    )
+
+    if not result or not result.get("video_path"):
+        log("Error ensamblando video", "ERROR")
+        return None
+
+    video_path = result["video_path"]
+
+    # Copiar video al directorio de salida
+    import shutil
+    final_name = f"short_{datetime.now().strftime('%H%M%S')}.mp4"
+    final_path = output_dir / final_name
+    shutil.copy2(video_path, final_path)
+
+    log(f"Video generado: {final_path}", "OK")
+    return str(final_path)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# PASO 6: GENERAR THUMBNAIL
+# ═══════════════════════════════════════════════════════════════════════════
+
+def generate_thumbnail(storyboard: dict, output_dir: Path) -> str:
+    """Genera thumbnail optimizado para el Short."""
+    log("Generando thumbnail...", "STEP")
+
+    try:
+        from thumbnail_pipeline import ThumbnailPipeline
+        from groq_client import GroqAiClient
+
+        groq = GroqAiClient()
+
+        # Intentar cargar clientes de imagen disponibles
+        recraft_client = None
+        try:
+            from recraft_client import RecraftClient
+            recraft_client = RecraftClient()
+        except Exception:
+            pass
+
+        pipeline = ThumbnailPipeline(
+            project_root=str(output_dir),
+            llm_client=groq,
+            recraft_client=recraft_client,
+        )
+
+        project_data = {
+            "topic": storyboard.get("topic", ""),
+            "category": storyboard.get("category", ""),
+            "script": storyboard.get("script", ""),
+        }
+
+        result = pipeline.generate_for_project(project_data)
+
+        if result and result.get("thumbnail_path"):
+            import shutil
+            thumb_src = result["thumbnail_path"]
+            thumb_dst = output_dir / "thumbnail.jpg"
+            shutil.copy2(thumb_src, thumb_dst)
+            log(f"Thumbnail generado: {thumb_dst}", "OK")
+            return str(thumb_dst)
+
+    except Exception as e:
+        log(f"Thumbnail falló: {e}", "WARN")
+
+    return None
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# PASO 7: GENERAR METADATA PARA YOUTUBE
+# ═══════════════════════════════════════════════════════════════════════════
+
+def generate_metadata(storyboard: dict, output_dir: Path) -> dict:
+    """Genera título, descripción y tags optimizados para YouTube usando datos de rendimiento del canal."""
+    log("Generando metadata para YouTube (data-driven)...", "STEP")
+
+    try:
+        from groq_client import GroqAiClient
+        groq = GroqAiClient()
+        if not groq.client:
+            raise RuntimeError("Groq no disponible")
+
+        topic = storyboard.get("topic", "")
+        category = storyboard.get("category", "")
+        script = storyboard.get("script", "")
+
+        # ── Construir contexto de rendimiento del canal ──────────────
+        perf = CHANNEL_PERFORMANCE
+        title_patterns = perf.get("title_patterns", {})
+        desc_patterns = perf.get("description_patterns", {})
+        tag_strategy = perf.get("tag_strategy", {})
+        top_categories = perf.get("best_performing_categories", [])
+
+        # Ejemplos de títulos ganadores
+        title_examples = title_patterns.get("top_title_examples", [])
+        examples_str = "\n".join(f"  - {t}" for t in title_examples) if title_examples else "  (no examples available)"
+
+        # Keywords de alto rendimiento
+        high_keywords = title_patterns.get("high_performing_keywords", [])
+        keywords_str = ", ".join(high_keywords) if high_keywords else "mystery, secret, ancient, shocking"
+
+        # Hashtags efectivos
+        effective_hashtags = desc_patterns.get("effective_hashtags", ["#shorts", "#history", "#facts"])
+        hashtags_str = " ".join(effective_hashtags[:8])
+
+        # Tags obligatorios
+        always_tags = tag_strategy.get("always_include", ["stunning revelations", "shorts"])
+        always_tags_str = ", ".join(always_tags)
+
+        # Categorías rankeadas por rendimiento
+        cat_ranking = ""
+        for cat in top_categories[:5]:
+            cat_ranking += f"  - {cat['name']} ({cat.get('avg_views', '?')} avg views): {cat.get('notes', '')}\n"
+
+        prompt = f"""You are a YouTube Shorts SEO expert optimizing for the channel "Stunning Revelations".
+
+CHANNEL ANALYTICS (real data from YouTube Studio):
+- Shorts get 4x more views and 3.5x more subscribers than long videos
+- Best categories by performance:
+{cat_ranking}
+TITLE RULES (from analyzing top 27 videos with 500+ views):
+- 52% of top titles contain specific NUMBERS
+- 63% use COLONS to separate subject from hook
+- Average length: 47 characters (ideal range: 40-55 chars)
+- Winning formula: [Specific Event/Subject]: [Hook with numbers/superlatives]
+- High-performing keywords: {keywords_str}
+- Examples of titles that got 500+ views:
+{examples_str}
+
+CURRENT VIDEO:
+- Topic: {topic}
+- Category: {category}
+- Script (first 500 chars): {script[:500]}
+
+Generate a JSON with:
+1. "title": Follow the winning formula above. MUST include a specific number/data point. Use a colon to separate. 40-55 chars. Add 1 emoji max. Make it IMPOSSIBLE to scroll past.
+2. "description":
+   - Line 1: Hook question that creates curiosity gap
+   - Line 2-3: Key facts from the script (specific data points)
+   - Line 4: Call to action ("Follow for more stunning revelations!")
+   - Line 5: Hashtags: {hashtags_str}
+3. "tags": Array of 18-22 tags structured as:
+   - Always include: {always_tags_str}
+   - 3-4 broad category tags
+   - 4-5 topic-specific tags
+   - 3-4 trending/current event tags
+   - 2-3 question-format tags ("what happened to...", "why did...")
+
+Respond ONLY with valid JSON, no markdown."""
+
+        response = groq._generate(prompt)
+
+        if not response or not response.strip():
+            raise RuntimeError("Groq returned empty response for metadata")
+
+        # Limpiar respuesta
+        text = response.strip()
+        if text.startswith("```"):
+            text = text.split("\n", 1)[-1]
+        if text.endswith("```"):
+            text = text.rsplit("```", 1)[0]
+        text = text.strip()
+
+        # Extraer JSON si viene envuelto en texto
+        if not text.startswith("{"):
+            start = text.find("{")
+            end = text.rfind("}") + 1
+            if start != -1 and end > start:
+                text = text[start:end]
+
+        metadata = json.loads(text)
+
+        # Guardar metadata
+        meta_path = output_dir / "metadata.json"
+        with open(meta_path, "w", encoding="utf-8") as f:
+            json.dump(metadata, f, indent=2, ensure_ascii=False)
+
+        log(f"Título: {metadata.get('title', '?')}", "OK")
+        log(f"Tags: {len(metadata.get('tags', []))} tags", "OK")
+        log(f"Metadata guardada: {meta_path}", "OK")
+
+        return metadata
+
+    except Exception as e:
+        log(f"Metadata falló: {e}", "WARN")
+
+        # Fallback: metadata básica
+        fallback = {
+            "title": storyboard.get("topic", "Stunning Revelations"),
+            "description": f"Discover the truth about {storyboard.get('topic', 'this mystery')}. #history #facts #shorts",
+            "tags": ["history", "facts", "shorts", "mystery", "science"],
+        }
+        meta_path = output_dir / "metadata.json"
+        with open(meta_path, "w", encoding="utf-8") as f:
+            json.dump(fallback, f, indent=2, ensure_ascii=False)
+        return fallback
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# PASO 8: GUARDAR RESUMEN
+# ═══════════════════════════════════════════════════════════════════════════
+
+def save_summary(output_dir: Path, idea: dict, video_path: str,
+                 thumbnail_path: str, metadata: dict, storyboard: dict):
+    """Guarda un resumen del Short generado."""
+    summary = {
+        "generated_at": datetime.now().isoformat(),
+        "topic": idea.get("title", ""),
+        "category": idea.get("category", ""),
+        "justification": idea.get("justification", ""),
+        "video_path": video_path,
+        "thumbnail_path": thumbnail_path,
+        "metadata": metadata,
+        "script": storyboard.get("script", ""),
+        "segments_count": len(storyboard.get("segments", [])),
+        "audio_path": storyboard.get("audio_path", ""),
+    }
+
+    summary_path = output_dir / "summary.json"
+    with open(summary_path, "w", encoding="utf-8") as f:
+        json.dump(summary, f, indent=2, ensure_ascii=False)
+
+    log(f"Resumen guardado: {summary_path}", "OK")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# LISTAR VOCES DISPONIBLES
+# ═══════════════════════════════════════════════════════════════════════════
+
+def list_voices():
+    """Muestra las voces TTS disponibles."""
+    from tts_generator import TextToSpeechGenerator
+    tts = TextToSpeechGenerator()
+    voices = tts.get_available_voices()
+
+    print("\n🎙️ Voces disponibles:\n")
+    english_voices = {k: v for k, v in voices.items() if "en-" in k.lower() or "english" in str(v).lower()}
+    other_voices = {k: v for k, v in voices.items() if k not in english_voices}
+
+    print("── English voices ──")
+    for vid, info in sorted(english_voices.items()):
+        name = info.get("name", vid) if isinstance(info, dict) else str(info)
+        print(f"  {vid}: {name}")
+
+    if other_voices:
+        print(f"\n── Other voices ({len(other_voices)} available) ──")
+        for vid, info in sorted(list(other_voices.items())[:20]):
+            name = info.get("name", vid) if isinstance(info, dict) else str(info)
+            print(f"  {vid}: {name}")
+        if len(other_voices) > 20:
+            print(f"  ... y {len(other_voices) - 20} más")
+
+
+def list_subtitle_styles():
+    """Muestra los estilos de subtítulos disponibles."""
+    try:
+        from dynamic_subtitles_generator import SubtitleStyle
+        styles = SubtitleStyle.STYLES
+        print(f"\n🎨 Estilos de subtítulos disponibles ({len(styles)}):\n")
+        for key in sorted(styles.keys()):
+            s = styles[key]
+            anim = s.get('animation', 'none')
+            karaoke = "✓" if s.get('karaoke') else "✗"
+            emojis = "✓" if s.get('emojis') else "✗"
+            print(f"  {key:20s} {s['name']:30s} anim={anim:8s} karaoke={karaoke} emojis={emojis}")
+        print(f"\n  Estilo actual en CHANNEL_CONFIG: {CHANNEL_CONFIG.get('subtitle_style', '?')}")
+        print(f"  Uso: --subtitle-style <nombre>\n")
+    except Exception as e:
+        print(f"Error listando estilos: {e}")
+
+
+def list_transitions():
+    """Muestra las transiciones disponibles."""
+    transitions = [
+        ("None (Direct Cut)", "Corte directo, sin transición"),
+        ("Fade Smooth", "Fundido suave entre escenas"),
+        ("Crossfade", "Fundido cruzado"),
+        ("Zoom Transition", "Zoom in/out"),
+        ("Slide Transition", "Deslizamiento a la izquierda"),
+        ("Slide Right", "Deslizamiento a la derecha"),
+        ("Slide Up", "Deslizamiento hacia arriba"),
+        ("Slide Down", "Deslizamiento hacia abajo"),
+        ("Blur Transition", "Desenfoque entre escenas"),
+        ("Dissolve", "Disolución"),
+        ("Wipe", "Barrido a la izquierda"),
+        ("Wipe Right", "Barrido a la derecha"),
+        ("Wipe Up", "Barrido hacia arriba"),
+        ("Wipe Down", "Barrido hacia abajo"),
+        ("Fade to Black", "Fundido a negro"),
+        ("Fade to White", "Fundido a blanco"),
+        ("Circle Open", "Apertura circular (iris)"),
+        ("Circle Close", "Cierre circular (iris)"),
+        ("Horizontal Open", "Apertura horizontal desde centro"),
+        ("Horizontal Close", "Cierre horizontal hacia centro"),
+        ("Diagonal", "Barrido diagonal"),
+        ("Squeeze H", "Compresión horizontal"),
+        ("Squeeze V", "Compresión vertical"),
+        ("Digital Glitch", "Glitch digital (pixelización)"),
+        ("RGB Split Glitch", "Separación de canales RGB"),
+        ("Data Mosh Glitch", "Corrupción de datos"),
+    ]
+    print(f"\n🎬 Transiciones disponibles ({len(transitions)}):\n")
+    for name, desc in transitions:
+        print(f"  {name:25s} {desc}")
+    print(f"\n  Transición actual en CHANNEL_CONFIG: {CHANNEL_CONFIG.get('transition_type', '?')}")
+    print(f"  Uso: --transition '<nombre>' --transition-duration 0.5\n")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# PIPELINE PRINCIPAL
+# ═══════════════════════════════════════════════════════════════════════════
+
+def upload_to_youtube(output_dir: Path, privacy_status: str = "private") -> dict:
+    """
+    Paso 9: Sube el video generado a YouTube.
+
+    Returns:
+        dict con video_id, url, status o None si falla.
+    """
+    log("Subiendo video a YouTube...", "STEP")
+    try:
+        from youtube_uploader import upload_from_metadata
+
+        def _progress(sent, total):
+            if total:
+                pct = int(sent / total * 100)
+                log(f"  Upload: {pct}% ({sent // (1024*1024)}MB / {total // (1024*1024)}MB)", "INFO")
+
+        result = upload_from_metadata(
+            output_dir=str(output_dir),
+            privacy_status=privacy_status,
+            on_progress=_progress,
+        )
+
+        log(f"Video subido: {result['url']}", "OK")
+        log(f"Estado: {result['status']} ({privacy_status})", "OK")
+        if result.get("thumbnail_set"):
+            log("Thumbnail personalizado establecido", "OK")
+        elif result.get("thumbnail_error"):
+            log(f"Thumbnail falló: {result['thumbnail_error']}", "WARN")
+
+        return result
+
+    except Exception as e:
+        log(f"Upload a YouTube falló: {e}", "WARN")
+        import traceback
+        traceback.print_exc()
+        return None
+
+
+def run_pipeline(topic: str = None, voice_id: str = None, upload: bool = False,
+                 privacy_status: str = "private", bgm_path: str = None,
+                 image_provider: str = "auto", visual_style: str = None,
+                 subtitle_style: str = None, transition_type: str = None,
+                 transition_duration: float = None) -> dict:
+    """
+    Ejecuta el pipeline completo para generar un Short.
+
+    Returns:
+        dict con video_path, thumbnail_path, metadata, output_dir
+        o None si falló.
+    """
+    start_time = time.time()
+
+    print("\n" + "═" * 60)
+    print("  🎬 DAILY SHORT PIPELINE — Stunning Revelations")
+    print("═" * 60 + "\n")
+
+    # ── Inicializar IA ────────────────────────────────────────────────
+    log("Inicializando clientes de IA...", "STEP")
+    from groq_client import GroqAiClient
+    ai_client = GroqAiClient()
+
+    # ── Crear directorio de salida ────────────────────────────────────
+    output_dir = create_output_dir()
+    log(f"Directorio de salida: {output_dir}", "OK")
+
+    # ── Recopilar títulos ya usados (canal + locales) ─────────────────
+    log("Recopilando títulos ya usados (deduplicación)...", "STEP")
+    used_titles = get_used_titles()
+    if used_titles:
+        log(f"  {len(used_titles)} títulos existentes cargados", "OK")
+    else:
+        log("  No se encontraron títulos previos", "INFO")
+
+    # ── Paso 1: Tendencias ────────────────────────────────────────────
+    if topic:
+        trends = []
+        ideas = []
+    else:
+        trends = detect_trends(ai_client)
+        # ── Paso 2: Ideas ────────────────────────────────────────────
+        ideas = generate_video_ideas(trends, ai_client, used_titles=used_titles)
+
+    # ── Paso 3: Seleccionar idea ──────────────────────────────────────
+    idea = select_best_idea(ideas, forced_topic=topic, used_titles=used_titles)
+
+    # Guardar idea seleccionada
+    idea_path = output_dir / "idea.json"
+    with open(idea_path, "w", encoding="utf-8") as f:
+        json.dump(idea, f, indent=2, ensure_ascii=False)
+
+    # ── Paso 4: Storyboard ────────────────────────────────────────────
+    storyboard = generate_storyboard(idea, voice_id=voice_id, bgm_path=bgm_path,
+                                     visual_style=visual_style)
+    if not storyboard:
+        log("Pipeline abortado: no se pudo generar storyboard", "ERROR")
+        return None
+
+    # ── Paso 5: Ensamblar video ───────────────────────────────────────
+    video_path = assemble_video(storyboard, output_dir, image_provider=image_provider,
+                               subtitle_style=subtitle_style,
+                               transition_type=transition_type,
+                               transition_duration=transition_duration)
+    if not video_path:
+        log("Pipeline abortado: no se pudo ensamblar video", "ERROR")
+        return None
+
+    # ── Paso 6: Thumbnail ─────────────────────────────────────────────
+    thumbnail_path = generate_thumbnail(storyboard, output_dir)
+
+    # ── Paso 7: Metadata ──────────────────────────────────────────────
+    metadata = generate_metadata(storyboard, output_dir)
+
+    # ── Paso 8: Resumen ───────────────────────────────────────────────
+    save_summary(output_dir, idea, video_path, thumbnail_path, metadata, storyboard)
+
+    # ── Paso 9: Upload a YouTube (opcional) ───────────────────────────
+    upload_result = None
+    if upload:
+        upload_result = upload_to_youtube(output_dir, privacy_status=privacy_status)
+
+    # ── Resultado ─────────────────────────────────────────────────────
+    elapsed = time.time() - start_time
+    minutes = int(elapsed // 60)
+    seconds = int(elapsed % 60)
+
+    print("\n" + "=" * 60)
+    print("  SHORT GENERADO EXITOSAMENTE")
+    print("=" * 60)
+    print(f"  Carpeta:    {output_dir}")
+    print(f"  Video:      {video_path}")
+    if thumbnail_path:
+        print(f"  Thumbnail:  {thumbnail_path}")
+    print(f"  Titulo:     {metadata.get('title', '?')}")
+    print(f"  Tiempo:     {minutes}m {seconds}s")
+    print(f"  Metadata:   {output_dir / 'metadata.json'}")
+    if upload_result:
+        print(f"  YouTube:    {upload_result.get('url', '?')}")
+        print(f"  Estado:     {upload_result.get('status', '?')} ({privacy_status})")
+    else:
+        if not upload:
+            print("  Sube el video a YouTube Studio manualmente")
+            print("     Copia titulo, descripcion y tags desde metadata.json")
+    print("=" * 60 + "\n")
+
+    return {
+        "video_path": video_path,
+        "thumbnail_path": thumbnail_path,
+        "metadata": metadata,
+        "output_dir": str(output_dir),
+        "upload_result": upload_result,
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# CLI
+# ═══════════════════════════════════════════════════════════════════════════
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Pipeline automatizado para generar Shorts diarios — Stunning Revelations",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument("--topic", "-t", type=str, default=None,
+                        help="Forzar un tema específico (omite detección de tendencias)")
+    parser.add_argument("--count", "-c", type=int, default=1,
+                        help="Cantidad de Shorts a generar (default: 1)")
+    parser.add_argument("--voice", "-v", type=str, default=None,
+                        help="ID de voz TTS (ej: en-US-GuyNeural)")
+    parser.add_argument("--bgm", type=str, default=None,
+                        help="Ruta a archivo de audio para música de fondo (mp3/wav)")
+    parser.add_argument("--image-provider", type=str, default="auto",
+                        choices=["auto", "recraft", "fal", "google_ai", "vertex_imagen"],
+                        help="Proveedor de generación de imágenes (default: auto/recraft)")
+    parser.add_argument("--style", type=str, default=None,
+                        help="Estilo visual de Recraft (ej: Photorealism, Illustration, Noir)")
+    parser.add_argument("--upload", "-u", action="store_true",
+                        help="Subir automáticamente a YouTube después de generar")
+    parser.add_argument("--privacy", type=str, default="private",
+                        choices=["private", "unlisted", "public"],
+                        help="Estado de privacidad del video (default: private)")
+    parser.add_argument("--subtitle-style", type=str, default=None,
+                        help="Estilo de subtítulos (ej: hormozi, mrbeast, tiktok, horror, glitch, military, etc.)")
+    parser.add_argument("--transition", type=str, default=None,
+                        help="Tipo de transición (ej: 'Fade Smooth', 'Circle Open', 'Squeeze H', etc.)")
+    parser.add_argument("--transition-duration", type=float, default=None,
+                        help="Duración de transición en segundos (0.1-2.0)")
+    parser.add_argument("--list-voices", action="store_true",
+                        help="Listar voces TTS disponibles y salir")
+    parser.add_argument("--list-subtitle-styles", action="store_true",
+                        help="Listar estilos de subtítulos disponibles y salir")
+    parser.add_argument("--list-transitions", action="store_true",
+                        help="Listar transiciones disponibles y salir")
+
+    args = parser.parse_args()
+
+    if args.list_voices:
+        list_voices()
+        return
+
+    if args.list_subtitle_styles:
+        list_subtitle_styles()
+        return
+
+    if args.list_transitions:
+        list_transitions()
+        return
+
+    results = []
+    for i in range(args.count):
+        if args.count > 1:
+            print(f"\n{'━' * 60}")
+            print(f"  Generando Short {i + 1} de {args.count}")
+            print(f"{'━' * 60}")
+
+        result = run_pipeline(topic=args.topic, voice_id=args.voice,
+                              upload=args.upload, privacy_status=args.privacy,
+                              bgm_path=args.bgm, image_provider=args.image_provider,
+                              visual_style=args.style,
+                              subtitle_style=args.subtitle_style,
+                              transition_type=args.transition,
+                              transition_duration=args.transition_duration)
+        if result:
+            results.append(result)
+
+    # Resumen final
+    if args.count > 1:
+        print(f"\n{'═' * 60}")
+        print(f"  📊 RESUMEN: {len(results)}/{args.count} Shorts generados")
+        print(f"{'═' * 60}")
+        for r in results:
+            print(f"  ✅ {r['metadata'].get('title', '?')}")
+            print(f"     → {r['output_dir']}")
+        print()
+
+
+if __name__ == "__main__":
+    main()

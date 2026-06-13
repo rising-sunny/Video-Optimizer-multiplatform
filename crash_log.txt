@@ -1,0 +1,36 @@
+\n============================================================\n[2026-04-16T06:57:32.437720] UNHANDLED EXCEPTION:\nTraceback (most recent call last):
+  File "G:\Mi unidad\Scripts Python\Video-Optimizer-multiplatform\video_optimizer_pyqt6.py", line 126, in <module>
+    from PyQt6.QtWidgets import (
+    ...<5 lines>...
+    )
+ModuleNotFoundError: No module named 'PyQt6'
+\n\n============================================================\n[2026-04-16T06:59:00.882176] UNHANDLED EXCEPTION:\nTraceback (most recent call last):
+  File "<string>", line 1, in <module>
+    import traceback; import video_optimizer_pyqt6
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "G:\Mi unidad\Scripts Python\Video-Optimizer-multiplatform\video_optimizer_pyqt6.py", line 126, in <module>
+    from PyQt6.QtWidgets import (
+    ...<5 lines>...
+    )
+ModuleNotFoundError: No module named 'PyQt6'
+\n=== FATAL EXCEPTION ===
+Traceback (most recent call last):
+  File "G:\Mi unidad\Scripts Python\Video-Optimizer-multiplatform\auto_video_integration_pyqt6.py", line 1354, in publish_video_to_platforms
+    self._publish_done_signal.connect(self._on_publish_done, Qt.ConnectionType.SingleShotConnection)
+                                                             ^^
+UnboundLocalError: cannot access local variable 'Qt' where it is not associated with a value
+=== FATAL EXCEPTION ===
+Traceback (most recent call last):
+  File "G:\Mi unidad\Scripts Python\Video-Optimizer-multiplatform\auto_video_integration_pyqt6.py", line 3133, in generate_super_prompt_for_external_ai
+    self._super_prompt_ready.disconnect()
+TypeError: disconnect() failed between '_super_prompt_ready' and all its connections
+=== FATAL EXCEPTION ===
+Traceback (most recent call last):
+  File "G:\Mi unidad\Scripts Python\Video-Optimizer-multiplatform\video_optimizer_pyqt6.py", line 363, in <module>
+    from auto_video_generator_v2 import AutoVideoGenerator, VideoConfig
+  File "G:\Mi unidad\Scripts Python\Video-Optimizer-multiplatform\auto_video_generator_v2.py", line 487, in <module>
+    from storyboard_generator import StoryboardGenerator
+  File "G:\Mi unidad\Scripts Python\Video-Optimizer-multiplatform\storyboard_generator.py", line 1434
+    Sin explicaciones antes ni después. Solo JSON válido."""
+                                                            ^
+SyntaxError: f-string expression part cannot include a backslash

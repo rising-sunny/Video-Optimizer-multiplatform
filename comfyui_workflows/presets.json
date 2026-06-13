@@ -1,0 +1,19 @@
+{
+  "presets": {
+    "historical_vertical_schnell": {
+      "workflow": "historical_vertical_schnell.json"
+    },
+    "historical_vertical_dev": {
+      "workflow": "historical_vertical_dev.json"
+    },
+    "thumbnail_16x9_schnell": {
+      "workflow": "thumbnail_16x9_schnell.json"
+    },
+    "thumbnail_16x9_dev": {
+      "workflow": "thumbnail_16x9_dev.json"
+    },
+    "coloring_sdxl_lineart": {
+      "workflow": "coloring_sdxl_lineart.json"
+    }
+  }
+}
