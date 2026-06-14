@@ -35,9 +35,12 @@ def apply_advanced_sfx_to_video(video_path, storyboard_data, sfx_paths, output_p
     
     # Manejar ambos formatos (directamente array o anidado en 'storyboard')
     segments = storyboard_data.get('storyboard', {}).get('segments', []) if 'storyboard' in storyboard_data else storyboard_data.get('segments', [])
-    
+    current_acc_ms = 0
     for seg in segments:
-        t_start_ms = int(seg.get('start', seg.get('timestamp_start', 0)) * 1000)
+        t_start_ms = int(seg.get('start', seg.get('timestamp_start', -1)) * 1000)
+        if t_start_ms < 0:
+            t_start_ms = current_acc_ms
+            current_acc_ms += int(seg.get('duration', 4.0) * 1000)
         
         # Siempre swoosh en transiciones (inicio de segmento, no en el seg 0 para no tapar el inicio)
         if t_start_ms > 1000:

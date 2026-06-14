@@ -2215,6 +2215,8 @@ Reglas:
                 seg_start = float(seg.get('start', 0) or 0)
                 seg_end = float(seg.get('end', seg_start) or seg_start)
                 seg_duration = max(0.05, seg_end - seg_start)
+                if seg_duration <= 0.05:
+                    seg_duration = float(seg.get('duration', 4.0))
 
                 if (i + 1) < len(segments):
                     try:
