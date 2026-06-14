@@ -1578,9 +1578,12 @@ def _save_platform_metadata_files(output_dir: Path, youtube_metadata: dict, face
     _write_json(output_dir / INSTAGRAM_METADATA_FILENAME, instagram_metadata)
 
 
-def generate_youtube_metadata(storyboard: dict, output_dir: Path) -> dict:
+def generate_youtube_metadata(storyboard: dict, output_dir: Path, used_titles: list = None) -> dict:
     """Genera metadata optimizada para YouTube Shorts."""
     log("Generando metadata para YouTube (data-driven)...", "STEP")
+    
+    if used_titles is None:
+        used_titles = []
 
     try:
         from groq_client import GroqAiClient
@@ -1611,7 +1614,13 @@ def generate_youtube_metadata(storyboard: dict, output_dir: Path) -> dict:
         for cat in top_categories[:5]:
             cat_ranking += f"  - {cat['name']} ({cat.get('avg_views', '?')} avg views): {cat.get('notes', '')}\n"
 
-        prompt = f"""You are a YouTube Shorts SEO expert optimizing for the channel "Stunning Revelations".
+        used_str = "\n".join(f"  - {t}" for t in set(used_titles)) if used_titles else "None"
+
+        # Bucle de reintentos para deduplicación
+        max_retries = 3
+        response = None
+        for attempt in range(max_retries):
+            prompt = f"""You are a YouTube Shorts SEO expert optimizing for the channel "Stunning Revelations".
 
 CHANNEL ANALYTICS (real data from YouTube Studio):
 - Shorts get 4x more views and 3.5x more subscribers than long videos
@@ -1626,13 +1635,17 @@ TITLE RULES (from analyzing top 27 videos with 500+ views):
 - Examples of titles that got 500+ views:
 {examples_str}
 
+CRITICAL DEDUPLICATION RULE:
+DO NOT generate any title that is identical or highly similar to these already published titles:
+{used_str}
+
 CURRENT VIDEO:
 - Topic: {topic}
 - Category: {category}
 - Script (first 500 chars): {script[:500]}
 
 Generate a JSON with:
-1. "title": Follow the winning formula above. MUST include a specific number/data point. Use a colon to separate. 40-55 chars. Add 1 emoji max. Make it IMPOSSIBLE to scroll past.
+1. "title": Follow the winning formula above. MUST include a specific number/data point. Use a colon to separate. 40-55 chars. Add 1 emoji max. Make it IMPOSSIBLE to scroll past. DO NOT COPY USED TITLES.
 2. "description":
    - Line 1: Hook question that creates curiosity gap
    - Line 2-3: Key facts from the script (specific data points)
@@ -1647,7 +1660,20 @@ Generate a JSON with:
 
 Respond ONLY with valid JSON, no markdown."""
 
-        response = groq._generate(prompt)
+            response = groq._generate(prompt)
+            if response:
+                import json
+                try:
+                    data = json.loads(response)
+                    gen_title = data.get("title", "")
+                    similar = find_similar_title(gen_title, used_titles)
+                    if similar and attempt < max_retries - 1:
+                        log(f"Título generado '{gen_title}' es muy similar a '{similar}'. Reintentando...", "WARNING")
+                        continue
+                    break
+                except Exception:
+                    pass
+            break
         if not response or not response.strip():
             raise RuntimeError("Groq returned empty response for metadata")
 
@@ -1662,7 +1688,7 @@ Respond ONLY with valid JSON, no markdown."""
 
 
 def generate_facebook_metadata(storyboard: dict, output_dir: Path,
-                               youtube_metadata: dict | None = None) -> dict:
+                               youtube_metadata: dict | None = None, used_titles: list = None) -> dict:
     """Genera metadata específica para Facebook Reels."""
     log("Generando metadata para Facebook Reel...", "STEP")
 
@@ -1718,9 +1744,7 @@ JSON schema:
         return _facebook_metadata_fallback(storyboard, youtube_metadata=youtube_metadata)
 
 
-def generate_instagram_metadata(storyboard: dict, output_dir: Path,
-                                youtube_metadata: dict | None = None,
-                                facebook_metadata: dict | None = None) -> dict:
+def generate_instagram_metadata(storyboard: dict, output_dir: Path, youtube_metadata: dict = None, facebook_metadata: dict = None, used_titles: list = None) -> dict:
     """Genera metadata específica para Instagram Reels."""
     log("Generando metadata para Instagram Reel...", "STEP")
 
@@ -1784,17 +1808,20 @@ JSON schema:
 def generate_platform_metadata(storyboard: dict, output_dir: Path) -> tuple[dict, dict, dict]:
     """Genera y guarda metadata separada para YouTube, Facebook e Instagram."""
     output_dir = Path(output_dir)
-    youtube_metadata = generate_youtube_metadata(storyboard, output_dir)
+    used_titles = get_used_titles()
+    youtube_metadata = generate_youtube_metadata(storyboard, output_dir, used_titles=used_titles)
     facebook_metadata = generate_facebook_metadata(
         storyboard,
         output_dir,
         youtube_metadata=youtube_metadata,
+        used_titles=used_titles
     )
     instagram_metadata = generate_instagram_metadata(
         storyboard,
         output_dir,
         youtube_metadata=youtube_metadata,
         facebook_metadata=facebook_metadata,
+        used_titles=used_titles
     )
     _save_platform_metadata_files(output_dir, youtube_metadata, facebook_metadata, instagram_metadata)
     log(f"Metadata YouTube guardada: {output_dir / YOUTUBE_METADATA_FILENAME}", "OK")

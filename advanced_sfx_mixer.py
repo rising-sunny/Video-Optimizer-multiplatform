@@ -32,9 +32,12 @@ def apply_advanced_sfx_to_video(video_path, storyboard_data, sfx_paths, output_p
     
     # 3. Inyectar inteligentemente según el guion
     print("Inyectando sonidos sincronizados con la narración...")
-    for seg in storyboard_data.get('segments', []):
-        t_start_ms = int(seg.get('timestamp_start', 0) * 1000)
-        text = seg.get('text', '').lower()
+    
+    # Manejar ambos formatos (directamente array o anidado en 'storyboard')
+    segments = storyboard_data.get('storyboard', {}).get('segments', []) if 'storyboard' in storyboard_data else storyboard_data.get('segments', [])
+    
+    for seg in segments:
+        t_start_ms = int(seg.get('start', seg.get('timestamp_start', 0)) * 1000)
         
         # Siempre swoosh en transiciones (inicio de segmento, no en el seg 0 para no tapar el inicio)
         if t_start_ms > 1000:
@@ -45,16 +48,18 @@ def apply_advanced_sfx_to_video(video_path, storyboard_data, sfx_paths, output_p
     master.export(mixed_audio_path, format="mp3")
     print(f"Pista maestra exportada: {mixed_audio_path}")
     
-    final_audio = AudioFileClip(mixed_audio_path)
-    final_video = video.set_audio(final_audio)
-    
-    print("Escribiendo video final con mezcla avanzada...")
-    final_video.write_videofile(output_path, codec="libx264", audio_codec="aac", logger=None)
+    print("Escribiendo video final con mezcla avanzada (via FFmpeg)...")
+    video.close()
+    import subprocess
+    cmd = [
+        "ffmpeg", "-y", "-i", video_path, "-i", mixed_audio_path,
+        "-c:v", "copy", "-c:a", "aac", "-map", "0:v:0", "-map", "1:a:0",
+        output_path
+    ]
+    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     
     # Cleanup
     if os.path.exists(temp_audio_path): os.remove(temp_audio_path)
     if os.path.exists(mixed_audio_path): os.remove(mixed_audio_path)
-    video.close()
-    final_video.close()
     
     print(f"Video completado exitosamente: {output_path}")

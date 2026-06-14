@@ -249,6 +249,11 @@ class VideoExportManager:
                 if frame.dtype != np.uint8:
                     frame = np.clip(frame, 0, 255).astype(np.uint8)
                 process.stdin.write(frame.tobytes())
+                
+                # Forzar recolección de basura ocasionalmente para evitar MemoryError con Numpy
+                if frame_idx % 30 == 0:
+                    import gc
+                    gc.collect()
 
                 # Mostrar progreso cada 5% (antes era 10%)
                 if total_frames > 0:

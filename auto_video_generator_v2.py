@@ -1562,7 +1562,7 @@ Reglas:
                     clip_durations.append(actual_clip_duration if actual_clip_duration > 0 else float(duration))
                     self.log(f"      [{i+1}/{total_clips}] OK ({clip_elapsed:.1f}s)")
                 else:
-                    stderr_short = (result.stderr or '')[-100:]
+                    stderr_short = (result.stderr or '')
                     self.log(f"      [{i+1}/{total_clips}] ERROR ({clip_elapsed:.1f}s): {stderr_short}")
 
             except sp.TimeoutExpired:
