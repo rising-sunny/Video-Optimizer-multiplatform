@@ -2219,12 +2219,7 @@ Reglas:
                     seg_duration = float(seg.get('duration', 4.0))
 
                 if (i + 1) < len(segments):
-                    try:
-                        next_start = float(segments[i + 1].get('start', seg_end) or seg_end)
-                        if next_start > seg_end:
-                            seg_duration += (next_start - seg_end)
-                    except Exception:
-                        pass
+                    pass # Evitar extender la duracion. El gap es rellenado intencionalmente por las transiciones.
 
                 generated_clips.append({
                     'filename': abs_p,
