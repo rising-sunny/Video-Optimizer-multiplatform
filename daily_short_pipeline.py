@@ -1215,7 +1215,8 @@ def prepare_short_draft(topic: str = None, voice_id: str = None,
 
 def generate_images_for_draft(output_dir: Path, storyboard: dict,
                               image_provider: str = "auto",
-                              visual_style: str = None) -> tuple[dict, dict]:
+                              visual_style: str = None,
+                              platform: str = "youtube_short") -> tuple[dict, dict]:
     """Genera o reanuda imágenes para un draft persistido en Daily Shorts."""
     output_dir = Path(output_dir)
     working_storyboard = storyboard or {}
@@ -1233,13 +1234,16 @@ def generate_images_for_draft(output_dir: Path, storyboard: dict,
         # --- MIXED MEDIA INTEGRATION ---
         try:
             from mixed_media_acquisition import acquire_youtube_mixed_media
-            working_storyboard = acquire_youtube_mixed_media(working_storyboard, output_dir)
+            # if we are long form, maybe disable mixed media or adapt it.
+            # actually, let's just disable it if it's long form so it doesn't crop vertically
+            if platform == "youtube_short":
+                working_storyboard = acquire_youtube_mixed_media(working_storyboard, output_dir)
         except Exception as e:
             print(f"Mixed media failed: {e}")
             
         working_storyboard = generator.generate_all_images_for_storyboard(
             storyboard_data=working_storyboard,
-            platform="youtube_short",
+            platform=platform,
             use_real_images=True,
             use_google_images=True,
             image_provider=image_provider,
@@ -1290,7 +1294,8 @@ def assemble_video(storyboard: dict, output_dir: Path,
                     transition_type: str = None,
                     transition_duration: float = None,
                     pregenerate_images: bool = True,
-                    strict_existing_visuals: bool = False) -> str:
+                    strict_existing_visuals: bool = False,
+                    platform: str = "youtube_short") -> str:
     """Ensambla el video final con imágenes, audio y subtítulos."""
     log("Ensamblando video final...", "STEP")
 
@@ -1319,6 +1324,8 @@ def assemble_video(storyboard: dict, output_dir: Path,
     storyboard["_subtitle_style"] = effective_subtitle
     effective_transition = transition_type or CHANNEL_CONFIG.get("transition_type", "Fade Smooth")
     effective_trans_dur = transition_duration if transition_duration is not None else CHANNEL_CONFIG.get("transition_duration", 0.3)
+    storyboard["_transition_type"] = effective_transition
+    storyboard["_transition_duration"] = effective_trans_dur
 
     log(f"  Image provider: {image_provider}", "INFO")
     if video_provider and video_provider != "none":
@@ -1382,7 +1389,7 @@ def assemble_video(storyboard: dict, output_dir: Path,
 
     result = generator.assemble_video_from_storyboard(
         storyboard_data=storyboard,
-        platform="youtube_short",
+        platform=platform,
         add_subtitles=True,
         subtitle_style=effective_subtitle,
         add_overlays=True,

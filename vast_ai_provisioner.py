@@ -390,14 +390,16 @@ class VastProvisioner:
             raise RuntimeError("No hay ofertas viables (VRAM/disco/AVX2/Internet) ahora mismo")
         
         last_error = None
-        for offer in offers[:3]:
+        for offer in offers[:10]:
             self._log(f"[Provisioner] elegida: {offer.get('gpu_name')} "
                      f"${offer.get('dph_total'):.4f}/hr CPU={offer.get('cpu_name')}")
+            instance_id = None
 
-            instance_id = self.create_instance(int(offer["id"]), disk_gb=max(min_disk_gb, DEFAULT_DISK_GB))
-            self._log(f"[Provisioner] instancia creada: {instance_id}")
 
             try:
+                instance_id = self.create_instance(int(offer["id"]), disk_gb=max(min_disk_gb, DEFAULT_DISK_GB))
+                self._log(f"[Provisioner] instancia creada: {instance_id}")
+
                 self.attach_ssh_key(instance_id, read_ssh_pubkey())
                 # Timeout un poco mas corto para aprovisionamiento inicial (15 min en vez de 20)
                 inst = self.start_and_wait(instance_id, timeout_s=900)
@@ -417,7 +419,11 @@ class VastProvisioner:
                 )
             except Exception as e:
                 self._log(f"[Provisioner] Fallo aprovisionando la oferta {offer.get('id')}: {e}")
-                self.destroy_instance(instance_id)
+                if instance_id is not None:
+                    try:
+                        self.destroy_instance(instance_id)
+                    except:
+                        pass
                 last_error = e
                 continue
                 

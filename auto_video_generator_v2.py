@@ -1413,15 +1413,24 @@ Reglas:
         effective_video_duration = total_video_duration - transition_overlap_sec
         if audio_duration_sec > 0 and effective_video_duration < audio_duration_sec and clips_data:
             deficit = audio_duration_sec - effective_video_duration
-            clips_data[-1]['duration'] = clips_data[-1].get('duration', 0) + deficit
+            
+            # Distribute deficit proportionally
+            for item in clips_data:
+                orig_dur = item.get('duration', 0)
+                if total_video_duration > 0:
+                    proportion = orig_dur / total_video_duration
+                    item['duration'] = orig_dur + (deficit * proportion)
+                else:
+                    item['duration'] = orig_dur + (deficit / len(clips_data))
+                    
             if use_transitions:
                 self.log(
-                    f"   [INFO] Ajustando ultimo segmento +{deficit:.1f}s "
+                    f"   [INFO] Distribuido deficit de +{deficit:.1f}s proporcionalmente "
                     f"(compensando {transition_overlap_sec:.1f}s de solape por transiciones)"
                 )
             else:
                 self.log(
-                    f"   [INFO] Ajustando ultimo segmento +{deficit:.1f}s "
+                    f"   [INFO] Distribuido deficit de +{deficit:.1f}s proporcionalmente "
                     f"para igualar duracion del audio ({audio_duration_sec:.1f}s)"
                 )
         elif audio_duration_sec > 0 and effective_video_duration >= audio_duration_sec:

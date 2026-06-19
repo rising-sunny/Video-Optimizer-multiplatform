@@ -18,8 +18,8 @@
     "class_type": "CLIPTextEncodeFlux",
     "inputs": {
       "clip": ["1", 1],
-      "clip_l": "__NEGATIVE_PROMPT__",
-      "t5xxl": "__NEGATIVE_PROMPT__",
+      "clip_l": "",
+      "t5xxl": "",
       "guidance": 3.5
     }
   },
