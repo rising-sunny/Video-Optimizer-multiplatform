@@ -64,6 +64,9 @@ class ImageGenerationManager:
         self._storyboard_context: dict = {}
         # Cache de términos negativos específicos de la época, generados por IA
         self._era_negative_terms: list = []
+        # Visual Bible (contexto global positivo)
+        self._era_positive_context: str = ""
+
 
     def set_storyboard_context(self, storyboard_data: dict) -> None:
         """
@@ -83,6 +86,7 @@ class ImageGenerationManager:
 
         self._storyboard_context = new_ctx
         self._era_negative_terms = self._generate_era_negative_terms(title, category, script)
+        self._era_positive_context = self._generate_era_positive_context(title, category, script)
 
     def _generate_era_negative_terms(self, title: str, category: str, script: str) -> list:
         """
@@ -128,6 +132,47 @@ class ImageGenerationManager:
         except Exception as e:
             self.log(f"[ImageGen] No se pudo generar era negative terms: {e}")
             return []
+
+    def _generate_era_positive_context(self, title: str, category: str, script: str) -> str:
+        """
+        Usa Groq/Gemini para generar un contexto histórico y visual global ("Visual Bible")
+        que se inyectará al inicio de todos los prompts visuales.
+        """
+        ai_client = None
+        if self.prompt_processor and getattr(self.prompt_processor, 'gemini_client', None):
+            ai_client = self.prompt_processor.gemini_client
+        if not ai_client or not getattr(ai_client, 'client_available', False):
+            return ""
+
+        script_preview = script[:1000] if script else ''
+        prompt_text = (
+            "You are a visual consistency expert for AI-generated images.\n"
+            "Given the following documentary/history video script context, generate a dense, strict "
+            "global context prefix (max 250 characters) that establishes the historical era, location, "
+            "and primary visual constraints (clothing, architecture, technology).\n\n"
+            f"Title: {title}\n"
+            f"Category: {category}\n"
+            f"Script excerpt: {script_preview}\n\n"
+            "Rules:\n"
+            "- It MUST be a single, dense string that will be prepended to all image prompts.\n"
+            "- Specify the EXACT era/year, geographical location, and visual style.\n"
+            "- Include strict constraints (e.g. 'NO modern clothing', 'Paleolithic tribes in animal hides', 'Victorian London, 1888').\n"
+            "- Do not explain or include bullet points. Return ONLY the prefix string.\n"
+            "Output:"
+        )
+
+        try:
+            result = ai_client._generate(prompt_text, max_tokens=150)
+            if not result or result.startswith("ERROR"):
+                return ""
+            context = result.strip().replace('[', '').replace(']', '')
+            if len(context) > 300:
+                context = context[:300]
+            self.log(f"[ImageGen] Visual Bible generado: [{context[:50]}...]")
+            return context
+        except Exception as e:
+            self.log(f"[ImageGen] No se pudo generar Visual Bible: {e}")
+            return ""
 
     @staticmethod
     def _normalize_provider_key(provider_key):
@@ -425,12 +470,19 @@ class ImageGenerationManager:
         return groups
     
     def _combine_prompts(self, segment_group):
-        """Delega a PromptProcessor si está disponible"""
+        """Delega a PromptProcessor si está disponible e inyecta el Visual Bible (era_positive_context) si existe."""
         if self.prompt_processor:
-            return self.prompt_processor.combine_prompts(segment_group)
-        # Fallback: combinar textos
-        prompts = [seg.get('visual_prompt', '') for seg in segment_group]
-        return ', '.join(filter(None, prompts))
+            base_prompt = self.prompt_processor.combine_prompts(segment_group)
+        else:
+            # Fallback: combinar textos
+            prompts = [seg.get('visual_prompt', '') for seg in segment_group]
+            base_prompt = ', '.join(filter(None, prompts))
+            
+        if getattr(self, '_era_positive_context', None):
+            if not base_prompt.startswith(f"[{self._era_positive_context}]"):
+                base_prompt = f"[{self._era_positive_context}] " + base_prompt
+                
+        return base_prompt
     
     def _apply_style_to_prompt(self, visual_prompt, style, provider_key=None):
         """Delega a PromptProcessor si está disponible"""
@@ -1794,8 +1846,12 @@ class ImageGenerationManager:
         # Track de prompts usados para detectar duplicados
         used_prompts = {}  # {prompt_hash: (segment_index, prompt_text)}
         
-        # Iterar sobre grupos de segmentos
-        for group_idx, segment_group in enumerate(segment_groups):
+        # Iterar sobre grupos de segmentos concurrentemente
+        import concurrent.futures
+        
+        def _process_group(args):
+            nonlocal generated_count, failed_count, success_count, reused_count, google_quota_exhausted
+            group_idx, segment_group = args
             # Obtener el primer segmento del grupo para el nombre de archivo
             first_seg = segment_group[0]
             # Si images_per_segment_ratio es 1.0, usar el nombre único de cada segmento
@@ -1991,7 +2047,7 @@ class ImageGenerationManager:
                 sources_str = ', '.join([source_names.get(s, s) for s in unique_sources])
                 self.log(f"       Todos los segmentos tienen contenido existente ({sources_str}) - Saltando generación")
                 reused_count += group_size
-                continue  # Saltar este grupo completo
+                return
             
             # Si algunos segmentos tienen contenido y otros no, generar solo para los que faltan
             if segments_with_content and segments_to_generate:
@@ -2115,7 +2171,7 @@ class ImageGenerationManager:
                     seg['image_source'] = 'existing'
                 
                 reused_count += group_size
-                continue  # Saltar este grupo, ya tiene imagen
+                return
             elif not needs_regeneration and all_have_same_image and group_image_path and images_per_segment_ratio <= 1.0:
                 # Cuando ratio es 1.0, forzar regeneración para evitar duplicados
                 self.log(f"       Ratio 1.0 detectado: Forzando generación de imagen única para cada segmento")
@@ -2501,6 +2557,12 @@ class ImageGenerationManager:
                 for seg in segment_group:
                     seg['image_path'] = None
                 failed_count += group_size
+                
+        # Ejecutar en paralelo (max 5 hilos)
+        max_workers = min(5, max(1, len(segment_groups)))
+        self.log(f"\n⚡ Iniciando generacion concurrente de imagenes con {max_workers} hilos...")
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            list(executor.map(_process_group, enumerate(segment_groups)))
         
         # Resumen final
         self.log(f"\n Generación de imágenes completada")

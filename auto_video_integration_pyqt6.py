@@ -1445,6 +1445,9 @@ Respond ONLY with valid JSON."""
             )
             if proc_scp.returncode != 0:
                 self.log(f"️ VPS SCP error: {proc_scp.stderr.decode('utf-8', errors='ignore')[-300:]}")
+                if fallback_fn:
+                    self.log(f"   [!] Fallando a upload local para {platform}...")
+                    return fallback_fn()
                 return None
 
             # 3. SCP uploader scripts + env file
@@ -1473,6 +1476,9 @@ Respond ONLY with valid JSON."""
             if proc.returncode != 0:
                 stderr_tail = proc.stderr[-600:] if proc.stderr else ''
                 self.log(f"️ VPS {platform} stderr: {stderr_tail}")
+                if fallback_fn:
+                    self.log(f"   [!] Fallando a upload local para {platform}...")
+                    return fallback_fn()
                 return None
 
             output = proc.stdout.strip().splitlines()
@@ -1483,11 +1489,17 @@ Respond ONLY with valid JSON."""
 
         except subprocess.TimeoutExpired:
             self.log(f"️ Timeout al subir a {platform} via VPS.")
+            if fallback_fn:
+                self.log(f"   [!] Fallando a upload local para {platform}...")
+                return fallback_fn()
             return None
         except Exception as e:
             self.log(f"️ Error {platform} via VPS: {e}")
             import traceback
             traceback.print_exc()
+            if fallback_fn:
+                self.log(f"   [!] Fallando a upload local para {platform}...")
+                return fallback_fn()
             return None
         finally:
             try:
@@ -1505,6 +1517,15 @@ Respond ONLY with valid JSON."""
         if publish_at:
             python_args += f", scheduled_publish_time='{publish_at}'"
 
+        def _local_fallback():
+            from facebook_uploader import upload_from_metadata
+            return upload_from_metadata(
+                output_dir=str(staging_dir),
+                video_state='PUBLISHED',
+                upload_type=upload_type,
+                scheduled_publish_time=publish_at
+            )
+
         return self._upload_via_vps(
             platform="Facebook",
             staging_dir=staging_dir,
@@ -1513,9 +1534,14 @@ Respond ONLY with valid JSON."""
                 "from facebook_uploader import upload_from_metadata\n"
                 f"result = upload_from_metadata({python_args})"
             ),
+            fallback_fn=_local_fallback,
         )
 
     def _upload_instagram_via_vps(self, staging_dir, video_path: str, instagram_meta: dict) -> dict:
+        def _local_fallback():
+            from instagram_uploader import upload_from_metadata
+            return upload_from_metadata(output_dir=str(staging_dir), share_to_feed=True)
+
         return self._upload_via_vps(
             platform="Instagram",
             staging_dir=staging_dir,
@@ -1524,7 +1550,7 @@ Respond ONLY with valid JSON."""
                 "from instagram_uploader import upload_from_metadata\n"
                 "result = upload_from_metadata(output_dir='.', share_to_feed=True)"
             ),
-            fallback_fn=None,
+            fallback_fn=_local_fallback,
         )
 
     def _on_publish_done(self, results: dict):

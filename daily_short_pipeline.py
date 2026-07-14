@@ -1010,9 +1010,8 @@ def select_best_idea(ideas: list, forced_topic: str = None,
     if forced_topic:
         similar_title = find_similar_title(forced_topic, used_titles)
         if similar_title:
-            raise ValueError(
-                f"El tema manual '{forced_topic}' es demasiado similar a un video existente: '{similar_title}'."
-            )
+            log(f"El tema manual '{forced_topic}' es similar a '{similar_title}', pero lo saltaremos.", "WARNING")
+            pass
         log(f"Usando tema forzado: {forced_topic}", "STEP")
         return {
             "title": forced_topic,

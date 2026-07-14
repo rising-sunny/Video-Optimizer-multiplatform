@@ -183,23 +183,13 @@ class TimelineSegment(QFrame):
         header_layout.addWidget(self.checkbox)
         
         self.number_label = QLabel()
-        self.number_label.setStyleSheet("""
-            QLabel {
-                background-color: #f2f4f7;
-                color: #1f2831;
-                padding: 3px 8px;
-                border-radius: 3px;
-                font-weight: bold;
-                font-size: 11pt;
-                border: 1px solid #d6dde5;
-            }
-        """)
+        self.number_label.setObjectName("segmentNumber")
         header_layout.addWidget(self.number_label)
         
         header_layout.addStretch()
         
         self.duration_label = QLabel()
-        self.duration_label.setStyleSheet("color: #6f7c89; font-size: 9pt;")
+        self.duration_label.setObjectName("segmentDuration")
         header_layout.addWidget(self.duration_label)
 
         self.btn_regenerate_text = QPushButton("Regen texto")
@@ -208,12 +198,7 @@ class TimelineSegment(QFrame):
             "Regenera el texto narrativo de este segmento usando el contexto completo del guion."
         )
         self.btn_regenerate_text.setMinimumHeight(24)
-        self.btn_regenerate_text.setStyleSheet("""
-            QPushButton {
-                padding: 2px 8px;
-                font-size: 8pt;
-            }
-        """)
+        self.btn_regenerate_text.setObjectName("accent")
         self.btn_regenerate_text.clicked.connect(self._on_regenerate_text_clicked)
         header_layout.addWidget(self.btn_regenerate_text)
         
@@ -222,16 +207,7 @@ class TimelineSegment(QFrame):
         # Texto del segmento (preview)
         self.text_label = QLabel()
         self.text_label.setWordWrap(True)
-        self.text_label.setStyleSheet("""
-            QLabel {
-                color: #2f3b47;
-                font-size: 9pt;
-                padding: 4px;
-                background-color: #f7f8fa;
-                border-radius: 3px;
-                border: 1px solid #ebeff3;
-            }
-        """)
+        self.text_label.setObjectName("segmentText")
         layout.addWidget(self.text_label)
         
         # Imagen preview (nuevo)
@@ -244,13 +220,7 @@ class TimelineSegment(QFrame):
         # Aumentar tamaÃ±o para que se vea mejor la imagen completa
         self.image_preview.setMinimumSize(200, 150)
         self.image_preview.setMaximumSize(200, 150)
-        self.image_preview.setStyleSheet("""
-            QLabel {
-                background-color: #fbfcfd;
-                border: 1px solid #dde3e9;
-                border-radius: 4px;
-            }
-        """)
+        self.image_preview.setObjectName("segmentImage")
         self.image_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.image_preview.setText("Sin imagen")
         self.image_preview.setScaledContents(True)  # Esto harÃ¡ que la imagen se escale para llenar el espacio
@@ -263,13 +233,7 @@ class TimelineSegment(QFrame):
         # Indicador de estado de imagen (generada vs encontrada)
         self.image_status_label = QLabel()
         self.image_status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.image_status_label.setStyleSheet("""
-            QLabel {
-                color: #6f7c89;
-                font-size: 7pt;
-                padding: 2px;
-            }
-        """)
+        self.image_status_label.setObjectName("segmentDuration")
         self.image_status_label.setMaximumHeight(15)
         image_container_layout.addWidget(self.image_status_label)
 
@@ -283,32 +247,15 @@ class TimelineSegment(QFrame):
             "Copia el prompt y negative prompt Recraft de este segmento."
         )
         self.btn_copy_recraft_prompts.setMinimumHeight(24)
-        self.btn_copy_recraft_prompts.setStyleSheet("""
-            QPushButton {
-                padding: 2px 8px;
-                font-size: 8pt;
-            }
-        """)
+
         self.btn_copy_recraft_prompts.clicked.connect(self._on_copy_recraft_prompts_clicked)
         prompt_buttons_layout.addWidget(self.btn_copy_recraft_prompts)
 
-        _fal_btn_style = """
-            QPushButton {
-                padding: 2px 6px;
-                font-size: 8pt;
-                background-color: #1a1a2e;
-                color: #e0e0ff;
-                border: 1px solid #4a4aaa;
-                border-radius: 3px;
-            }
-            QPushButton:hover { background-color: #2a2a4e; }
-            QPushButton:disabled { background-color: #3a3a4e; color: #888; }
-        """
         self.btn_fal_image = QPushButton("Generar")
         self.btn_fal_image.setCursor(QCursor(Qt.CursorShape.ArrowCursor))
         self.btn_fal_image.setToolTip("Genera imagen para este segmento con FAL.AI (sin confirmacion)")
         self.btn_fal_image.setMinimumHeight(24)
-        self.btn_fal_image.setStyleSheet(_fal_btn_style)
+        self.btn_fal_image.setObjectName("accent")
         self.btn_fal_image.clicked.connect(lambda: self.generate_fal_image_requested.emit(self.index))
         self.btn_fal_image.setVisible(False)
         prompt_buttons_layout.addWidget(self.btn_fal_image)
@@ -317,7 +264,7 @@ class TimelineSegment(QFrame):
         self.btn_fal_animate.setCursor(QCursor(Qt.CursorShape.ArrowCursor))
         self.btn_fal_animate.setToolTip("Anima la imagen a video con FAL.AI (I2V)")
         self.btn_fal_animate.setMinimumHeight(24)
-        self.btn_fal_animate.setStyleSheet(_fal_btn_style)
+        self.btn_fal_animate.setObjectName("accent")
         self.btn_fal_animate.clicked.connect(lambda: self.animate_fal_video_requested.emit(self.index))
         self.btn_fal_animate.setVisible(False)
         prompt_buttons_layout.addWidget(self.btn_fal_animate)
@@ -1176,43 +1123,18 @@ class TimelineSegment(QFrame):
         event.accept()
     
     def update_style(self):
-        """Actualiza el estilo segÃºn el estado"""
+        """Actualiza el estilo según el estado de arrastre o selección"""
         if self._drop_target_active:
-            self.setStyleSheet("""
-                TimelineSegment {
-                    background-color: #eef8f1;
-                    border: 2px dashed #5b8f67;
-                    border-radius: 8px;
-                }
-            """)
+            self.setProperty("state", "drop_target")
         elif self.is_selected:
-            self.setStyleSheet("""
-                TimelineSegment {
-                    background-color: #eaf2f8;
-                    border: 2px solid #7f98b2;
-                    border-radius: 8px;
-                }
-            """)
+            self.setProperty("state", "selected")
         elif self.is_checked:
-            self.setStyleSheet("""
-                TimelineSegment {
-                    background-color: #eef3f7;
-                    border: 2px solid #aebbc8;
-                    border-radius: 8px;
-                }
-            """)
+            self.setProperty("state", "checked")
         else:
-            self.setStyleSheet("""
-                TimelineSegment {
-                    background-color: #ffffff;
-                    border: 1px solid #dde3e9;
-                    border-radius: 8px;
-                }
-                TimelineSegment:hover {
-                    background-color: #f6f8fa;
-                    border: 1px solid #9baebe;
-                }
-            """)
+            self.setProperty("state", "normal")
+            
+        self.style().unpolish(self)
+        self.style().polish(self)
     
     def set_selected(self, selected):
         """Establece el estado de selecciÃ³n"""
@@ -1803,15 +1725,7 @@ class GroupedSegmentsWidget(QFrame):
         self.shared_image_label.setMaximumWidth(big_width + 20)
         self.shared_image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.shared_image_label.setScaledContents(True)
-        self.shared_image_label.setStyleSheet("""
-            QLabel {
-                background-color: #fbfcfd;
-                border: 1px solid #dde3e9;
-                border-radius: 6px;
-                color: #6f7c89;
-                font-size: 9pt;
-            }
-        """)
+        self.shared_image_label.setObjectName("groupedImage")
         self.shared_image_label.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.shared_image_label.setToolTip(
             "Imagen compartida por varios segmentos.\n"
@@ -1826,17 +1740,7 @@ class GroupedSegmentsWidget(QFrame):
         self.badge_label = QLabel()
         self.badge_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.badge_label.setWordWrap(True)
-        self.badge_label.setStyleSheet("""
-            QLabel {
-                background-color: #eef4fb;
-                color: #1f3b5c;
-                border: 1px solid #c7d7e8;
-                border-radius: 4px;
-                padding: 3px 6px;
-                font-size: 8pt;
-                font-weight: bold;
-            }
-        """)
+        self.badge_label.setObjectName("groupedBadge")
         left_column.addWidget(self.badge_label)
 
         self.btn_copy_prompts = QPushButton("Copiar Prompts")
@@ -1844,31 +1748,14 @@ class GroupedSegmentsWidget(QFrame):
             "Copia el prompt y negative prompt de la imagen compartida al portapapeles."
         )
         self.btn_copy_prompts.setMinimumHeight(24)
-        self.btn_copy_prompts.setStyleSheet("""
-            QPushButton {
-                padding: 2px 8px;
-                font-size: 8pt;
-            }
-        """)
+
         self.btn_copy_prompts.clicked.connect(self._on_copy_prompts_clicked)
         left_column.addWidget(self.btn_copy_prompts)
 
-        _fal_grp_style = """
-            QPushButton {
-                padding: 2px 8px;
-                font-size: 8pt;
-                background-color: #1a1a2e;
-                color: #e0e0ff;
-                border: 1px solid #4a4aaa;
-                border-radius: 3px;
-            }
-            QPushButton:hover { background-color: #2a2a4e; }
-            QPushButton:disabled { background-color: #3a3a4e; color: #888; }
-        """
         self.btn_fal_image = QPushButton("Generar imagen")
-        self.btn_fal_image.setToolTip("Genera imagen compartida para este grupo con FAL.AI")
+        self.btn_fal_image.setToolTip("Genera imagen con FAL.AI para todo el grupo")
         self.btn_fal_image.setMinimumHeight(24)
-        self.btn_fal_image.setStyleSheet(_fal_grp_style)
+        self.btn_fal_image.setObjectName("accent")
         self.btn_fal_image.clicked.connect(
             lambda: self.grouped_generate_fal_image_requested.emit(self.member_indices)
         )
@@ -1878,7 +1765,7 @@ class GroupedSegmentsWidget(QFrame):
         self.btn_fal_animate = QPushButton("Animar a video")
         self.btn_fal_animate.setToolTip("Anima la imagen compartida a video con FAL.AI (I2V)")
         self.btn_fal_animate.setMinimumHeight(24)
-        self.btn_fal_animate.setStyleSheet(_fal_grp_style)
+        self.btn_fal_animate.setObjectName("accent")
         self.btn_fal_animate.clicked.connect(
             lambda: self.grouped_animate_fal_video_requested.emit(self.member_indices)
         )
@@ -1909,13 +1796,9 @@ class GroupedSegmentsWidget(QFrame):
         outer.addWidget(right_widget, 1)
 
     def _apply_style(self):
-        self.setStyleSheet("""
-            GroupedSegmentsWidget {
-                background-color: #f7faff;
-                border: 1px solid #c7d7e8;
-                border-radius: 10px;
-            }
-        """)
+        # El estilo es manejado globlamente por ui_themes.py via objectNames.
+        self.setObjectName("segmentCard")
+        pass
 
     # ------------------------------------------------------------------
     # Imagen compartida: carga + menu contextual

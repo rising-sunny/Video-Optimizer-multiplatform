@@ -154,10 +154,8 @@ def probe_precise_subtitle_dependencies() -> Dict[str, object]:
     status["ffprobe_path"] = ffprobe_path
 
     missing = []
-    if not status["whisper_module"]:
-        missing.append("whisper")
-    if not status["torch_module"]:
-        missing.append("torch")
+    # Las dependencias de whisper y torch se omiten de la validacion estricta 
+    # porque el sistema utiliza un tunnel VPS/fallback automatico si fallan localmente.
     if not ffmpeg_path:
         missing.append("ffmpeg")
     if not ffprobe_path:

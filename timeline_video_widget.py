@@ -32,7 +32,7 @@ class VideoTimelineWidget(QWidget):
 
         self.setMinimumHeight(120)
         self.setMaximumHeight(150)
-        self.setStyleSheet("background-color: #1a1a1a; border: 1px solid #3d3d3d; border-radius: 4px;")
+        self.setObjectName("videoPreview")
 
         # Variables para arrastre
         self.dragging = None  # 'start', 'end', 'position', o None

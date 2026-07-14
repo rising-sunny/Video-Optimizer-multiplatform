@@ -65,7 +65,7 @@ class VideoPreviewDialog(QDialog):
         if self.video_data.get('duration'):
             info_text += f" | Duración: {self.video_data.get('duration', 0):.1f}s"
         info_label.setText(info_text)
-        info_label.setStyleSheet("font-size: 10pt; padding: 10px; background-color: #2d2d2d; border-radius: 5px;")
+        info_label.setObjectName("subtitle")
         layout.addWidget(info_label)
         
         # Widget de video
@@ -92,7 +92,7 @@ class VideoPreviewDialog(QDialog):
                         "Puedes usar 'Abrir en Navegador' para ver el video."
                     )
                     fallback_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                    fallback_label.setStyleSheet("padding: 50px; color: #f39c12;")
+                    fallback_label.setObjectName("errorText")
                     layout.addWidget(fallback_label)
                     self.video_widget = None
             except Exception as e:
@@ -105,7 +105,7 @@ class VideoPreviewDialog(QDialog):
                     "Puedes usar 'Abrir en Navegador' para ver el video."
                 )
                 fallback_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                fallback_label.setStyleSheet("padding: 50px; color: #f39c12;")
+                fallback_label.setObjectName("errorText")
                 layout.addWidget(fallback_label)
         else:
             # Para URLs remotas o si MEDIA_PLAYER no está disponible, mostrar mensaje
@@ -129,7 +129,7 @@ class VideoPreviewDialog(QDialog):
                 )
             
             info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            info_label.setStyleSheet("padding: 50px; color: #3498db; font-size: 11pt;")
+            info_label.setObjectName("subtitle")
             info_label.setWordWrap(True)
             layout.addWidget(info_label)
         
@@ -203,7 +203,7 @@ class VideoPreviewDialog(QDialog):
                     "o ' Seleccionar Video' para descargarlo y usarlo en tu proyecto."
                 )
                 info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                info_label.setStyleSheet("padding: 50px; color: #3498db; font-size: 11pt;")
+                info_label.setObjectName("subtitle")
                 info_label.setWordWrap(True)
                 
                 # Reemplazar el video widget con el mensaje

@@ -885,12 +885,7 @@ class TimelineEditorWidget(QWidget):
             self.btn_correct_and_regenerate.setEnabled(False)
         layout.addWidget(self.btn_correct_and_regenerate)
 
-        self.btn_delete_selected_images = QPushButton("Eliminar imágenes seleccionadas")
-        self.btn_delete_selected_images.clicked.connect(self.delete_selected_images)
-        self.btn_delete_selected_images.setEnabled(False)
-        layout.addWidget(self.btn_delete_selected_images)
-
-        self.btn_clear_media_selected = QPushButton("Quitar imagen/video de seleccionados")
+        self.btn_clear_media_selected = QPushButton("Quitar multimedia seleccionada")
         self.btn_clear_media_selected.setToolTip(
             "Quita completamente la imagen y/o video asignados a los segmentos marcados,\n"
             "dejándolos sin media para poder asignar uno nuevo."
@@ -906,14 +901,6 @@ class TimelineEditorWidget(QWidget):
         self.btn_generate_ai_images = QPushButton("Generar imágenes")
         self.btn_generate_ai_images.clicked.connect(self.generate_all_ai_images)
         layout.addWidget(self.btn_generate_ai_images)
-
-        self.btn_generate_selected_missing_ai = QPushButton("Generar en seleccionados sin imagen")
-        self.btn_generate_selected_missing_ai.setToolTip(
-            "Genera imagenes solo para segmentos marcados que no tengan imagen."
-        )
-        self.btn_generate_selected_missing_ai.clicked.connect(self.generate_selected_missing_ai_images)
-        self.btn_generate_selected_missing_ai.setEnabled(False)
-        layout.addWidget(self.btn_generate_selected_missing_ai)
 
         return header
     
@@ -2758,89 +2745,22 @@ Next segment:
         if 'image_deleted' in segment:
             del segment['image_deleted']
         
-        # Activar auto-guardado automÃ¡tico
-        self._trigger_auto_save("despuÃ©s de eliminar imagen completamente")
+        # Activar auto-guardado automático
+        self._trigger_auto_save("después de eliminar imagen completamente")
         self._refresh_media_widgets([index], {index: None})
         
-        # Actualizar el editor de segmentos si estÃ¡ mostrando este segmento
+        # Actualizar el editor de segmentos si está mostrando este segmento
         if self.selected_index == index:
             self.segment_editor.load_segment(self.segments[index])
         
         QMessageBox.information(
             self,
             "Imagen Eliminada",
-            f"âœ… La imagen del segmento #{index + 1} ha sido eliminada completamente.\n\n"
-            f"Ahora puedes agregar otra imagen o un video al segmento usando el menÃº contextual."
+            f"✅ La imagen del segmento #{index + 1} ha sido eliminada completamente.\n\n"
+            f"Ahora puedes agregar otra imagen o un video al segmento usando el menú contextual."
         )
     
-    def delete_selected_images(self):
-        """Elimina las imÃ¡genes de todos los segmentos seleccionados"""
-        # Obtener Ã­ndices de segmentos seleccionados (con checkbox marcado)
-        selected_indices = []
-        for i, widget in enumerate(self.segment_widgets):
-            if widget.is_checked:
-                selected_indices.append(i)
-        
-        if not selected_indices:
-            QMessageBox.warning(
-                self,
-                "Sin SelecciÃ³n",
-                "Por favor selecciona al menos un segmento marcando el checkbox."
-            )
-            return
-        
-        # Confirmar eliminaciÃ³n
-        reply = QMessageBox.question(
-            self,
-            "Confirmar EliminaciÃ³n Masiva",
-            f"Â¿Eliminar las imÃ¡genes de {len(selected_indices)} segmento(s) seleccionado(s)?\n\n"
-            "Las imÃ¡genes se marcarÃ¡n como eliminadas y se mostrarÃ¡ una imagen negra.",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-        )
-        
-        if reply == QMessageBox.StandardButton.Yes:
-            deleted_count = 0
-            for index in selected_indices:
-                if index < len(self.segments):
-                    # Solo eliminar si tiene imagen y no estÃ¡ ya eliminada
-                    if not self.segments[index].get('image_deleted', False):
-                        # Guardar el image_path original antes de eliminarlo
-                        if 'image_path' in self.segments[index] and self.segments[index]['image_path']:
-                            self.segments[index]['original_image_path'] = self.segments[index]['image_path']
-                        
-                        self.segments[index]['image_deleted'] = True
-                        # Limpiar image_path para que no se use
-                        if 'image_path' in self.segments[index]:
-                            del self.segments[index]['image_path']
-                        
-                        # Actualizar widget
-                        if index < len(self.segment_widgets):
-                            self.segment_widgets[index].segment_data = self.segments[index]
-                            self.segment_widgets[index].update_image_preview()
-                            # Desmarcar checkbox despuÃ©s de eliminar
-                            self.segment_widgets[index].set_checked(False)
-                        
-                        deleted_count += 1
-            
-            # Desmarcar todos los checkboxes
-            for widget in self.segment_widgets:
-                widget.set_checked(False)
-            
-            # Actualizar estado del botÃ³n
-            self.update_delete_button_state()
-            
-            # Activar auto-guardado automÃ¡tico
-            self._trigger_auto_save("despuÃ©s de eliminaciÃ³n masiva de imÃ¡genes")
-            self._refresh_media_widgets(
-                selected_indices,
-                {index: None for index in selected_indices},
-            )
-            
-            QMessageBox.information(
-                self,
-                "EliminaciÃ³n Completada",
-                f"Se eliminaron las imÃ¡genes de {deleted_count} segmento(s)."
-            )
+
     
     def clear_media_from_selected(self):
         """Quita completamente imagen y/o video de todos los segmentos seleccionados."""
@@ -2881,44 +2801,59 @@ Next segment:
         self._refresh_media_widgets(selected_indices, {i: None for i in selected_indices})
 
     def generate_all_ai_images(self):
-        """Genera imagenes para todos los segmentos, limpiando las generadas anteriormente."""
-        # PRIMERO: Eliminar todas las imagenes generadas existentes
-        ai_segments_to_clean = []
-        for i, segment in enumerate(self.segments):
-            image_path = segment.get('image_path')
-            image_source = segment.get('image_source', '')
-            
-            # Si es imagen generada, marcar para limpieza
-            if image_path and image_source in TIMELINE_AI_IMAGE_SOURCES:
-                ai_segments_to_clean.append(i)
-            # Si no tiene imagen o estÃ¡ eliminada, tambiÃ©n marcar para generaciÃ³n
-            elif not image_path or segment.get('image_deleted', False):
-                ai_segments_to_clean.append(i)
+        """Genera imagenes inteligentes (solo para la selección actual si hay alguna, o para todo el guion si no hay nada seleccionado)."""
+        selected_indices = [i for i, widget in enumerate(self.segment_widgets) if widget.is_checked]
         
-        if not ai_segments_to_clean:
+        target_indices = []
+        if selected_indices:
+            # Solo procesar los seleccionados que no tengan imagen manual
+            for i in selected_indices:
+                segment = self.segments[i]
+                image_source = segment.get('image_source', '')
+                image_path = segment.get('image_path')
+                
+                # Ignorar si es manual
+                manual_sources = ['wikimedia', 'bing_images', 'google_images', 'pexels_video', 'wikimedia_video', 'internet_archive', 'youtube']
+                if image_source in manual_sources:
+                    continue
+                    
+                target_indices.append(i)
+        else:
+            # Si no hay seleccion, procesar todo el guion (limpiar generadas previas y crear faltantes)
+            for i, segment in enumerate(self.segments):
+                image_path = segment.get('image_path')
+                image_source = segment.get('image_source', '')
+                
+                if image_path and image_source in TIMELINE_AI_IMAGE_SOURCES:
+                    target_indices.append(i)
+                elif not image_path or segment.get('image_deleted', False):
+                    target_indices.append(i)
+        
+        if not target_indices:
             QMessageBox.information(
                 self,
                 "Sin Segmentos para Procesar",
                 "No hay segmentos que necesiten imagenes nuevas."
             )
             return
+            
+        scope_text = "los seleccionados" if selected_indices else "todo el guion"
         
-        # Confirmar limpieza y generaciÃ³n
+        # Confirmar limpieza y generación
         reply = QMessageBox.question(
             self,
             "Generar imagenes",
-            f"¿Generar nuevas imagenes para {len(ai_segments_to_clean)} segmento(s)?\n\n"
-            f"Esto eliminara las imagenes generadas existentes y creara nuevas.\n\n"
-            f"Segmentos a procesar: {', '.join(str(i+1) for i in ai_segments_to_clean[:10])}{'...' if len(ai_segments_to_clean) > 10 else ''}\n\n"
-            f"Las imagenes manuales (Wikimedia, Openverse, videos) se conservaran.",
+            f"¿Generar nuevas imagenes para {len(target_indices)} segmento(s) en {scope_text}?\n\n"
+            f"Segmentos a procesar: {', '.join(str(i+1) for i in target_indices[:10])}{'...' if len(target_indices) > 10 else ''}\n\n"
+            f"Las imagenes manuales se conservaran.",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
         
         if reply != QMessageBox.StandardButton.Yes:
             return
         
-        # Generar imÃ¡genes para todos los segmentos marcados
-        self._generate_ai_images_for_segments(ai_segments_to_clean, clean_existing_ai=True)
+        # Generar imágenes para los segmentos filtrados
+        self._generate_ai_images_for_segments(target_indices, clean_existing_ai=(not selected_indices))
 
     def _get_images_per_segment_frequency(self):
         """Obtiene la frecuencia (segmentos por imagen) configurada en Studio."""
@@ -2979,101 +2914,6 @@ Next segment:
         if len(segment_groups) > limit:
             preview += ", ..."
         return preview
-
-    def generate_selected_missing_ai_images(self):
-        """Genera imagenes solo para segmentos seleccionados que no tengan imagen."""
-        selected_indices = []
-        for i, widget in enumerate(self.segment_widgets):
-            if widget.is_checked:
-                selected_indices.append(i)
-
-        if not selected_indices:
-            QMessageBox.warning(
-                self,
-                "Sin Seleccion",
-                "Marca al menos un segmento con el checkbox para generar imagenes."
-            )
-            return
-
-        segments_to_generate = []
-        segments_with_image = []
-        for idx in selected_indices:
-            if idx >= len(self.segments):
-                continue
-            segment = self.segments[idx]
-            image_path = segment.get('image_path')
-            video_path = segment.get('video_path')
-            image_deleted = segment.get('image_deleted', False)
-
-            # Si hay video o imagen valida, no regenerar
-            has_video = bool(video_path and os.path.exists(str(video_path)))
-            has_valid_image = bool(image_path and os.path.exists(str(image_path)) and not image_deleted)
-
-            if has_video or has_valid_image:
-                segments_with_image.append(idx)
-                continue
-
-            # Sin imagen/video o marcada eliminada: candidata para generar
-            if (not image_path) or image_deleted or (image_path and not os.path.exists(str(image_path))):
-                segments_to_generate.append(idx)
-
-        if not segments_to_generate:
-            QMessageBox.information(
-                self,
-                "Nada para Generar",
-                f"No hay segmentos seleccionados sin imagen.\n\n"
-                f"Seleccionados: {len(selected_indices)}\n"
-                f"Con imagen/video: {len(segments_with_image)}"
-            )
-            return
-
-        segments_per_image = self._get_images_per_segment_frequency()
-        segment_groups = self._group_segment_indices_by_frequency(
-            segments_to_generate,
-            segments_per_image
-        )
-        if not segment_groups:
-            QMessageBox.warning(
-                self,
-                "Sin Segmentos Validos",
-                "No se pudieron agrupar segmentos para generar imagenes."
-            )
-            return
-
-        preview_list = self._format_segment_group_preview(segment_groups, limit=12)
-        estimated_images = len(segment_groups)
-        ratio_note = ""
-        if segments_per_image > 1:
-            ratio_note = (
-                f"\nFrecuencia aplicada: {segments_per_image} segmento(s) por imagen.\n"
-                f"Se generaran ~{estimated_images} imagen(es) para {len(segments_to_generate)} segmento(s)."
-            )
-
-        reply = QMessageBox.question(
-            self,
-            "Generar en seleccionados sin imagen",
-            f"Se generaran imagenes para {len(segments_to_generate)} segmento(s) seleccionado(s) sin imagen.\n\n"
-            f"Grupos de segmentos: {preview_list}\n"
-            f"{ratio_note}\n\n"
-            f"Los demas segmentos NO se modificaran.",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.Yes
-        )
-
-        if reply != QMessageBox.StandardButton.Yes:
-            return
-
-        print(f"[TimelineEditor] Generacion en seleccionados sin imagen: {segments_to_generate}")
-        if segments_per_image > 1:
-            print(f"[TimelineEditor] Frecuencia activa: {segments_per_image} segmento(s) por imagen")
-            print(f"[TimelineEditor] Grupos a generar: {segment_groups}")
-
-        self._generate_ai_images_for_segments(
-            segments_to_generate,
-            clean_existing_ai=False,
-            segment_groups=segment_groups,
-            segments_per_image=segments_per_image
-        )
 
     def _generate_ai_images_for_segments(self, segment_indices, clean_existing_ai=True,
                                          segment_groups=None, segments_per_image=1):
@@ -3642,12 +3482,8 @@ Next segment:
     def update_delete_button_state(self):
         """Actualiza el estado del botÃ³n de eliminaciÃ³n masiva y checkbox 'Seleccionar todos'"""
         has_selected = any(widget.is_checked for widget in self.segment_widgets)
-        if hasattr(self, 'btn_delete_selected_images'):
-            self.btn_delete_selected_images.setEnabled(has_selected)
         if hasattr(self, 'btn_clear_media_selected'):
             self.btn_clear_media_selected.setEnabled(has_selected)
-        if hasattr(self, 'btn_generate_selected_missing_ai'):
-            self.btn_generate_selected_missing_ai.setEnabled(has_selected)
         
         # Actualizar estado del checkbox "Seleccionar todos"
         if hasattr(self, 'select_all_checkbox'):

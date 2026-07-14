@@ -671,6 +671,23 @@ class VideoExportManager:
             except ImportError:
                 pass
             return None, None
+            
+    def check_system_disk_space(self, target_path=None):
+        """
+        Verifica el espacio libre en el disco físico.
+        
+        Returns:
+            float: Espacio libre en GB o None si falla.
+        """
+        try:
+            import shutil
+            import os
+            path_to_check = target_path if target_path and os.path.exists(os.path.dirname(target_path) or '.') else '.'
+            total, used, free = shutil.disk_usage(path_to_check)
+            return free / (1024**3)
+        except Exception as e:
+            self.log(f"   ⚠️ Error comprobando espacio en disco: {e}")
+            return None
     
     def estimate_memory_required(self, num_segments, video_duration, apply_cinematic=False):
         """

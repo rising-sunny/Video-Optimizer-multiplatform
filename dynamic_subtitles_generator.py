@@ -1885,14 +1885,21 @@ class DynamicSubtitleEngine:
         try:
             shutil.copy2(ass_path, temp_ass_path)
             
+            # Detectar el mejor codificador disponible para evitar cuello de botella de CPU
+            try:
+                from auto_video_generator_v2 import get_optimal_h264_encoder
+                optimal_encoder = get_optimal_h264_encoder(ffmpeg_path)
+            except Exception:
+                optimal_encoder = 'libx264'
+            
             # Comando FFmpeg - método directo con subtitles filter usando path relativo
             cmd = [
                 ffmpeg_path,
                 '-y',
                 '-i', str(video_path),
                 '-vf', f"subtitles={temp_ass_name}",
-                '-c:v', 'libx264',
-                '-preset', 'medium',
+                '-c:v', optimal_encoder,
+                '-preset', 'fast',
                 '-crf', '23',
                 '-pix_fmt', 'yuv420p',
                 '-c:a', 'copy',

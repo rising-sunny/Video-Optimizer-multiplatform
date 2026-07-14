@@ -14,7 +14,8 @@ MOVIEPY_AVAILABLE = False
 try:
     import whisper
     WHISPER_AVAILABLE = True
-except ImportError:
+except (ImportError, OSError, RuntimeError) as e:
+    print(f"WARNING: No se pudo cargar Whisper local ({e.__class__.__name__}). El sistema usará el VPS o fallbacks.")
     pass
 
 try:

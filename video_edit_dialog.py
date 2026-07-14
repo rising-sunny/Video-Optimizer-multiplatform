@@ -136,8 +136,8 @@ class VideoEditDialog(QDialog):
         layout.setContentsMargins(20, 20, 20, 20)
         
         # Título
-        title = QLabel("️ Editar Video del Segmento")
-        title.setStyleSheet("font-size: 16pt; font-weight: bold; color: #0d7377;")
+        title = QLabel("Editor de Segmento de Video")
+        title.setObjectName("title")
         layout.addWidget(title)
         
         # Información del video
@@ -154,11 +154,11 @@ class VideoEditDialog(QDialog):
                 info_layout.addWidget(duration_label)
             else:
                 error_label = QLabel("️ No se pudo cargar información del video")
-                error_label.setStyleSheet("color: #e74c3c;")
+                error_label.setObjectName("errorText")
                 info_layout.addWidget(error_label)
         else:
             error_label = QLabel(" No hay video asignado a este segmento")
-            error_label.setStyleSheet("color: #e74c3c;")
+            error_label.setObjectName("errorText")
             info_layout.addWidget(error_label)
         
         layout.addWidget(info_group)
@@ -182,24 +182,10 @@ class VideoEditDialog(QDialog):
         
         # Grupo de controles de recorte (similar a CapCut con timeline visual)
         crop_group = QGroupBox("️ Recortar Video")
-        crop_group.setStyleSheet("""
-            QGroupBox {
-                font-weight: bold;
-                border: 2px solid #555;
-                border-radius: 5px;
-                margin-top: 10px;
-                padding-top: 10px;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 5px;
-            }
-        """)
         crop_layout = QVBoxLayout(crop_group)
         
         crop_info_label = QLabel("Selecciona el rango de tiempo del video que deseas usar en este segmento:")
-        crop_info_label.setStyleSheet("color: #a0a0a0; font-size: 9pt;")
+        crop_info_label.setObjectName("subtitle")
         crop_info_label.setWordWrap(True)
         crop_layout.addWidget(crop_info_label)
         
@@ -207,7 +193,7 @@ class VideoEditDialog(QDialog):
         self.video_label = QLabel()
         self.video_label.setMinimumHeight(200)
         self.video_label.setMaximumHeight(250)
-        self.video_label.setStyleSheet("background-color: #0a0a0a; border-radius: 4px;")
+        self.video_label.setObjectName("videoPreview")
         self.video_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.video_label.setText("Presiona Play para ver el video")
         self.video_label.setVisible(True)
@@ -343,18 +329,7 @@ class VideoEditDialog(QDialog):
         buttons_layout.addWidget(cancel_btn)
         
         apply_btn = QPushButton(" Aplicar Recorte")
-        apply_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #27ae60;
-                color: white;
-                padding: 8px 20px;
-                border-radius: 4px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #229954;
-            }
-        """)
+        apply_btn.setObjectName("accent")
         apply_btn.clicked.connect(self.apply_crop)
         buttons_layout.addWidget(apply_btn)
         
@@ -459,10 +434,16 @@ class VideoEditDialog(QDialog):
         
         if duration > 0:
             self.duration_label.setText(f" Duración del clip seleccionado: {duration:.2f} segundos ({start:.2f}s - {end:.2f}s)")
-            self.duration_label.setStyleSheet("color: #27ae60; font-weight: bold; font-size: 10pt;")
+            self.duration_label.setObjectName("successText")
+            # Force style refresh
+            self.duration_label.style().unpolish(self.duration_label)
+            self.duration_label.style().polish(self.duration_label)
         else:
             self.duration_label.setText("️ El tiempo de inicio debe ser menor que el tiempo de fin")
-            self.duration_label.setStyleSheet("color: #e74c3c; font-weight: bold; font-size: 10pt;")
+            self.duration_label.setObjectName("errorText")
+            # Force style refresh
+            self.duration_label.style().unpolish(self.duration_label)
+            self.duration_label.style().polish(self.duration_label)
     
     def toggle_playback(self):
         """Inicia o pausa la reproducción del video"""

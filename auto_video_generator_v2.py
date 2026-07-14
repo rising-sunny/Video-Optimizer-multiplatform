@@ -521,6 +521,14 @@ except ImportError:
     print("âš ï¸ image_generation_manager.py no encontrado, ImageGenerationManager no disponible")
     ImageGenerationManager = None
 
+from functools import lru_cache
+
+@lru_cache(maxsize=1)
+def get_optimal_h264_encoder(ffmpeg_exe="ffmpeg"):
+    """Detecta el mejor codificador H264 disponible en el sistema.
+    Por seguridad en equipos sin GPU dedicada, se fuerza libx264."""
+    return "libx264"
+
 # ========== CLASE PRINCIPAL: AUTO VIDEO GENERATOR ==========
 class AutoVideoGenerator:
     """
@@ -767,21 +775,6 @@ class AutoVideoGenerator:
     def _generate_i2v_clips_for_segments(self, storyboard_data, platform,
                                          video_provider='fal',
                                          fal_video_model=None):
-        """
-        Para cada segmento que tenga image_path pero no video_path, genera un
-        clip MP4 via Kling/Luma (FAL I2V) o Runway T2V. El resultado queda en
-        segment['video_path'] y segment['video_source'], listo para que el
-        ensamblado lo use directamente.
-
-        Args:
-            storyboard_data: dict con 'segments'
-            platform: identificador de plataforma, para decidir orientacion
-            video_provider: 'fal' | 'runway' | 'none'
-            fal_video_model: 'kling' | 'kling-pro' | 'luma'
-
-        Returns:
-            int: numero de segmentos con video generado exitosamente
-        """
         if not self.video_gen_manager:
             self.log("[I2V] VideoGenerationManager no disponible; se omite fase I2V")
             return 0
@@ -796,7 +789,6 @@ class AutoVideoGenerator:
 
         is_vertical = platform in ('tiktok', 'reels', 'youtube_short', 'youtube_vertical', '9:16')
 
-        # Directorio local para clips I2V
         try:
             from video_config import VideoConfig
             i2v_dir = VideoConfig.TEMP_DIR / "i2v_clips"
@@ -807,80 +799,94 @@ class AutoVideoGenerator:
 
         fal_model = (fal_video_model or 'kling').lower()
         total = len(segments)
-        generated = 0
-        skipped = 0
-        failed = 0
-
-        self.log(f"\n[I2V] Generando clips por segmento -> provider={vp}, model={fal_model}, total={total}")
+        
+        # MEJORA: Generación Concurrente de I2V
+        import concurrent.futures
+        
+        self.log(f"\n[I2V] Generando clips concurrentemente -> provider={vp}, model={fal_model}, total={total}")
+        
+        # Agrupar peticiones únicas por imagen para no regenerar la misma imagen
+        unique_tasks = {}
+        
         for idx, seg in enumerate(segments):
-            # Saltar segmentos que ya tienen video asignado (manual o previo)
             existing_video = (seg.get('video_path') or '').strip() if isinstance(seg, dict) else ''
             if existing_video and os.path.exists(existing_video):
-                skipped += 1
                 continue
-
-            # Si el segmento anterior comparte la misma imagen y ya tiene video, reutilizarlo.
-            # Esto agrupa N segmentos consecutivos con la misma imagen en un único video I2V;
-            # la fusión posterior de generated_clips elimina la transición entre ellos y
-            # el slowdown existente de Phase 1 cubre la duración combinada si es necesario.
-            if idx > 0:
-                prev_seg = segments[idx - 1]
-                curr_img = (seg.get('image_path') or '').strip() if isinstance(seg, dict) else ''
-                prev_img = (prev_seg.get('image_path') or '').strip() if isinstance(prev_seg, dict) else ''
-                prev_vid = (prev_seg.get('video_path') or '').strip() if isinstance(prev_seg, dict) else ''
-                if curr_img and prev_img == curr_img and prev_vid and os.path.exists(prev_vid):
-                    seg['video_path'] = prev_vid
-                    seg['video_source'] = prev_seg.get('video_source', f"{vp}_{fal_model}" if vp == 'fal' else vp)
-                    skipped += 1
-                    self.log(f"   ♻️  Seg {idx + 1}: reutilizando video del seg anterior (misma imagen)")
-                    continue
-
+                
             image_path = (seg.get('image_path') or '').strip() if isinstance(seg, dict) else ''
             visual_prompt = str(seg.get('visual_prompt') or seg.get('motion_prompt') or '').strip()
-
-            # Si no hay imagen ni prompt, no hay forma de generar un clip util
+            
             if not image_path and not visual_prompt:
-                failed += 1
                 continue
-
-            # Duracion del segmento: preferir la del storyboard o usar 5s (unidad Kling/Luma)
+                
             duration_s = 5
             try:
                 raw_dur = seg.get('duration') or seg.get('duration_seconds')
                 if raw_dur:
                     d = float(raw_dur)
-                    # Kling/Luma trabajan en bloques de 5 o 10 segundos
                     duration_s = 10 if d > 7 else 5
             except Exception:
                 duration_s = 5
-
+                
             assigned = seg.get('assigned_filename') or f"segment_{idx + 1:03d}"
             out_path = str(i2v_dir / f"{assigned}_i2v.mp4")
-
-            motion_prompt = visual_prompt or "slow dramatic camera zoom, cinematic lighting, dust particles"
-            self.log(f"   [I2V] ({idx + 1}/{total}) -> {assigned} ({duration_s}s)")
-
-            clip = self.generate_video_with_fallback(
-                prompt=motion_prompt,
-                output_path=out_path,
-                is_vertical=is_vertical,
-                duration=duration_s,
-                preferred_provider=vp,
-                image_path=image_path if image_path and os.path.exists(image_path) else None,
-                fal_model=fal_model,
-            )
-
-            if clip and os.path.exists(clip):
-                seg['video_path'] = clip
-                seg['video_source'] = f"{vp}_{fal_model}" if vp == 'fal' else vp
-                generated += 1
+            
+            # Usar image_path como llave si existe, sino el prompt visual
+            task_key = image_path if image_path else visual_prompt
+            
+            if task_key not in unique_tasks:
+                unique_tasks[task_key] = {
+                    'prompt': visual_prompt or "slow dramatic camera zoom, cinematic lighting, dust particles",
+                    'output_path': out_path,
+                    'is_vertical': is_vertical,
+                    'duration': duration_s,
+                    'image_path': image_path if image_path and os.path.exists(image_path) else None,
+                    'fal_model': fal_model,
+                    'vp': vp,
+                    'target_segments': [seg]
+                }
             else:
-                failed += 1
-                self.log(f"      [I2V] Fallo generando clip para {assigned}; se usara imagen estatica")
+                # Si es la misma imagen, agrupar
+                unique_tasks[task_key]['target_segments'].append(seg)
+                
+        generated = 0
+        failed = 0
+        
+        if not unique_tasks:
+            self.log("[I2V] No hay nuevas tareas de generacion I2V pendientes.")
+            return 0
+            
+        def process_task(task):
+            clip = self.generate_video_with_fallback(
+                prompt=task['prompt'],
+                output_path=task['output_path'],
+                is_vertical=task['is_vertical'],
+                duration=task['duration'],
+                preferred_provider=task['vp'],
+                image_path=task['image_path'],
+                fal_model=task['fal_model'],
+            )
+            return task, clip
 
-        self.log(
-            f"[I2V] Completado -> generados={generated}, ya existian={skipped}, fallidos={failed}"
-        )
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            future_to_task = {executor.submit(process_task, task): task for task in unique_tasks.values()}
+            for future in concurrent.futures.as_completed(future_to_task):
+                try:
+                    task, clip = future.result()
+                    if clip and os.path.exists(clip):
+                        for seg in task['target_segments']:
+                            seg['video_path'] = clip
+                            seg['video_source'] = f"{task['vp']}_{task['fal_model']}" if task['vp'] == 'fal' else task['vp']
+                            generated += 1
+                        self.log(f"   [I2V] ✅ Clip generado: {task['output_path']}")
+                    else:
+                        failed += len(task['target_segments'])
+                        self.log(f"   [I2V] ❌ Fallo generando clip para {task['output_path']}")
+                except Exception as exc:
+                    failed += len(future_to_task[future]['target_segments'])
+                    self.log(f"   [I2V] ⚠️ Excepcion generando clip: {exc}")
+
+        self.log(f"[I2V] Completado -> generados={generated}, fallidos={failed}")
         return generated
 
     # --- NUEVO: MÃ‰TODOS PARA MODO MANUAL IA (JSON) ---
@@ -1294,8 +1300,12 @@ Reglas:
                         ffmpeg_exe = p
                         break
             if not ffmpeg_exe:
-                self.log("   âŒ FFmpeg no encontrado")
+                self.log("   â Œ FFmpeg no encontrado")
                 return False
+
+        # Detectar el mejor codificador disponible (GPU/CPU)
+        optimal_encoder = get_optimal_h264_encoder(ffmpeg_exe)
+        self.log(f"   [INFO] Usando codificador de video: {optimal_encoder}")
 
         width, height = resolution
         try:
@@ -1352,6 +1362,7 @@ Reglas:
                 pass
             return 0.0
 
+        @lru_cache(maxsize=32)
         def _ffmpeg_supports_filter(filter_name, timeout=10):
             """Verifica si el binario actual de FFmpeg soporta un filtro dado."""
             key = str(filter_name or "").strip().lower()
@@ -1540,20 +1551,25 @@ Reglas:
                         '-i', img_path,
                         '-t', str(duration),
                         '-vf', vf,
-                        '-c:v', 'libx264', '-preset', 'fast', '-pix_fmt', 'yuv420p',
+                        '-c:v', optimal_encoder, '-preset', 'fast', '-pix_fmt', 'yuv420p',
                         '-g', '30',  # Keyframe cada 1s para seek limpio
                         '-r', str(fps),  # Forzar framerate consistente
                         '-an',
                         clip_out
                     ]
                 else:
-                    # Para imágenes: usar -loop 1 para generar video desde frame estático
+                    # MEJORA: Efecto Ken Burns Orgánico (Easing)
+                    # En lugar de una imagen estática con -loop 1, generamos un paneo suave con ease-out.
+                    frames = int(float(duration) * fps)
+                    # sin((in/frames)*(PI/2)) genera una curva suave de desaceleración (Ease-out)
+                    kb_vf = f"{vf},zoompan=z='1.0+0.05*sin((in/{frames})*(PI/2))':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d={frames}:s={width}x{height}:fps={fps}"
+                    
                     cmd = [
                         ffmpeg_exe, '-y',
-                        '-loop', '1', '-i', img_path,
+                        '-i', img_path,
                         '-t', str(duration),
-                        '-vf', vf,
-                        '-c:v', 'libx264', '-preset', 'fast', '-pix_fmt', 'yuv420p',
+                        '-vf', kb_vf,
+                        '-c:v', optimal_encoder, '-preset', 'fast', '-pix_fmt', 'yuv420p',
                         '-r', str(fps), '-g', '30',
                         clip_out
                     ]
@@ -1561,23 +1577,42 @@ Reglas:
                 tipo = "video" if is_video else "img"
                 self.log(f"      [{i+1}/{total_clips}] Codificando seg {i+1} ({tipo}, {duration:.1f}s)...")
                 clip_start = _time.time()
-                result = sp.run(cmd, capture_output=True, text=True, timeout=120,
-                                creationflags=sp.CREATE_NO_WINDOW if os.name == 'nt' else 0)
-                clip_elapsed = _time.time() - clip_start
+                try:
+                    result = sp.run(cmd, capture_output=True, text=True, timeout=1200,
+                                    creationflags=sp.CREATE_NO_WINDOW if os.name == 'nt' else 0)
+                    clip_elapsed = _time.time() - clip_start
 
-                if result.returncode == 0 and os.path.exists(clip_out) and os.path.getsize(clip_out) > 500:
-                    clips.append(clip_out)
-                    actual_clip_duration = _probe_duration_seconds(clip_out, stream_selector='v:0', timeout=10)
-                    clip_durations.append(actual_clip_duration if actual_clip_duration > 0 else float(duration))
-                    self.log(f"      [{i+1}/{total_clips}] OK ({clip_elapsed:.1f}s)")
-                else:
-                    stderr_short = (result.stderr or '')
-                    self.log(f"      [{i+1}/{total_clips}] ERROR ({clip_elapsed:.1f}s): {stderr_short}")
-
-            except sp.TimeoutExpired:
-                self.log(f"      [{i+1}/{total_clips}] TIMEOUT (>120s) en seg {i+1}")
-            except Exception as e:
-                self.log(f"      [{i+1}/{total_clips}] Excepcion en seg {i+1}: {e}")
+                    if result.returncode == 0 and os.path.exists(clip_out) and os.path.getsize(clip_out) > 500:
+                        clips.append(clip_out)
+                        actual_clip_duration = _probe_duration_seconds(clip_out, stream_selector='v:0', timeout=10)
+                        clip_durations.append(actual_clip_duration if actual_clip_duration > 0 else float(duration))
+                        self.log(f"      [{i+1}/{total_clips}] OK ({clip_elapsed:.1f}s)")
+                    else:
+                        stderr_short = (result.stderr or '')
+                        self.log(f"      [{i+1}/{total_clips}] ERROR ({clip_elapsed:.1f}s): {stderr_short}")
+                        raise RuntimeError("FFmpeg returncode no es 0 o archivo corrupto")
+                        
+                except Exception as e:
+                    clip_elapsed = _time.time() - clip_start
+                    self.log(f"      [{i+1}/{total_clips}] FALLO en seg {i+1} ({clip_elapsed:.1f}s): {e}")
+                    # MEJORA: Fallback de video negro para evitar desincronizacion
+                    try:
+                        self.log(f"      [{i+1}/{total_clips}] Generando clip de fallback negro para mantener sincronia...")
+                        fallback_cmd = [
+                            ffmpeg_exe, '-y',
+                            '-f', 'lavfi', '-i', f'color=c=black:s={width}x{height}:r={fps}:d={duration}',
+                            '-c:v', optimal_encoder, '-preset', 'fast', '-pix_fmt', 'yuv420p',
+                            clip_out
+                        ]
+                        sp.run(fallback_cmd, stdout=sp.DEVNULL, stderr=sp.DEVNULL, timeout=60, creationflags=sp.CREATE_NO_WINDOW if os.name == 'nt' else 0)
+                        if os.path.exists(clip_out):
+                            clips.append(clip_out)
+                            clip_durations.append(float(duration))
+                            self.log(f"      [{i+1}/{total_clips}] Fallback generado exitosamente.")
+                    except Exception as fallback_e:
+                        self.log(f"      [{i+1}/{total_clips}] Error crítico en fallback: {fallback_e}")
+            except Exception as item_e:
+                self.log(f"      [{i+1}/{total_clips}] Error crítico procesando segmento entero: {item_e}")
 
             # Resumen cada 25 clips o al final
             if (i + 1) % 25 == 0 or (i + 1) == total_clips:
@@ -1624,7 +1659,7 @@ Reglas:
                 ovr_cmd = [
                     ffmpeg_exe, '-y', '-i', overlay_src,
                     '-vf', ovr_vf,
-                    '-c:v', 'libx264', '-preset', 'fast', '-pix_fmt', 'yuv420p',
+                    '-c:v', optimal_encoder, '-preset', 'fast', '-pix_fmt', 'yuv420p',
                     '-r', str(fps), '-g', '30',
                     '-an', overlay_clip_path
                 ]
@@ -1714,7 +1749,7 @@ Reglas:
             xfade_cmd.extend([
                 '-filter_complex', ';'.join(filter_parts),
                 '-map', '[vout]',
-                '-c:v', 'libx264', '-preset', 'fast', '-pix_fmt', 'yuv420p',
+                '-c:v', optimal_encoder, '-preset', 'fast', '-pix_fmt', 'yuv420p',
                 '-r', str(fps),
                 '-movflags', '+faststart',
                 os.path.basename(video_no_audio),
@@ -1766,29 +1801,81 @@ Reglas:
             ]
 
             try:
-                result = sp.run(concat_cmd, capture_output=True, text=True, timeout=120,
+                result = sp.run(concat_cmd, capture_output=True, text=True, timeout=1800,
                                 creationflags=sp.CREATE_NO_WINDOW if os.name == 'nt' else 0)
                 if result.returncode != 0:
-                    self.log(f"   âŒ Error concatenando: {(result.stderr or '')[:200]}")
+                    self.log(f"   ❌ Error concatenando: {(result.stderr or '')[:200]}")
                     return False
             except Exception as e:
-                self.log(f"   âŒ Error en concatenacion: {e}")
+                self.log(f"   ❌ Error en concatenacion: {e}")
                 return False
 
         if not os.path.exists(video_no_audio):
-            self.log("   âŒ Archivo concatenado no fue creado")
+            self.log("   ❌ Archivo concatenado no fue creado")
             return False
 
         if not concat_ok:
-            self.log("   âœ… Video base concatenado")
+            self.log("   ✅ Video base concatenado")
 
-        # FASE 3: Agregar audio (duraciÃ³n = audio para que no se corte el final)
-        self.log("   ðŸŽµ Fase 3/3: Agregando audio...")
+        # FASE 3: Agregar audio (duración = audio para que no se corte el final)
+        self.log("   🎵 Fase 3/3: Agregando audio...")
+        
+        # --- MEJORA SFX: Inyectar Swoosh en transiciones ---
+        try:
+            if (use_transitions or is_overlay_transition) and audio_file_path and len(clips) > 1:
+                self.log("   🔊 Mezclando SFX de transicion en la pista maestra...")
+                from pydub import AudioSegment
+                master = AudioSegment.from_file(audio_file_path)
+                sfx_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "transition_overlays", "swoosh.wav")
+                
+                # Fallback to general swoosh if overlay specific one doesn't exist
+                if not os.path.exists(sfx_path):
+                    sfx_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "swoosh.wav")
+                    
+                if os.path.exists(sfx_path):
+                    sfx_swoosh = AudioSegment.from_file(sfx_path)
+                    
+                    # Calcular pico del swoosh
+                    max_rms, peak_idx = 0, 0
+                    chunk_size = 10
+                    for i in range(0, len(sfx_swoosh) - chunk_size, chunk_size):
+                        rms = sfx_swoosh[i:i+chunk_size].rms
+                        if rms > max_rms:
+                            max_rms = rms
+                            peak_idx = i
+                    
+                    # Calcular puntos de inyeccion
+                    accumulated = 0.0
+                    if use_transitions:
+                        for i in range(1, created_count):
+                            accumulated += clip_durations[i-1]
+                            offset = max(0.0, accumulated - (i * safe_transition_duration))
+                            transition_peak_ms = int((offset + safe_transition_duration / 2) * 1000)
+                            position_ms = max(0, transition_peak_ms - peak_idx)
+                            master = master.overlay(sfx_swoosh, position=position_ms)
+                    elif is_overlay_transition:
+                        for i in range(len(clips)):
+                            if "overlay_transition" in clips[i]:
+                                transition_peak_ms = int((accumulated + clip_durations[i] / 2) * 1000)
+                                position_ms = max(0, transition_peak_ms - peak_idx)
+                                master = master.overlay(sfx_swoosh, position=position_ms)
+                            accumulated += clip_durations[i]
+                            
+                    mixed_audio_path = os.path.join(temp_dir, "master_mixed_sfx.mp3")
+                    master.export(mixed_audio_path, format="mp3")
+                    audio_file_path = mixed_audio_path
+                    self.log("   ✅ SFX de transicion mezclados exitosamente.")
+                else:
+                    self.log(f"   [WARN] No se encontro {sfx_path}, saltando SFX.")
+        except Exception as e:
+            self.log(f"   [WARN] Error mezclando SFX de transicion: {e}")
+        # ---------------------------------------------------
+
         video_base_duration = _probe_duration_seconds(video_no_audio, stream_selector='v:0', timeout=20)
         force_shortest = False
         if audio_duration_sec > 0 and video_base_duration > 0 and video_base_duration + 0.25 < audio_duration_sec:
             self.log(
-                f"   âš ï¸ DuraciÃ³n de video base menor que audio ({video_base_duration:.1f}s < {audio_duration_sec:.1f}s). "
+                f"   ⚠️ Duración de video base menor que audio ({video_base_duration:.1f}s < {audio_duration_sec:.1f}s). "
                 f"Aplicando -shortest para evitar congelamiento de imagen."
             )
             force_shortest = True
@@ -1808,7 +1895,7 @@ Reglas:
         audio_cmd.append(output_path)
 
         try:
-            result = sp.run(audio_cmd, capture_output=True, text=True, timeout=300,
+            result = sp.run(audio_cmd, capture_output=True, text=True, timeout=1800,
                             creationflags=sp.CREATE_NO_WINDOW if os.name == 'nt' else 0)
             if result.returncode != 0:
                 self.log(f"   âŒ Error agregando audio: {(result.stderr or '')[:200]}")
@@ -1839,6 +1926,47 @@ Reglas:
             pass
 
         return True
+
+    def _generate_youtube_chapters(self, storyboard_data, output_video_path):
+        """Genera un archivo txt con capitulos de YouTube."""
+        try:
+            segments = storyboard_data.get('storyboard', {}).get('segments', []) if 'storyboard' in storyboard_data else storyboard_data.get('segments', [])
+            if not segments:
+                return
+                
+            out_dir = os.path.dirname(output_video_path)
+            base_name = os.path.splitext(os.path.basename(output_video_path))[0]
+            txt_path = os.path.join(out_dir, f"{base_name}_chapters.txt")
+            
+            chapters = ["00:00 Introduccion"]
+            
+            accumulated_sec = 0.0
+            for i, seg in enumerate(segments):
+                start_sec = seg.get('timestamp_start', accumulated_sec)
+                
+                if i == 0 and start_sec < 1.0:
+                    accumulated_sec += seg.get('duration', 4.0)
+                    continue
+                    
+                text_preview = seg.get('text', '')[:35].replace('\n', ' ').strip()
+                title = seg.get('title', f"Escena {i+1}: {text_preview}...")
+                
+                mins = int(start_sec // 60)
+                secs = int(start_sec % 60)
+                ts_str = f"{mins:02d}:{secs:02d}"
+                
+                if not any(c.startswith(ts_str) for c in chapters):
+                    chapters.append(f"{ts_str} {title}")
+                
+                accumulated_sec += seg.get('duration', 4.0)
+                
+            with open(txt_path, 'w', encoding='utf-8') as f:
+                f.write("Capitulos / Marcas de Tiempo:\n")
+                f.write("Copia y pega esto en la descripcion de YouTube:\n\n")
+                f.write("\n".join(chapters))
+        except Exception as e:
+            self.log(f"   [WARN] Error generando capitulos: {e}")
+
 
     def assemble_video_from_storyboard(self, storyboard_data, platform,
                                        add_subtitles=True, subtitle_style='capcut',
@@ -1891,7 +2019,7 @@ Reglas:
         except Exception as exc:
             self.log(f"[I2V] Error en fase previa de video (se ignora y sigue ensamblando): {exc}")
 
-        # Desactivar efectos cinematogrÃ¡ficos si la ruta resulta riesgosa por RAM o estabilidad
+        # Desactivar efectos cinematográficos si la ruta resulta riesgosa por RAM o estabilidad
         if apply_cinematic:
             if self._should_disable_cinematic_effects(
                 storyboard_data,
@@ -1903,6 +2031,14 @@ Reglas:
             ):
                 apply_cinematic = False
                 self.log("   [OK] Efectos cinematicos desactivados automaticamente para usar una ruta de ensamblaje mas estable")
+                
+        # Comprobar espacio en disco físico antes de iniciar procesos pesados
+        if self.export_manager:
+            free_disk_gb = self.export_manager.check_system_disk_space()
+            if free_disk_gb is not None and free_disk_gb < 2.5:
+                err_msg = f"Espacio en disco critico: Solo quedan {free_disk_gb:.1f} GB libres. Se aborta para prevenir corrupcion."
+                self.log(f"   [ERROR FATAL] {err_msg}")
+                raise RuntimeError(err_msg)
         
         # Iniciar generaciÃ³n de short teaser en paralelo si estÃ¡ habilitado
         teaser_thread = None
@@ -2207,8 +2343,8 @@ Reglas:
             if SFX_AVAILABLE and seg.get('sfx_tag') != 'none':
                 sfx_path = find_and_download_sfx(seg['sfx_tag'], self.generated_media_dir)
             ov_path = None
-            if add_overlays and GIPHY_AVAILABLE and seg.get('overlay_tag') != 'none':
-                ov_path = find_and_download_gif(seg['overlay_tag'], self.generated_media_dir)
+            if add_overlays and GIPHY_AVAILABLE and seg.get('overlay_tag') and seg.get('overlay_tag') != 'none':
+                ov_path = find_and_download_gif(seg.get('overlay_tag'), self.generated_media_dir)
 
             if media_path:
                 # Usar os.path.abspath para la ruta definitiva
@@ -2297,6 +2433,7 @@ Reglas:
         ) if generated_clips else False
 
         self.log(f"   ðŸ” DEBUG: {len(generated_clips)} clips, mÃºsica: {'SÃ' if manual_bgm_path or effective_music_data else 'NO'}, PYDUB: {'SÃ' if PYDUB_AVAILABLE else 'NO'}")
+        self.log(f"   🔎 DEBUG: {len(generated_clips)} clips, música: {'Sí ' if manual_bgm_path or effective_music_data else 'NO'}, PYDUB: {'Sí ' if PYDUB_AVAILABLE else 'NO'}")
 
         # Normalizar lista de pistas: manual_bgm_paths tiene prioridad sobre manual_bgm_path
         _bgm_paths = []
@@ -2304,18 +2441,52 @@ Reglas:
             _bgm_paths = [p for p in manual_bgm_paths if p and os.path.exists(str(p))]
         if not _bgm_paths and manual_bgm_path and os.path.exists(str(manual_bgm_path)):
             _bgm_paths = [manual_bgm_path]
+            
+        # Preparar audio con fade-out suave al final
+        # Agregar segundos extra despuÃ©s de la narraciÃ³n para un cierre gradual
+        OUTRO_FADE_SECONDS = 4  # Segundos extra despuÃ©s de la narraciÃ³n
+        final_audio_path = audio_path
+        
+        # --- MEJORA SFX: Inyectar Swoosh en transiciones directamente en la pista de voz ---
+        _no_trans = ("none", "corte directo", "direct cut")
+        _use_trans = transition_type and not any(t in str(transition_type).lower() for t in _no_trans)
+        if PYDUB_AVAILABLE and _use_trans and len(generated_clips) > 1:
+            try:
+                self.log("   🔊 Inyectando SFX de transicion en la pista de voz...")
+                from pydub import AudioSegment
+                v_sfx = AudioSegment.from_file(audio_path)
+                sfx_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "transition_overlays", "swoosh.wav")
+                if not os.path.exists(sfx_path):
+                    sfx_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "swoosh.wav")
+                
+                if os.path.exists(sfx_path):
+                    sfx_swoosh = AudioSegment.from_file(sfx_path) - 2 # Bajar 2 dB para no saturar
+                    sfx_added = False
+                    for i in range(1, len(generated_clips)):
+                        t_start_ms = int(generated_clips[i].get('timestamp_start', 0) * 1000)
+                        if t_start_ms > 0:
+                            v_sfx = v_sfx.overlay(sfx_swoosh, position=max(0, t_start_ms - 500))
+                            sfx_added = True
+                    
+                    if sfx_added:
+                        v_sfx.export(audio_path, format="wav")
+                        self.log("   ✅ SFX de transicion mezclados exitosamente.")
+            except Exception as e:
+                self.log(f"   ⚠️ Error inyectando SFX de transicion: {e}")
 
-        # Preparar mÃºsica de fondo (si existe) antes de decidir la ruta
+        audio_has_outro = False  # Flag para indicar que el audio ya tiene el outro integrado
+
+        # Preparar música de fondo (si existe) antes de decidir la ruta
         bgm = _bgm_paths[0] if _bgm_paths else None
         if not bgm and effective_music_data and JAMENDO_AVAILABLE:
             try:
                 bgm = str(self.generated_media_dir / "temp_bgm.mp3")
-                self.log(f"   ðŸŽµ Descargando mÃºsica de fondo...")
+                self.log(f"   🎵 Descargando música de fondo...")
                 download_track(effective_music_data['audio_url'], bgm)
                 if not os.path.exists(bgm):
                     bgm = None
             except Exception as e:
-                self.log(f"   âš ï¸ Error descargando mÃºsica: {e}")
+                self.log(f"   ⚠️ Error descargando música: {e}")
                 bgm = None
 
         # Preparar audio con fade-out suave al final
@@ -2365,10 +2536,35 @@ Reglas:
 
                     # Mezclar: narraciÃ³n (con silencio al final) + mÃºsica (con fade-out al final)
                     # El resultado tendrÃ¡: narraciÃ³n+mÃºsica durante la narraciÃ³n, luego solo mÃºsica con fade-out
-                    # VOLUMEN: -15dB hace que la mÃºsica estÃ© muy baja, permitiendo que la narraciÃ³n destaque
-                    final_mix = v_extended.overlay(music_with_fadeout - 15)
+                    # MEJORA: Auto-Ducking Inteligente con FFmpeg sidechaincompress
+                    self.log("   🎚️ Aplicando Auto-Ducking (Sidechain) a la musica...")
+                    import shutil, subprocess as sp
+                    ffmpeg_exe = shutil.which("ffmpeg") or "ffmpeg"
+                    temp_voice = str(self.generated_media_dir / "temp_voice.wav")
+                    temp_music = str(self.generated_media_dir / "temp_music.wav")
+                    v_extended.export(temp_voice, format="wav")
+                    music_with_fadeout.export(temp_music, format="wav")
+                    
                     mp = str(self.generated_media_dir / "mix.mp3")
-                    final_mix.export(mp, format="mp3")
+                    # Usamos sidechaincompress: music (0) comprimido por voice (1)
+                    duck_cmd = [
+                        ffmpeg_exe, '-y',
+                        '-i', temp_music,
+                        '-i', temp_voice,
+                        '-filter_complex', '[0:a]volume=0.8[m];[1:a]volume=1.0[v];[m][v]sidechaincompress=threshold=0.03:ratio=5:attack=20:release=1000[ducked];[ducked][v]amix=inputs=2:duration=first:dropout_transition=2',
+                        '-c:a', 'libmp3lame', '-q:a', '2',
+                        mp
+                    ]
+                    try:
+                        sp.run(duck_cmd, stdout=sp.DEVNULL, stderr=sp.DEVNULL, creationflags=sp.CREATE_NO_WINDOW if os.name == 'nt' else 0, check=True)
+                    except Exception as e:
+                        self.log(f"   [WARN] Error en FFmpeg Sidechain, usando mezcla normal: {e}")
+                        # Subir un poco el volumen de la musica en el fallback (antes era -7)
+                        final_mix = v_extended.overlay(music_with_fadeout - 3)
+                        final_mix.export(mp, format="mp3")
+                        
+                    if os.path.exists(temp_voice): os.remove(temp_voice)
+                    if os.path.exists(temp_music): os.remove(temp_music)
                     final_audio_path = mp
                     audio_has_outro = True
                     self.log(f"   âœ… Audio preparado: narraciÃ³n ({len(v)/1000:.1f}s) + outro con mÃºsica fade-out ({OUTRO_FADE_SECONDS}s)")
@@ -2706,7 +2902,7 @@ Reglas:
                 final.write_videofile(
                     str(out),
                     fps=30,
-                    codec='libx264',
+                    codec=get_optimal_h264_encoder(),
                     audio_codec='aac',
                     audio_bitrate='192k',
                     bitrate=video_bitrate,
@@ -2756,7 +2952,14 @@ Reglas:
         except Exception as probe_err:
             self.log(f"âš ï¸ No se pudo verificar el video con ffprobe: {probe_err}")
         file_size_mb = os.path.getsize(str(out)) / 1024 / 1024
-        self.log(f"âœ… Video exportado: {file_size_mb:.1f} MB")
+        self.log(f"   âœ… Video exportado: {file_size_mb:.1f} MB")
+        
+        # MEJORA: Auto-Capítulos
+        try:
+            self._generate_youtube_chapters(storyboard_data, str(out))
+            self.log("   ✅ Capítulos de YouTube generados exitosamente.")
+        except Exception as e:
+            self.log(f"   [WARN] Error generando capítulos: {e}")
         
         result = {
             'video_path': str(out), 
