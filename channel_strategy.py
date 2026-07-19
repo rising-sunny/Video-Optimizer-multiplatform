@@ -125,6 +125,28 @@ def validate_duration(seconds: float) -> tuple[bool, str]:
     return True, f"Duration {seconds:.1f}s OK (target range {min_dur}-{max_dur}s)"
 
 
+# Signals that a hook opens on a concrete number, scale, or date. Channel
+# analytics show these openers retain far more viewers past the first 3s
+# (higher swipe/viewed rate): e.g. "20,000", "72 seconds", "In 536 AD".
+_HOOK_SIGNAL_RE = re.compile(
+    r"\d"
+    r"|\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|"
+    r"twenty|thirty|forty|fifty|sixty|hundred|hundreds|thousand|thousands|"
+    r"million|millions|billion)\b"
+    r"|\b(bc|bce|ad|ce)\b"
+    r"|\b(century|centuries)\b",
+    re.IGNORECASE,
+)
+
+
+def hook_has_number_or_date(text: str) -> bool:
+    """True if the first sentence carries a concrete number, scale, or date."""
+    if not text or not text.strip():
+        return False
+    first_sentence = text.strip().split(".")[0]
+    return bool(_HOOK_SIGNAL_RE.search(first_sentence))
+
+
 def validate_hook(text: str) -> tuple[bool, str]:
     if not text or not text.strip():
         return False, "Hook text is empty"
@@ -136,6 +158,14 @@ def validate_hook(text: str) -> tuple[bool, str]:
     for phrase in prohibited:
         if phrase.lower() in lower:
             return False, f"Hook uses prohibited pattern: '{phrase}'"
+
+    # Non-fatal: warn (don't reject) when the opener lacks a number/date/scale.
+    if not hook_has_number_or_date(first_sentence):
+        return True, (
+            "WARNING: hook has no concrete number, date, or scale in the first "
+            "sentence — top-performing hooks open with one (e.g. '20,000', "
+            "'72 seconds', 'In 536 AD')"
+        )
 
     return True, "Hook passes validation"
 
@@ -165,6 +195,15 @@ def build_hook_prompt_instructions() -> str:
         if p.get("examples"):
             for ex in p["examples"][:2]:
                 lines.append(f"    Example: \"{ex}\"")
+    lines.append("")
+
+    lines.append(
+        "MANDATORY OPENER (data-driven): The first spoken sentence MUST contain a "
+        "concrete number, scale, or date — e.g. \"20,000\", \"72 seconds\", "
+        "\"sixty meters\", \"In 536 AD\". Channel analytics show hooks that open on a "
+        "specific number or date keep far more viewers past the first 3 seconds "
+        "(the swipe/viewed-rate metric that decides distribution)."
+    )
     lines.append("")
 
     if prohibited:

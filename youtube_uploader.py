@@ -75,6 +75,40 @@ def _load_upload_metadata(output_dir: Path) -> dict:
     )
 
 
+def _infer_is_short(video_path) -> bool:
+    """Best-effort classification: a Short is vertical (h>=w) AND <=180s.
+
+    Falls back to True on any probe failure to preserve historical behavior.
+    Long-form documentaries (16:9, several minutes) resolve to False so the
+    uploader does not force a #Shorts tag or a /shorts/ URL on them.
+    """
+    import subprocess
+    try:
+        out = subprocess.run(
+            ["ffprobe", "-v", "error", "-select_streams", "v:0",
+             "-show_entries", "stream=width,height:format=duration",
+             "-of", "default=noprint_wrappers=1:nokey=0", str(video_path)],
+            capture_output=True, text=True, timeout=30,
+        ).stdout
+        w = h = 0
+        dur = 0.0
+        for line in out.splitlines():
+            if line.startswith("width="):
+                w = int(float(line.split("=", 1)[1]))
+            elif line.startswith("height="):
+                h = int(float(line.split("=", 1)[1]))
+            elif line.startswith("duration="):
+                try:
+                    dur = float(line.split("=", 1)[1])
+                except ValueError:
+                    pass
+        if w and h and dur:
+            return (h >= w) and (dur <= 180.0)
+    except Exception:
+        pass
+    return True
+
+
 def _get_credentials(interactive: bool = True) -> Credentials:
     """Load or refresh OAuth2 credentials."""
     creds = None
@@ -309,16 +343,23 @@ def upload_from_metadata(
                 thumbnail_path = img
                 break
 
+    # Respect the metadata's is_short flag (set by the pipeline: True for Shorts,
+    # False for long-form documentaries). When absent, infer from the video so a
+    # 16:9 / multi-minute documentary is never mislabeled as a Short.
+    is_short = metadata.get("is_short")
+    if is_short is None:
+        is_short = _infer_is_short(video_path)
+
     result = upload_video(
         video_path=str(video_path),
         title=metadata.get("title", "Stunning Revelations"),
         description=metadata.get("description", ""),
         tags=metadata.get("tags", []),
-        category_id="27",  # Education
+        category_id=str(metadata.get("category_id") or "27"),  # Education
         privacy_status=privacy_status,
         publish_at=publish_at,
         thumbnail_path=str(thumbnail_path) if thumbnail_path else None,
-        is_short=True,
+        is_short=bool(is_short),
         on_progress=on_progress,
     )
 

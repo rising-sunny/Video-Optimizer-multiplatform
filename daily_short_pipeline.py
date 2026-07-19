@@ -1510,10 +1510,87 @@ def _normalize_tags(values, limit: int = 22) -> list[str]:
     return tags
 
 
+def _sanitize_description_text(text: str) -> str:
+    """Normalize a model-generated description.
+
+    Some LLM/JSON round-trips leave literal escape sequences (the two chars
+    backslash+n) instead of real line breaks, which render as ugly "\\n" in the
+    published description. Convert those to real newlines and collapse runs of
+    blank lines. Safe on already-clean text (real newlines don't match "\\n").
+    """
+    if not text:
+        return ""
+    s = str(text)
+    s = s.replace("\\r\\n", "\n").replace("\\n", "\n").replace("\\t", "\t")
+    s = s.replace("\r\n", "\n").replace("\r", "\n")
+    s = re.sub(r"\n{3,}", "\n\n", s)
+    return s.strip()
+
+
+def _is_longform_storyboard(storyboard: dict) -> bool:
+    """Detect a long-form (documentary) storyboard vs a Short."""
+    fmt = str(storyboard.get("storyboard_format") or "").lower()
+    plat = str(storyboard.get("platform") or "").lower()
+    if "long" in fmt or "long" in plat:
+        return True
+    try:
+        if float(storyboard.get("target_duration_min") or 0) >= 3:
+            return True
+    except (TypeError, ValueError):
+        pass
+    return False
+
+
+def build_youtube_chapters(storyboard: dict) -> str:
+    """Build a YouTube 'CHAPTERS' block from storyboard segments.
+
+    Uses each segment's ``chapter`` label and ``start_time`` (falling back to
+    ``start``). Returns "" when there aren't at least 3 distinct chapters, since
+    YouTube ignores chapter lists shorter than that. The first timestamp is
+    forced to 0:00 as YouTube requires.
+    """
+    segs = storyboard.get("segments") or storyboard.get("scenes") or []
+    first_start: dict[str, float] = {}
+    order: list[str] = []
+    for s in segs:
+        ch = str(s.get("chapter") or "").strip()
+        if not ch:
+            continue
+        st = s.get("start_time", s.get("start"))
+        if st is None:
+            continue
+        if ch not in first_start:
+            first_start[ch] = float(st)
+            order.append(ch)
+        else:
+            first_start[ch] = min(first_start[ch], float(st))
+
+    if len(order) < 3:
+        return ""
+
+    order.sort(key=lambda c: first_start[c])
+
+    def _clean(name: str) -> str:
+        cleaned = re.sub(r"^\s*chapter\s*\d+\s*[:\-–]\s*", "", name, flags=re.IGNORECASE).strip()
+        return cleaned or name
+
+    def _fmt(t: float) -> str:
+        t = int(round(t or 0))
+        h, rem = divmod(t, 3600)
+        m, sec = divmod(rem, 60)
+        return f"{h}:{m:02d}:{sec:02d}" if h else f"{m}:{sec:02d}"
+
+    lines = ["CHAPTERS"]
+    for i, ch in enumerate(order):
+        ts = 0 if i == 0 else first_start[ch]
+        lines.append(f"{_fmt(ts)} {_clean(ch)}")
+    return "\n".join(lines)
+
+
 def _normalize_youtube_metadata(payload: dict, topic: str) -> dict:
     return {
         "title": str(payload.get("title") or topic or "Stunning Revelations").strip(),
-        "description": str(payload.get("description") or "").strip(),
+        "description": _sanitize_description_text(payload.get("description") or ""),
         "tags": _normalize_tags(payload.get("tags"), limit=22),
     }
 
@@ -1521,14 +1598,14 @@ def _normalize_youtube_metadata(payload: dict, topic: str) -> dict:
 def _normalize_facebook_metadata(payload: dict, topic: str) -> dict:
     return {
         "title": str(payload.get("title") or topic or "Stunning Revelations").strip()[:255],
-        "description": str(payload.get("description") or "").strip()[:2200],
+        "description": _sanitize_description_text(payload.get("description") or "")[:2200],
     }
 
 
 def _normalize_instagram_metadata(payload: dict, topic: str) -> dict:
     return {
         "title": str(payload.get("title") or topic or "Stunning Revelations").strip()[:120],
-        "description": str(payload.get("description") or "").strip()[:2200],
+        "description": _sanitize_description_text(payload.get("description") or "")[:2200],
     }
 
 
@@ -1537,7 +1614,108 @@ def _youtube_metadata_fallback(storyboard: dict) -> dict:
         "title": storyboard.get("topic", "Stunning Revelations"),
         "description": f"Discover the truth about {storyboard.get('topic', 'this mystery')}. #history #mystery #shorts",
         "tags": ["history", "mystery", "conspiracy", "paranormal", "shorts"],
+        "is_short": True,
     }
+
+
+def _place_chapters(description: str, chapters_block: str) -> str:
+    """Insert a chapters block above the hashtags (else append at the end)."""
+    if not chapters_block or "0:00" in (description or ""):
+        return description
+    desc = description or ""
+
+    # Case 1: hashtags on their own line(s).
+    lines = desc.split("\n")
+    hash_idx = next((i for i, ln in enumerate(lines) if ln.strip().startswith("#")), None)
+    if hash_idx is not None:
+        head = "\n".join(lines[:hash_idx]).rstrip()
+        tail = "\n".join(lines[hash_idx:]).lstrip()
+        return f"{head}\n\n{chapters_block}\n\n{tail}"
+
+    # Case 2: a trailing run of hashtags glued to the text (e.g. "...world.#A #B").
+    m = re.search(r"#\w[\w]*(?:\s+#\w[\w]*)*\s*$", desc)
+    if m and desc[:m.start()].rstrip():
+        head = desc[:m.start()].rstrip()
+        tail = desc[m.start():].strip()
+        return f"{head}\n\n{chapters_block}\n\n{tail}"
+
+    return f"{desc.rstrip()}\n\n{chapters_block}"
+
+
+def _youtube_longform_metadata_fallback(storyboard: dict) -> dict:
+    topic = storyboard.get("topic", "Stunning Revelations")
+    script = str(storyboard.get("script") or "").strip()
+    intro = script[:300].strip() or f"The full story behind {topic}."
+    desc = (
+        f"{intro}\n\nSubscribe to Stunning Revelations for more forgotten history, "
+        "lost civilizations, and mysteries that still disturb the modern world."
+    )
+    desc = _place_chapters(desc, build_youtube_chapters(storyboard))
+    return {
+        "title": str(topic)[:100],
+        "description": _sanitize_description_text(desc),
+        "tags": _normalize_tags([
+            "documentary", "history documentary", "history", "mystery",
+            "lost civilizations", "ancient history", "archaeology",
+            "stunning revelations",
+        ], limit=22),
+        "is_short": False,
+    }
+
+
+def _generate_longform_youtube_metadata(storyboard: dict, output_dir: Path,
+                                        used_titles: list = None) -> dict:
+    """YouTube metadata for a long-form documentary (no #shorts, auto chapters)."""
+    log("Generando metadata para YouTube LONG-FORM (documental)...", "STEP")
+    used_titles = used_titles or []
+    topic = storyboard.get("topic", "")
+    category = storyboard.get("category", "")
+    script = str(storyboard.get("script") or "")
+    chapters_block = build_youtube_chapters(storyboard)
+
+    try:
+        from groq_client import GroqAiClient
+        groq = GroqAiClient()
+        if not getattr(groq, "client", None):
+            raise RuntimeError("Groq no disponible")
+
+        used_str = "\n".join(f"  - {t}" for t in set(used_titles)) if used_titles else "None"
+        prompt = f"""You are a YouTube SEO expert for LONG-FORM documentaries on the channel "Stunning Revelations" (forgotten history, lost civilizations, dark mysteries).
+
+This is a full documentary (8-15 min), NOT a Short. Never use #shorts anywhere.
+
+CURRENT VIDEO:
+- Topic: {topic}
+- Category: {category}
+- Script (first 700 chars): {script[:700]}
+
+Already-published titles (avoid duplicates):
+{used_str}
+
+Generate JSON with:
+1. "title": A searchable documentary title, 50-70 chars. Lead with the main SEARCH KEYWORD (a proper name or place people type), include one concrete number when natural. No #shorts. Examples: "Derinkuyu: The Underground City That Hid 20,000 People", "The Wow! Signal: 72 Seconds That Never Came Back".
+2. "description": 3-5 sentences with REAL line breaks between paragraphs. Sentence 1 = the hook/scale. Then what the documentary covers. End with the line: "Subscribe to Stunning Revelations for more forgotten history, lost civilizations, and mysteries that still disturb the modern world." Do NOT invent chapter timestamps (they are added automatically). Finish with 6-8 topical hashtags, never #shorts.
+3. "tags": Array of 12-18 lowercase SEO tags. Include "documentary", "history documentary", the main subject/place, and "stunning revelations". Never include "shorts".
+
+Respond ONLY with valid JSON, no markdown."""
+
+        response = groq._generate(prompt)
+        if not response or not response.strip():
+            raise RuntimeError("Groq returned empty response for long-form metadata")
+
+        meta = _normalize_youtube_metadata(_extract_generated_json(response), topic)
+        meta["tags"] = [t for t in meta["tags"] if t.lower().lstrip("#") != "shorts"]
+        meta["description"] = _sanitize_description_text(
+            _place_chapters(meta["description"], chapters_block)
+        )
+        meta["is_short"] = False
+        log(f"Título long-form: {meta.get('title', '?')}", "OK")
+        log(f"Capítulos: {'incluidos' if chapters_block else 'omitidos (faltan chapter+start_time en segmentos)'}", "OK")
+        return meta
+
+    except Exception as e:
+        log(f"Metadata long-form falló, usando fallback: {e}", "WARN")
+        return _youtube_longform_metadata_fallback(storyboard)
 
 
 def _facebook_metadata_fallback(storyboard: dict, youtube_metadata: dict | None = None) -> dict:
@@ -1585,8 +1763,12 @@ def _save_platform_metadata_files(output_dir: Path, youtube_metadata: dict, face
 
 
 def generate_youtube_metadata(storyboard: dict, output_dir: Path, used_titles: list = None) -> dict:
-    """Genera metadata optimizada para YouTube Shorts."""
-    log("Generando metadata para YouTube (data-driven)...", "STEP")
+    """Genera metadata optimizada para YouTube (Shorts o documental long-form)."""
+    if _is_longform_storyboard(storyboard):
+        if used_titles is None:
+            used_titles = []
+        return _generate_longform_youtube_metadata(storyboard, output_dir, used_titles)
+    log("Generando metadata para YouTube Shorts (data-driven)...", "STEP")
     
     if used_titles is None:
         used_titles = []
@@ -1684,6 +1866,7 @@ Respond ONLY with valid JSON, no markdown."""
             raise RuntimeError("Groq returned empty response for metadata")
 
         metadata = _normalize_youtube_metadata(_extract_generated_json(response), topic)
+        metadata["is_short"] = True
         log(f"Título YouTube: {metadata.get('title', '?')}", "OK")
         log(f"Tags YouTube: {len(metadata.get('tags', []))} tags", "OK")
         return metadata
