@@ -244,7 +244,16 @@ def build_category_weight_map() -> dict[str, float]:
     weights: dict[str, float] = {}
     priority_map = {"HIGH": 1.5, "MEDIUM": 1.0, "LOW": 0.5}
     for cat in cats:
-        w = priority_map.get(cat.get("priority", "MEDIUM").upper(), 1.0)
+        base = priority_map.get(cat.get("priority", "MEDIUM").upper(), 1.0)
+        # production_weight is the data-driven topic mix. It fine-tunes emphasis
+        # WITHIN a priority tier: scaled around the typical ~0.15 so a 0.30 weight
+        # roughly doubles a category's selection score and a 0.05 weight roughly
+        # thirds it (clamped to [0.4, 2.0]). Absent/invalid -> priority only.
+        pw = cat.get("production_weight")
+        if isinstance(pw, (int, float)) and pw > 0:
+            w = base * min(2.0, max(0.4, pw / 0.15))
+        else:
+            w = base
         weights[cat["name"]] = w
         for alias in cat.get("aliases", []):
             weights[alias] = w
