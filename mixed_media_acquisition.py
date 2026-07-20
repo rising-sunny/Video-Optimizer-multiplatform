@@ -60,7 +60,10 @@ def acquire_youtube_mixed_media(storyboard: dict, output_dir: Path):
                 "--max-downloads", "1"
             ]
             
-            subprocess.run(dl_cmd, capture_output=True)
+            try:
+                subprocess.run(dl_cmd, capture_output=True, timeout=45)
+            except subprocess.TimeoutExpired:
+                print(f"[Mixed Media] Timeout fetching video for {search_query}. Skipping.")
             
             if temp_mp4.exists():
                 duration = seg.get("duration", 5.0)
@@ -79,7 +82,10 @@ def acquire_youtube_mixed_media(storyboard: dict, output_dir: Path):
                     str(final_mp4)
                 ]
                 
-                subprocess.run(trim_cmd, capture_output=True)
+                try:
+                    subprocess.run(trim_cmd, capture_output=True, timeout=45)
+                except subprocess.TimeoutExpired:
+                    print(f"[Mixed Media] Timeout trimming video. Skipping.")
                 
                 if final_mp4.exists() and final_mp4.stat().st_size > 0:
                     seg["video_path"] = str(final_mp4)

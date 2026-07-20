@@ -1227,7 +1227,13 @@ def generate_images_for_draft(output_dir: Path, storyboard: dict,
         generator = AutoVideoGenerator(parent_window=None)
 
 
-    style = visual_style or CHANNEL_CONFIG.get("visual_style", "Photorealism")
+    raw_style = CHANNEL_CONFIG.get("visual_style", "Photorealism")
+    if isinstance(raw_style, list):
+        import random
+        resolved_style = random.choice(raw_style)
+    else:
+        resolved_style = raw_style
+    style = visual_style or resolved_style
 
     try:
         # --- MIXED MEDIA INTEGRATION ---
@@ -1339,7 +1345,13 @@ def assemble_video(storyboard: dict, output_dir: Path,
     # assemble_video_from_storyboard no usa image_provider internamente;
     # genera_all_images_for_storyboard sí lo respeta (Recraft, Fal, etc.)
     # y escribe image_path en cada segmento para que el ensamblador las use.
-    style = visual_style or CHANNEL_CONFIG.get("visual_style", "Photorealism")
+    raw_style = CHANNEL_CONFIG.get("visual_style", "Photorealism")
+    if isinstance(raw_style, list):
+        import random
+        resolved_style = random.choice(raw_style)
+    else:
+        resolved_style = raw_style
+    style = visual_style or resolved_style
     log(f"  Visual style: {style}", "INFO")
     if pregenerate_images:
         try:
