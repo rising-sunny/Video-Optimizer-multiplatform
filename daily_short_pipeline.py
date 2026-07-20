@@ -2348,6 +2348,70 @@ def upload_to_instagram(output_dir: Path, publish_at: str = None, share_to_feed:
         return None
 
 
+def upload_to_x_pipeline(output_dir: Path, youtube_url: str = None) -> bool:
+    """Sube una publicación a X (Twitter) con el enlace de YouTube y el thumbnail."""
+    log("Iniciando upload promocional a X...", "INFO")
+    try:
+        from x_uploader import upload_image_to_x, post_tweet
+        
+        # Cargar metadata
+        meta_path = output_dir / "youtube_metadata.json"
+        if not meta_path.exists():
+            log("No se encontró youtube_metadata.json para extraer el título.", "WARN")
+            return False
+            
+        with open(meta_path, "r", encoding="utf-8") as f:
+            meta = json.load(f)
+            
+        title = meta.get("title", "Nuevo Video")
+        description = meta.get("description", "")
+        # Generar texto dinámico con LLM
+        from groq_client import GroqAiClient
+        groq = GroqAiClient()
+        if groq.client:
+            prompt = f"""You are a master social media copywriter for a dark historical mystery channel.
+Given the following YouTube video title and description, write a striking 2-line tweet in English to promote the video.
+It MUST be highly engaging, use 1-2 emojis, and end with 'Watch the full video here 👇'.
+Do not use hashtags. Do not use quotes around the text. Do not output anything else but the tweet.
+
+Title: {title}
+Description: {description[:500]}
+"""
+            try:
+                tweet_text = groq._generate(prompt).strip()
+                # Limpiar comillas si el LLM las agregó
+                if tweet_text.startswith('"') and tweet_text.endswith('"'):
+                    tweet_text = tweet_text[1:-1]
+                tweet_text += f"\n{youtube_url or 'https://youtube.com/@Stunning_Rev'}"
+            except Exception as e:
+                log(f"Groq tweet generation failed: {e}", "WARN")
+                tweet_text = f"🚨 {title}\n\nWatch the full mystery here 👇\n{youtube_url or 'https://youtube.com/@Stunning_Rev'}"
+        else:
+            tweet_text = f"🚨 {title}\n\nWatch the full mystery here 👇\n{youtube_url or 'https://youtube.com/@Stunning_Rev'}"
+            
+        # Buscar thumbnail
+        thumbnail_path = None
+        for file in output_dir.iterdir():
+            if file.name.startswith("thumbnail") and file.suffix in [".png", ".jpg", ".jpeg"]:
+                thumbnail_path = str(file)
+                break
+                
+        media_id = None
+        if thumbnail_path:
+            media_id = upload_image_to_x(thumbnail_path)
+            
+        success = post_tweet(tweet_text, media_id=media_id)
+        if success:
+            log("¡Tweet promocional publicado con éxito!", "INFO")
+            return True
+        else:
+            log("Falló la publicación del Tweet.", "WARN")
+            return False
+            
+    except Exception as e:
+        log(f"Upload a X falló: {e}", "WARN")
+        return False
+
 def run_pipeline(topic: str = None, voice_id: str = None, upload: bool = False,
                  privacy_status: str = "private", publish_at: str = None,
                  bgm_path: str = None,
@@ -2471,6 +2535,11 @@ def run_pipeline(topic: str = None, voice_id: str = None, upload: bool = False,
     if upload:
         upload_result = upload_to_youtube(output_dir, privacy_status=privacy_status,
                                           publish_at=publish_at)
+                                          
+    # ── Paso 10: Upload a X (Twitter) ──────────────────────────────
+    if upload and upload_result and upload_result.get("status") in ["uploaded", "published", "scheduled"]:
+        youtube_url = upload_result.get("url")
+        upload_to_x_pipeline(output_dir, youtube_url)
 
     # ── Resultado ─────────────────────────────────────────────────────
     elapsed = time.time() - start_time
