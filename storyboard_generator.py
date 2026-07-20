@@ -1551,7 +1551,7 @@ REGLA VISUAL HISTORICA / TEMPORAL:
 
 REGLA VISUAL — CALIDAD CINEMATOGRAFICA (OBLIGATORIO):
 Cada visual_prompt debe incorporar EXPLICITAMENTE estos 7 elementos, en ingles, separados por comas:
-  1. SUJETO PRINCIPAL claro y su accion (ej: "Hannibal Barca on horseback surveying the battlefield"). Evita escenas vacias sin foco.
+  1. SUJETO PRINCIPAL claro y su accion (ej: "Hannibal Barca on horseback surveying the battlefield"). El sujeto DEBE SER la accion o evento principal descrito (ej: la batalla, la muralla, el desastre), NUNCA enfoques la imagen en narradores, eruditos, escribas, o pergaminos escribiendo sobre el evento. Queremos ver la accion historica real, no a la gente registrandola. Evita escenas vacias sin foco.
   2. AMBIENTE Y EPOCA (ej: "set in 3rd century BCE, plains of Cannae, southern Italy at dawn").
   3. ENCUADRE / PLANO: usa terminologia de cine — "wide establishing shot", "medium shot", "close-up", "low-angle shot", "over-the-shoulder", "Dutch angle". Varia entre escenas.
   4. ILUMINACION especifica (NO solo "dramatic lighting"). Ejemplos validos: "chiaroscuro side lighting from a single torch", "golden-hour rim light", "overcast diffused light", "moonlit with volumetric god rays through dust", "candlelit interior with deep shadows".
@@ -2200,7 +2200,7 @@ REGLA VISUAL HISTÓRICA / TEMPORAL:
 
 REGLA VISUAL — CALIDAD CINEMATOGRAFICA (OBLIGATORIO):
 Cada visual_prompt debe incorporar EXPLICITAMENTE estos 7 elementos en inglés:
-  1. SUJETO PRINCIPAL + acción (ej: "Hannibal Barca on horseback surveying the battlefield"). Evita escenas vacías.
+  1. SUJETO PRINCIPAL + acción (ej: "Hannibal Barca on horseback surveying the battlefield"). El sujeto DEBE SER la acción histórica directa (ej: la batalla en sí), NUNCA muestres a escribas o historiadores "registrando" el evento a menos que sea estrictamente necesario. Queremos ver la acción real. Evita escenas vacías.
   2. AMBIENTE + ÉPOCA (ej: "set in 3rd century BCE, plains of Cannae southern Italy at dawn").
   3. ENCUADRE: "wide establishing shot", "medium shot", "close-up", "low-angle shot", "over-the-shoulder". Varía entre escenas.
   4. ILUMINACION específica: "chiaroscuro side lighting from a single torch", "golden-hour rim light", "moonlit with volumetric god rays", "candlelit interior with deep shadows" — NO solo "dramatic lighting".

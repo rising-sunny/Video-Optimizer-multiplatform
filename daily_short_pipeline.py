@@ -1999,6 +1999,12 @@ def generate_platform_metadata(storyboard: dict, output_dir: Path) -> tuple[dict
     output_dir = Path(output_dir)
     used_titles = get_used_titles()
     youtube_metadata = generate_youtube_metadata(storyboard, output_dir, used_titles=used_titles)
+    
+    if _is_longform_storyboard(storyboard):
+        _save_platform_metadata_files(output_dir, youtube_metadata, {}, {})
+        log(f"Metadata YouTube (Long-form) guardada: {output_dir / YOUTUBE_METADATA_FILENAME}", "OK")
+        return youtube_metadata, {}, {}
+
     facebook_metadata = generate_facebook_metadata(
         storyboard,
         output_dir,
@@ -2023,129 +2029,6 @@ def generate_metadata(storyboard: dict, output_dir: Path) -> dict:
     """Genera título, descripción y tags optimizados para YouTube usando datos de rendimiento del canal."""
     youtube_metadata, _facebook_metadata, _instagram_metadata = generate_platform_metadata(storyboard, output_dir)
     return youtube_metadata
-
-    log("Generando metadata para YouTube (data-driven)...", "STEP")
-
-    try:
-        from groq_client import GroqAiClient
-        groq = GroqAiClient()
-        if not groq.client:
-            raise RuntimeError("Groq no disponible")
-
-        topic = storyboard.get("topic", "")
-        category = storyboard.get("category", "")
-        script = storyboard.get("script", "")
-
-        # ── Construir contexto de rendimiento del canal ──────────────
-        perf = CHANNEL_PERFORMANCE
-        title_patterns = perf.get("title_patterns", {})
-        desc_patterns = perf.get("description_patterns", {})
-        tag_strategy = perf.get("tag_strategy", {})
-        top_categories = perf.get("best_performing_categories", [])
-
-        # Ejemplos de títulos ganadores
-        title_examples = title_patterns.get("top_title_examples", [])
-        examples_str = "\n".join(f"  - {t}" for t in title_examples) if title_examples else "  (no examples available)"
-
-        # Keywords de alto rendimiento
-        high_keywords = title_patterns.get("high_performing_keywords", [])
-        keywords_str = ", ".join(high_keywords) if high_keywords else "mystery, secret, ancient, shocking"
-
-        # Hashtags efectivos
-        effective_hashtags = desc_patterns.get("effective_hashtags", ["#shorts", "#history", "#facts"])
-        hashtags_str = " ".join(effective_hashtags[:8])
-
-        # Tags obligatorios
-        always_tags = tag_strategy.get("always_include", ["stunning revelations", "shorts"])
-        always_tags_str = ", ".join(always_tags)
-
-        # Categorías rankeadas por rendimiento
-        cat_ranking = ""
-        for cat in top_categories[:5]:
-            cat_ranking += f"  - {cat['name']} ({cat.get('avg_views', '?')} avg views): {cat.get('notes', '')}\n"
-
-        prompt = f"""You are a YouTube Shorts SEO expert optimizing for the channel "Stunning Revelations".
-
-CHANNEL ANALYTICS (real data from YouTube Studio):
-- Shorts get 4x more views and 3.5x more subscribers than long videos
-- Best categories by performance:
-{cat_ranking}
-TITLE RULES (from analyzing top 27 videos with 500+ views):
-- 52% of top titles contain specific NUMBERS
-- 63% use COLONS to separate subject from hook
-- Average length: 47 characters (ideal range: 40-55 chars)
-- Winning formula: [Specific Event/Subject]: [Hook with numbers/superlatives]
-- High-performing keywords: {keywords_str}
-- Examples of titles that got 500+ views:
-{examples_str}
-
-CURRENT VIDEO:
-- Topic: {topic}
-- Category: {category}
-- Script (first 500 chars): {script[:500]}
-
-Generate a JSON with:
-1. "title": Follow the winning formula above. MUST include a specific number/data point. Use a colon to separate. 40-55 chars. Add 1 emoji max. Make it IMPOSSIBLE to scroll past.
-2. "description":
-   - Line 1: Hook question that creates curiosity gap
-   - Line 2-3: Key facts from the script (specific data points)
-   - Line 4: Call to action ("Follow for more stunning revelations!")
-   - Line 5: Hashtags: {hashtags_str}
-3. "tags": Array of 18-22 tags structured as:
-   - Always include: {always_tags_str}
-   - 3-4 broad category tags
-   - 4-5 topic-specific tags
-   - 3-4 trending/current event tags
-   - 2-3 question-format tags ("what happened to...", "why did...")
-
-Respond ONLY with valid JSON, no markdown."""
-
-        response = groq._generate(prompt)
-
-        if not response or not response.strip():
-            raise RuntimeError("Groq returned empty response for metadata")
-
-        # Limpiar respuesta
-        text = response.strip()
-        if text.startswith("```"):
-            text = text.split("\n", 1)[-1]
-        if text.endswith("```"):
-            text = text.rsplit("```", 1)[0]
-        text = text.strip()
-
-        # Extraer JSON si viene envuelto en texto
-        if not text.startswith("{"):
-            start = text.find("{")
-            end = text.rfind("}") + 1
-            if start != -1 and end > start:
-                text = text[start:end]
-
-        metadata = json.loads(text)
-
-        # Guardar metadata
-        meta_path = output_dir / "metadata.json"
-        with open(meta_path, "w", encoding="utf-8") as f:
-            json.dump(metadata, f, indent=2, ensure_ascii=False)
-
-        log(f"Título: {metadata.get('title', '?')}", "OK")
-        log(f"Tags: {len(metadata.get('tags', []))} tags", "OK")
-        log(f"Metadata guardada: {meta_path}", "OK")
-
-        return metadata
-
-    except Exception as e:
-        log(f"Metadata falló: {e}", "WARN")
-
-        # Fallback: metadata básica
-        fallback = {
-            "title": storyboard.get("topic", "Stunning Revelations"),
-            "description": f"Discover the truth about {storyboard.get('topic', 'this mystery')}. #history #mystery #shorts",
-            "tags": ["history", "mystery", "conspiracy", "paranormal", "shorts"],
-        }
-        meta_path = output_dir / "metadata.json"
-        with open(meta_path, "w", encoding="utf-8") as f:
-            json.dump(fallback, f, indent=2, ensure_ascii=False)
-        return fallback
 
 
 # ═══════════════════════════════════════════════════════════════════════════
