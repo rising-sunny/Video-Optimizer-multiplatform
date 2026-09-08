@@ -52,7 +52,8 @@ El usuario (`estebannavarro.rojo@gmail.com`) tiene **dos canales** bajo el mismo
 - ID: `UC66EnGiys6V3gKe-J0XD-_Q` · handle `@stunning-revelations`
 - Nicho: historia olvidada, civilizaciones perdidas, misterios oscuros, desastres,
   guerra, conspiraciones suaves. Audiencia angloparlante (US/UK/AU/CA).
-- Formato **ganador, medido**: narrados de **121-180s (2-3 min)**. Ver abajo.
+- Formato: ver abajo. **Cuidado:** el formato con más alcance y el formato que suma
+  horas monetizables **no son el mismo**.
 - **Diagnóstico (sep 2026, sobre exports reales de YouTube Studio):**
 
   | Duración | n videos | Watch hours | h/video | Mediana vistas |
@@ -63,9 +64,22 @@ El usuario (`estebannavarro.rojo@gmail.com`) tiene **dos canales** bajo el mismo
   | 181-300s | 26 | 8.3 | 0.32 | 7 |
   | >300s | 8 | 5.9 | 0.74 | ~8 |
 
-  **La banda 121-180s genera el 67% de todas las horas de visualización del canal.**
-  Los 26 videos de 3-5 min produjeron 8 horas entre todos; los long-form >5 min están
-  muertos. Los shorts rinden 1.65 h/video.
+  **PERO esas horas no sirven para monetizar.** Verificado con la métrica "Se quedaron
+  viendo" (que YouTube solo reporta para el feed de Shorts): **70 de los 73 videos de
+  la banda 121-180s son Shorts verticales**. Desde oct-2024 un video es Short si dura
+  **≤3 min Y es vertical/cuadrado**, y el watch time de Shorts **no cuenta** para el
+  umbral de 4,000 horas.
+
+  | Duración | Shorts (vert) | horas | NO-Short | horas |
+  |---|---|---|---|---|
+  | ≤60s | 55 | 90.5 | 1 | 0.0 |
+  | 61-120s | 58 | 86.1 | 2 | 0.0 |
+  | 121-180s | 70 | 395.1 | 3 | 1.3 |
+  | 181-300s | 0 | 0.0 | **26** | **8.3** |
+  | >300s | 0 | 0.0 | **8** | **5.9** |
+
+  > **HORAS VÁLIDAS para el umbral de 4,000: 15.6 h (0.4%).** No 587.
+  > Horas de Shorts, que no cuentan: 571.7 h.
 
   **Causa raíz de la caída de 2026:** la banda 121-180s solo se produjo en feb-mar-abr
   2026 (70 videos → 396 h, retención mediana 64.6% y 71.6%). **Desde mayo no se publicó
@@ -89,8 +103,23 @@ El usuario (`estebannavarro.rojo@gmail.com`) tiene **dos canales** bajo el mismo
     Derinkuyu hizo 1,187 vistas y su documental de 858s hizo **4**; el short del Wow!
     Signal hizo 1,013 y su versión de 612s hizo **1**.
 
-> **Regla operativa:** producir en la banda **121-180s**. No shorts ≤60s, no >5 min,
-> hasta que la métrica de horas orgánicas se recupere.
+> **Regla operativa (corregida sep-2026):** si el objetivo es **monetizar**, producir
+> **horizontal 16:9 de 3-5 min**. Pasa los 3 min, así que no es Short ni por duración
+> ni por orientación — y los 26 videos de 181-300s del canal ya lo confirman en la
+> práctica (cero métrica de feed de Shorts). NO producir la banda 121-180s vertical:
+> tiene el mejor alcance del canal pero suma **cero** horas monetizables.
+>
+> **El conflicto central de este canal:** el único formato con distribución real es el
+> feed de Shorts (46,590 vistas, videos de 1,000+), y es exactamente el que no monetiza
+> por la vía de horas. En horizontal nunca hubo tracción: **40 videos no-Short = 614
+> vistas totales**. La ruta Shorts al programa de socios (10M vistas/90d) está fuera de
+> alcance: 6,742 vistas en los últimos 90 días.
+>
+> Próximo paso acordado: experimento de 6-8 videos **horizontales de 3-5 min** sobre
+> temas que ya engancharon en Shorts (Venona, Kursk, Coronel, Archimedes). Si en 60 días
+> ninguno pasa de 200 vistas, la monetización de este canal no es un objetivo realista.
+> Fuente de verdad para validar todo esto: contador de "horas de visualización públicas
+> válidas" en Studio → Monetización (debería marcar ~15-25 h, no ~590).
 
 ### MathRelaxing — OTRO canal, NO producido por este pipeline
 - ID: `UCn8REDiVrUNYYVoPLSkXWqQ` · handle `@mathrelaxing`
@@ -160,8 +189,8 @@ obligatorio con número/fecha en el cap. 1) → prompts visuales → TTS → sto
 > usa las mismas funciones probadas de Derinkuyu, pero conviene un **render corto de
 > prueba** antes de depender de él para publicar.
 
-> **Ojo con la duración (ver §2):** el formato que rinde en este canal es **121-180s**,
-> no 8-15 min. `build_long_form` no tiene guarda contra valores chicos, pero su piso
+> **Ojo con la duración (ver §2):** el objetivo monetizable es **16:9 de 3-5 min**,
+> no 8-15 min (y NO 121-180s vertical, que es Short y no suma horas válidas). `build_long_form` no tiene guarda contra valores chicos, pero su piso
 > efectivo queda **por encima** de la banda ganadora: `_plan_dimensions` fuerza mínimo
 > 3 capítulos × 5 párrafos = 15 segmentos, y `word_budget = minutes * 155` mientras la
 > narración real corre a `EFFECTIVE_WPM = 120`. Con `--minutes 3` salen ~465 palabras
@@ -272,5 +301,11 @@ concreta + sujeto nombrado**, duración corta. Ej: "72 Seconds: The Wow! Signal"
   exports de YouTube Studio (contenido, fuente de tráfico, audiencia, origen de subs,
   orgánico vs pagado). Hallazgo central: la banda **121-180s** concentra el 67% de las
   horas y se abandonó en mayo 2026; esa es la causa de la caída, no la publicidad de
-  2025 ni un castigo del algoritmo. Documentado el gap de `_plan_dimensions` que impide
-  apuntar a esa banda, los subs inertes, el CTR de 1.55% y el fracaso del motor dual.
+  2025 ni un castigo del algoritmo. Documentado el gap de `_plan_dimensions`, los subs
+  inertes, el CTR de 1.55% y el fracaso del motor dual.
+- **2026-09-08 (corrección, mismo día)** — **La conclusión anterior estaba mal.** Los 70
+  videos de la banda 121-180s son **Shorts verticales**, así que sus 395 h no cuentan
+  para el umbral de 4,000. Horas válidas reales: **15.6 h**, no 587. Regla operativa
+  reescrita: horizontal 16:9 de 3-5 min. Queda documentado el conflicto de fondo: el
+  formato con alcance (Shorts) y el formato monetizable (horizontal) son incompatibles
+  en este canal, y en horizontal nunca hubo tracción.
