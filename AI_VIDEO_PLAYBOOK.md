@@ -6,7 +6,7 @@
 > estrategia), **actualizá la sección correspondiente y el Changelog al final**.
 > Mantené los hechos verificables; no inventes rutas ni claves.
 
-Última actualización: **2026-07-19**.
+Última actualización: **2026-09-08**.
 
 ---
 
@@ -52,11 +52,45 @@ El usuario (`estebannavarro.rojo@gmail.com`) tiene **dos canales** bajo el mismo
 - ID: `UC66EnGiys6V3gKe-J0XD-_Q` · handle `@stunning-revelations`
 - Nicho: historia olvidada, civilizaciones perdidas, misterios oscuros, desastres,
   guerra, conspiraciones suaves. Audiencia angloparlante (US/UK/AU/CA).
-- Formato: shorts narrados 45-58s + documentales long-form 8-15 min.
-- **Diagnóstico (jul 2026):** muchos suscriptores (~3,470, ya pasó el mínimo de
-  monetización) pero **pocas vistas por short** (mediana ~22). Cuello de botella =
-  **retención / hook** (swipe rate ~37%). El dinero real viene de **watch hours**
-  (long-form), no de shorts. Motor dual: short ganador → documental hermano.
+- Formato **ganador, medido**: narrados de **121-180s (2-3 min)**. Ver abajo.
+- **Diagnóstico (sep 2026, sobre exports reales de YouTube Studio):**
+
+  | Duración | n videos | Watch hours | h/video | Mediana vistas |
+  |---|---|---|---|---|
+  | ≤60s (shorts) | 55 | 90.5 | 1.65 | 26 |
+  | 61-120s | 60 | 86.1 | 1.43 | 32 |
+  | **121-180s** | **73** | **396.4** | **5.43** | **157** |
+  | 181-300s | 26 | 8.3 | 0.32 | 7 |
+  | >300s | 8 | 5.9 | 0.74 | ~8 |
+
+  **La banda 121-180s genera el 67% de todas las horas de visualización del canal.**
+  Los 26 videos de 3-5 min produjeron 8 horas entre todos; los long-form >5 min están
+  muertos. Los shorts rinden 1.65 h/video.
+
+  **Causa raíz de la caída de 2026:** la banda 121-180s solo se produjo en feb-mar-abr
+  2026 (70 videos → 396 h, retención mediana 64.6% y 71.6%). **Desde mayo no se publicó
+  ni uno.** Se migró a 61-120s (may/jun/ago) y a shorts (jul). Vistas orgánicas por mes:
+  mar 22,873 → abr 15,148 → may 2,126 → jun 2,287 → jul 4,097 → ago 412. No fue castigo
+  algorítmico ni la publicidad vieja: **fue abandonar el formato que funcionaba**.
+
+  Otros hechos verificados:
+  - **Suscriptores muertos**: 3,470 subs, pero en 12 meses solo **148 vistas** de
+    "usuarios habituales" contra 78,415 de usuarios nuevos. El sub count no es una
+    métrica útil de este canal; la métrica real es **horas orgánicas por semana**.
+  - La publicidad corrió en **feb-mar 2025** (+2,677 subs). En los últimos 12 meses el
+    **97% del tráfico es orgánico**. Ya no afecta la distribución.
+  - La biblioteca previa a dic-2025 fue borrada: 981 h de watch time que ya no cuentan
+    para monetización. **No borrar más videos vivos con retención decente.**
+  - CTR de miniatura 1.55% global (sano: 4-6%). En "Videos sugeridos": 117,751
+    impresiones con **0.77% de CTR** — hay inventario de impresiones sin aprovechar.
+  - Monetización: ~587 h vivas de las 4,000 necesarias (15%). La ruta Shorts
+    (10M vistas/90d) está descartada: 6,742 vistas en los últimos 90 días.
+  - El motor dual "short ganador → documental hermano" **no funcionó**: el short de
+    Derinkuyu hizo 1,187 vistas y su documental de 858s hizo **4**; el short del Wow!
+    Signal hizo 1,013 y su versión de 612s hizo **1**.
+
+> **Regla operativa:** producir en la banda **121-180s**. No shorts ≤60s, no >5 min,
+> hasta que la métrica de horas orgánicas se recupere.
 
 ### MathRelaxing — OTRO canal, NO producido por este pipeline
 - ID: `UCn8REDiVrUNYYVoPLSkXWqQ` · handle `@mathrelaxing`
@@ -125,6 +159,14 @@ obligatorio con número/fecha en el cap. 1) → prompts visuales → TTS → sto
 > El camino de **guión+metadata está verificado**. El render completo (imágenes+MP4)
 > usa las mismas funciones probadas de Derinkuyu, pero conviene un **render corto de
 > prueba** antes de depender de él para publicar.
+
+> **Ojo con la duración (ver §2):** el formato que rinde en este canal es **121-180s**,
+> no 8-15 min. `build_long_form` no tiene guarda contra valores chicos, pero su piso
+> efectivo queda **por encima** de la banda ganadora: `_plan_dimensions` fuerza mínimo
+> 3 capítulos × 5 párrafos = 15 segmentos, y `word_budget = minutes * 155` mientras la
+> narración real corre a `EFFECTIVE_WPM = 120`. Con `--minutes 3` salen ~465 palabras
+> ≈ 3.9 min (~232s), pasado el techo de 180s. Para dar en la banda hace falta ~300
+> palabras (~10 segmentos). **Pendiente:** permitir un objetivo sub-4-min real.
 
 ---
 
@@ -226,3 +268,9 @@ concreta + sujeto nombrado**, duración corta. Ej: "72 Seconds: The Wow! Signal"
   (`build_long_form`), mejoras bakeadas (hooks, capítulos, metadata long-form, sanitizer,
   is_short, production_weight), los dos canales y sus diagnósticos, la métrica de swipe
   rate, y reglas de subida. Mantener actualizado al cambiar entry points o estrategia.
+- **2026-09-08** — Diagnóstico de Stunning Revelations reescrito con datos duros de los
+  exports de YouTube Studio (contenido, fuente de tráfico, audiencia, origen de subs,
+  orgánico vs pagado). Hallazgo central: la banda **121-180s** concentra el 67% de las
+  horas y se abandonó en mayo 2026; esa es la causa de la caída, no la publicidad de
+  2025 ni un castigo del algoritmo. Documentado el gap de `_plan_dimensions` que impide
+  apuntar a esa banda, los subs inertes, el CTR de 1.55% y el fracaso del motor dual.
