@@ -1,210 +1,241 @@
 # waveform_widget.py
-"""
-Widget personalizado para mostrar la forma de onda del audio
+"""Forma de onda con recorte por barras arrastrables.
+
+Que cambio respecto de la version anterior (2026-09-03):
+
+- Las barras se dibujan SIEMPRE. Antes solo aparecian `if start_time > 0 or
+  end_time < duration`, asi que en una pista recien cargada no habia ninguna
+  visible y no se podia empezar a recortar con el mouse.
+- El margen de agarre paso de 5 px a 12 y cada barra tiene asas visibles
+  arriba y abajo, para que se note que se pueden mover.
+- Se puede arrastrar el recorte ENTERO desde el interior, conservando su
+  largo.
+- Sobre la onda se muestran inicio, fin y duracion del recorte.
+- El rango nunca queda invertido ni de largo cero.
+
+La matematica vive en `waveform_geometry.py` para poder testearla sin Qt.
 """
 
 from PyQt6.QtWidgets import QWidget
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QPainter, QColor, QPen
+from PyQt6.QtCore import Qt, pyqtSignal, QRectF
+from PyQt6.QtGui import QPainter, QColor, QPen, QBrush, QFont
+
+from waveform_geometry import (
+    GRAB_TOLERANCE_PX,
+    MIN_SELECTION_S,
+    clamp_range,
+    format_timecode,
+    hit_test,
+    move_region,
+    time_to_x,
+    x_to_time,
+)
+
+# Paleta
+_FONDO = QColor(26, 26, 26)
+_ONDA = QColor(76, 175, 80)
+_ONDA_FUERA = QColor(70, 78, 70)
+_VELO = QColor(12, 12, 12, 170)
+_BARRA = QColor(255, 200, 0)
+_ASA = QColor(255, 214, 51)
+_POSICION = QColor(33, 150, 243)
+_TEXTO = QColor(235, 235, 235)
+
+_ANCHO_BARRA = 3
+_ASA_W, _ASA_H = 9, 20
 
 
 class WaveformWidget(QWidget):
-    """Widget personalizado para mostrar la forma de onda del audio"""
+    """Forma de onda con seleccion de recorte arrastrable."""
 
-    # Señal emitida cuando cambia el rango de recorte
-    crop_range_changed = pyqtSignal(float, float)  # (start_time, end_time)
-    # Señal emitida cuando se hace clic para cambiar la posición de reproducción
-    position_clicked = pyqtSignal(float)  # (position_in_seconds)
+    crop_range_changed = pyqtSignal(float, float)   # durante el arrastre
+    crop_range_committed = pyqtSignal(float, float)  # al soltar
+    position_clicked = pyqtSignal(float)
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        # Lista de valores de amplitud normalizados (0-1)
         self.waveform_data = []
-        self.start_time = 0.0  # Tiempo de inicio seleccionado (segundos)
-        self.end_time = 0.0  # Tiempo de fin seleccionado (segundos)
-        self.duration = 0.0  # Duración total del audio (segundos)
-        # Posición actual de reproducción (segundos)
+        self.start_time = 0.0
+        self.end_time = 0.0
+        self.duration = 0.0
         self.current_position = 0.0
-        self.setMinimumHeight(100)
-        self.setMaximumHeight(150)
+
+        self.setMinimumHeight(120)
+        self.setMaximumHeight(170)
         self.setStyleSheet(
             "background-color: #1a1a1a; border: 1px solid #3d3d3d; border-radius: 4px;")
 
-        # Variables para arrastre
-        self.dragging = None  # 'start', 'end', o None
-        self.drag_threshold = 5  # Píxeles de tolerancia para detectar click en línea
-        self.start_x = 0
-        self.end_x = 0
-        self.line_width = 3
-        self.setMouseTracking(True)  # Para detectar hover
+        self.dragging = None        # 'start' | 'end' | 'region' | None
+        self._drag_anchor_s = 0.0   # para mover la region sin saltos
+        self.drag_threshold = GRAB_TOLERANCE_PX
+        self.setMouseTracking(True)
+
+    # ------------------------------------------------------------- estado
 
     def set_current_position(self, position):
-        """Establece la posición actual de reproducción"""
-        self.current_position = max(0.0, min(position, self.duration))
+        self.current_position = max(0.0, min(float(position or 0.0), self.duration))
         self.update()
 
     def set_waveform_data(self, waveform_data, duration):
-        """Establece los datos de la forma de onda"""
-        self.waveform_data = waveform_data
-        self.duration = duration
-        if self.end_time == 0.0 or self.end_time > duration:
-            self.end_time = duration
+        self.waveform_data = waveform_data or []
+        self.duration = float(duration or 0.0)
+        if self.end_time <= 0.0 or self.end_time > self.duration:
+            self.end_time = self.duration
+        self.start_time, self.end_time = clamp_range(
+            self.start_time, self.end_time, self.duration)
         self.update()
 
     def set_crop_range(self, start_time, end_time):
-        """Establece el rango de recorte"""
-        self.start_time = max(0.0, min(start_time, self.duration))
-        self.end_time = max(self.start_time, min(end_time, self.duration))
+        self.start_time, self.end_time = clamp_range(
+            start_time, end_time, self.duration)
         self.update()
 
+    def selection_length(self) -> float:
+        return max(0.0, self.end_time - self.start_time)
+
+    # ------------------------------------------------------------- dibujo
+
     def paintEvent(self, event):
-        """Dibuja la forma de onda"""
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        w, h = self.width(), self.height()
 
-        width = self.width()
-        height = self.height()
-
-        if not self.waveform_data or self.duration == 0:
-            # Dibujar mensaje de "sin datos"
+        if not self.waveform_data or self.duration <= 0:
             painter.setPen(QColor(100, 100, 100))
-            painter.drawText(
-                self.rect(),
-                Qt.AlignmentFlag.AlignCenter,
-                "Cargando forma de onda...")
+            painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter,
+                             "Cargando forma de onda...")
             return
 
-        # Color de fondo
-        painter.fillRect(self.rect(), QColor(26, 26, 26))
+        painter.fillRect(self.rect(), _FONDO)
 
-        # Dibujar área de recorte (sombreada)
-        if self.start_time > 0 or self.end_time < self.duration:
-            start_x = int((self.start_time / self.duration)
-                          * width) if self.duration > 0 else 0
-            end_x = int((self.end_time / self.duration) *
-                        width) if self.duration > 0 else width
+        sx = time_to_x(self.start_time, self.duration, w)
+        ex = time_to_x(self.end_time, self.duration, w)
 
-            # Área antes del inicio (sombreada)
-            if start_x > 0:
-                painter.fillRect(
-                    0, 0, start_x, height, QColor(50, 50, 50, 150))
+        self._dibujar_onda(painter, w, h, sx, ex)
 
-            # Área después del fin (sombreada)
-            if end_x < width:
-                painter.fillRect(
-                    end_x, 0, width - end_x, height, QColor(50, 50, 50, 150))
+        # Velo sobre lo que queda FUERA del recorte: lo elegido se ve nitido.
+        if sx > 0:
+            painter.fillRect(0, 0, sx, h, _VELO)
+        if ex < w:
+            painter.fillRect(ex, 0, w - ex, h, _VELO)
 
-            # Líneas de marcadores de inicio y fin (más gruesas para facilitar el arrastre)
-            self.line_width = 3
-            painter.setPen(QPen(QColor(255, 200, 0), self.line_width))
-            painter.drawLine(start_x, 0, start_x, height)
-            painter.drawLine(end_x, 0, end_x, height)
+        self._dibujar_posicion(painter, w, h)
+        # Las barras van al final para que queden por encima de todo.
+        self._dibujar_barra(painter, sx, h)
+        self._dibujar_barra(painter, ex, h)
+        self._dibujar_etiquetas(painter, w, h, sx, ex)
 
-            # Guardar posiciones para detección de clicks
-            self.start_x = start_x
-            self.end_x = end_x
+    def _dibujar_onda(self, painter, w, h, sx, ex):
+        centro = h // 2
+        muestras = len(self.waveform_data)
+        if muestras <= 0:
+            return
+        paso = w / muestras
+        for i, amplitud in enumerate(self.waveform_data):
+            x = int(i * paso)
+            alto = int(abs(float(amplitud)) * (h - 46) / 2)
+            painter.setPen(QPen(_ONDA if sx <= x <= ex else _ONDA_FUERA, 1))
+            painter.drawLine(x, centro - alto, x, centro + alto)
 
-        # Dibujar forma de onda
-        if len(self.waveform_data) > 0:
-            center_y = height // 2
-            samples = len(self.waveform_data)
-            x_step = width / samples if samples > 0 else 0
+    def _dibujar_posicion(self, painter, w, h):
+        if self.current_position <= 0:
+            return
+        px = time_to_x(self.current_position, self.duration, w)
+        painter.setPen(QPen(_POSICION, 2))
+        painter.drawLine(px, 0, px, h)
 
-            painter.setPen(QPen(QColor(76, 175, 80), 1))
+    def _dibujar_barra(self, painter, x, h):
+        """Una barra con asas arriba y abajo: se nota que se puede arrastrar."""
+        painter.setPen(QPen(_BARRA, _ANCHO_BARRA))
+        painter.drawLine(x, 0, x, h)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QBrush(_ASA))
+        for y in (0, h - _ASA_H):
+            painter.drawRoundedRect(
+                QRectF(x - _ASA_W / 2.0, y, _ASA_W, _ASA_H), 3, 3)
+        # Dos ranuras en el asa superior, como los tiradores de siempre.
+        painter.setPen(QPen(QColor(60, 45, 0), 1))
+        for dx in (-2, 1):
+            painter.drawLine(int(x + dx), 5, int(x + dx), 14)
 
-            for i, amplitude in enumerate(self.waveform_data):
-                x = int(i * x_step)
-                # Normalizar amplitud a la altura disponible
-                # Dejar margen arriba y abajo
-                bar_height = int(amplitude * (height - 20) / 2)
+    def _dibujar_etiquetas(self, painter, w, h, sx, ex):
+        fuente = QFont()
+        fuente.setPointSize(8)
+        painter.setFont(fuente)
+        painter.setPen(QPen(_TEXTO, 1))
 
-                # Dibujar línea desde el centro hacia arriba y abajo
-                painter.drawLine(x, center_y - bar_height,
-                                 x, center_y + bar_height)
+        # Inicio y fin, pegados a su barra y siempre dentro del widget.
+        painter.drawText(max(2, min(sx + 5, w - 46)), h - 6,
+                         format_timecode(self.start_time))
+        painter.drawText(max(2, min(ex - 44, w - 46)), h - 6,
+                         format_timecode(self.end_time))
 
-        # Dibujar línea de posición actual de reproducción
-        if self.duration > 0 and self.current_position >= 0:
-            position_x = int(
-                (self.current_position / self.duration) * width) if self.duration > 0 else 0
-            painter.setPen(QPen(QColor(33, 150, 243), 2))  # Azul brillante
-            painter.drawLine(position_x, 0, position_x, height)
+        # Duracion del recorte, centrada arriba.
+        largo = self.selection_length()
+        if largo > 0:
+            texto = "recorte  %s" % format_timecode(largo)
+            centro = (sx + ex) // 2
+            painter.setPen(QPen(_ASA, 1))
+            painter.drawText(max(2, min(centro - 34, w - 74)), 14, texto)
+
+    # ------------------------------------------------------------- mouse
 
     def mousePressEvent(self, event):
-        """Detecta cuando se hace click en una línea de recorte o en la forma de onda"""
-        if not self.waveform_data or self.duration == 0:
+        if not self.waveform_data or self.duration <= 0:
+            return
+        if event.button() != Qt.MouseButton.LeftButton:
             return
 
-        if event.button() == Qt.MouseButton.LeftButton:
-            x = event.position().x()
-            width = self.width()
-
-            # Calcular posiciones de las líneas
-            start_x = int((self.start_time / self.duration)
-                          * width) if self.duration > 0 else 0
-            end_x = int((self.end_time / self.duration) *
-                        width) if self.duration > 0 else width
-
-            # Detectar si el click está cerca de alguna línea de recorte
-            if abs(x - start_x) <= self.drag_threshold:
-                self.dragging = 'start'
-                self.setCursor(Qt.CursorShape.SizeHorCursor)
-            elif abs(x - end_x) <= self.drag_threshold:
-                self.dragging = 'end'
-                self.setCursor(Qt.CursorShape.SizeHorCursor)
-            else:
-                # Click en la forma de onda (no cerca de las líneas de recorte)
-                # Convertir posición X a tiempo y emitir señal para cambiar posición de reproducción
-                new_time = (x / width) * self.duration if width > 0 else 0
-                new_time = max(0.0, min(new_time, self.duration))
-                self.position_clicked.emit(new_time)
-                self.dragging = None
+        x = event.position().x()
+        objetivo = hit_test(x, self.start_time, self.end_time,
+                            self.duration, self.width(), self.drag_threshold)
+        if objetivo in ("start", "end"):
+            self.dragging = objetivo
+            self.setCursor(Qt.CursorShape.SizeHorCursor)
+        elif objetivo == "region":
+            self.dragging = "region"
+            self._drag_anchor_s = x_to_time(x, self.duration, self.width())
+            self.setCursor(Qt.CursorShape.ClosedHandCursor)
+        else:
+            self.dragging = None
+            self.position_clicked.emit(
+                x_to_time(x, self.duration, self.width()))
 
     def mouseMoveEvent(self, event):
-        """Detecta el arrastre de las líneas"""
-        if not self.waveform_data or self.duration == 0:
+        if not self.waveform_data or self.duration <= 0:
             return
+        x = event.position().x()
 
-        if self.dragging:
-            x = event.position().x()
-            width = self.width()
-
-            # Convertir posición X a tiempo
-            new_time = (x / width) * self.duration if width > 0 else 0
-            new_time = max(0.0, min(new_time, self.duration))
-
-            if self.dragging == 'start':
-                # Asegurar que inicio < fin
-                if new_time >= self.end_time:
-                    new_time = max(0.0, self.end_time - 0.1)
-                self.start_time = new_time
-            elif self.dragging == 'end':
-                # Asegurar que fin > inicio
-                if new_time <= self.start_time:
-                    new_time = min(self.duration, self.start_time + 0.1)
-                self.end_time = new_time
-
-            # Actualizar visualización
-            self.update()
-
-            # Emitir señal para actualizar los spinboxes
-            self.crop_range_changed.emit(self.start_time, self.end_time)
-        else:
-            # Cambiar cursor cuando está cerca de una línea
-            x = event.position().x()
-            width = self.width()
-            start_x = int((self.start_time / self.duration)
-                          * width) if self.duration > 0 else 0
-            end_x = int((self.end_time / self.duration) *
-                        width) if self.duration > 0 else width
-
-            if abs(x - start_x) <= self.drag_threshold or abs(x - end_x) <= self.drag_threshold:
+        if not self.dragging:
+            objetivo = hit_test(x, self.start_time, self.end_time,
+                                self.duration, self.width(), self.drag_threshold)
+            if objetivo in ("start", "end"):
                 self.setCursor(Qt.CursorShape.SizeHorCursor)
+            elif objetivo == "region":
+                self.setCursor(Qt.CursorShape.OpenHandCursor)
             else:
                 self.setCursor(Qt.CursorShape.ArrowCursor)
+            return
+
+        t = x_to_time(x, self.duration, self.width())
+        if self.dragging == "start":
+            self.start_time, self.end_time = clamp_range(
+                min(t, self.end_time - MIN_SELECTION_S), self.end_time, self.duration)
+        elif self.dragging == "end":
+            self.start_time, self.end_time = clamp_range(
+                self.start_time, max(t, self.start_time + MIN_SELECTION_S), self.duration)
+        elif self.dragging == "region":
+            self.start_time, self.end_time = move_region(
+                self.start_time, self.end_time, t - self._drag_anchor_s, self.duration)
+            self._drag_anchor_s = t
+
+        self.update()
+        self.crop_range_changed.emit(self.start_time, self.end_time)
 
     def mouseReleaseEvent(self, event):
-        """Detecta cuando se suelta el mouse"""
         if self.dragging:
             self.dragging = None
             self.setCursor(Qt.CursorShape.ArrowCursor)
-
+            # Una sola senal al soltar: lo caro (recortar y re-codificar) no
+            # tiene que correr en cada pixel del arrastre.
+            self.crop_range_committed.emit(self.start_time, self.end_time)

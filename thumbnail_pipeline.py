@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import requests
 
 from thumbnail_compositor import ThumbnailCompositor
+from thumbnail_formats import LANDSCAPE_16_9, resolve_format
 from thumbnail_context_enricher import ThumbnailContextEnricher
 from thumbnail_intelligence import ThumbnailIntelligence
 
@@ -151,31 +152,16 @@ class ThumbnailPipeline:
     ]
 
     # Super-prompt: reglas de composicion cuantitativas inyectadas en CADA
-    # prompt de thumbnail 16:9. Derivadas de mediciones reales sobre canales
-    # con CTR >5% vs canales estancados. Ver thumbnail_quality_validator.py
-    # para los umbrales objetivo que estas reglas buscan satisfacer.
-    SUPER_PROMPT_COMPOSITION_RULES = [
-        # Regla de tercios y ubicacion de sujeto
-        "rule of thirds composition, dominant subject anchored in the LEFT third of the frame (x 0-33%), face or focal action occupying ~35-45% of image height",
-        "subject eyes slightly above the horizontal midline, direct eye contact with viewer or looking off-frame toward the emotional hook",
-        "upper-right third kept visually calm (sky, smoke, dust, darkness) as negative space for a later text overlay",
-        # Luminancia y contraste (targets cuantitativos)
-        "overall mean luminance in the 100-150 range (never dark underexposed, never washed out)",
-        "LEFT third clearly brighter than the RIGHT third by ~20+ luminance points: warm key light on the subject, cooler and darker background on the right",
-        "at least 55% of visible fine detail and high-contrast edges concentrated in the LEFT third (the subject lives there)",
-        # Paleta dirigida (warm dominance)
-        "warm dominant palette: burnt orange, amber, sepia, firelight tones (#6b4a2e to #c0562a range), cool desaturated teal or charcoal only as background counter",
-        "average red channel stronger than average blue channel by 15+ points (warm temperature signature)",
-        "high tonal range: no single luminance bin over 25% of pixels, real deep shadows and real highlights",
-        # Iluminacion cinematografica
-        "cinematic three-point lighting: warm rim light on subject (sunset, firelight, oil lamp, explosion glow), cool ambient background, atmospheric haze or smoke for depth",
-        "shallow depth of field, foreground subject sharp, midground softly blurred, background with volumetric haze",
-        # Emocion visible
-        "readable emotion on the central figure: dilated pupils, tense jaw, sweat, dust on face, 1000-yard stare or mid-gasp expression",
-        # Era y realismo
-        "photoreal cinematic style, 50mm lens look, subtle film grain, not AI-smooth, not plastic, not digital painting",
-        "every visible element (weapons, uniforms, props, architecture) strictly period-accurate to the story era; zero anachronisms",
-    ]
+    # prompt de thumbnail. Derivadas de mediciones reales sobre canales con
+    # CTR >5% vs canales estancados. Ver thumbnail_quality_validator.py para
+    # los umbrales objetivo que estas reglas buscan satisfacer.
+    #
+    # Las reglas de ENCUADRE viven ahora en `thumbnail_formats`, una version
+    # por formato: las de 16:9 (sujeto al tercio izquierdo, aire a la derecha)
+    # son falsas en vertical, donde el ojo baja y YouTube tapa el quinto
+    # inferior con el titulo del Short. Se conserva este alias apuntando a
+    # 16:9 para no romper a quien lo importe.
+    SUPER_PROMPT_COMPOSITION_RULES = list(LANDSCAPE_16_9.composition_rules)
 
     def __init__(
         self,
@@ -209,9 +195,16 @@ class ThumbnailPipeline:
         self.fal_client = fal_client
         self.comfyui_image_client = comfyui_image_client
 
-    def generate_for_project(self, project_data: Dict[str, Any], style_hint: Optional[str] = None) -> Dict[str, Any]:
+    def generate_for_project(self, project_data: Dict[str, Any], style_hint: Optional[str] = None,
+                             thumbnail_format=None) -> Dict[str, Any]:
         self.raw_dir.mkdir(parents=True, exist_ok=True)
         self.final_dir.mkdir(parents=True, exist_ok=True)
+
+        # El formato manda sobre TODO lo de abajo: tamano que se le pide al
+        # proveedor, reglas de encuadre del prompt, caja de texto del
+        # compositor y eje que mide el validador.
+        fmt = thumbnail_format or resolve_format(project_data=project_data)
+        self.log(f"Miniatura en formato {fmt.aspect_label} ({fmt.width}x{fmt.height})")
 
         if not self.llm_client or not hasattr(self.llm_client, "_generate"):
             raise RuntimeError("Groq no está disponible para analizar miniaturas hook.")
@@ -227,11 +220,14 @@ class ThumbnailPipeline:
         if not has_image_provider:
             raise RuntimeError("No hay proveedor disponible para generar miniaturas hook.")
 
-        enriched_context = self.context_enricher.enrich_context(project_data, style_hint=style_hint)
+        enriched_context = self.context_enricher.enrich_context(
+            project_data, style_hint=style_hint, thumbnail_format=fmt
+        )
         strategy = self.intelligence.generate_strategy(
             project_data,
             style_hint=style_hint,
             enriched_context=enriched_context,
+            thumbnail_format=fmt,
         )
         timestamp = int(time.time())
         variants = []
@@ -241,7 +237,7 @@ class ThumbnailPipeline:
             hook_text = hook_candidates[min(index, len(hook_candidates) - 1)]
             raw_path = self.raw_dir / f"thumb_{timestamp}_{recipe['id']}_raw.png"
             final_path = self.final_dir / f"thumb_{timestamp}_{recipe['id']}_final.png"
-            prompt = self._build_prompt(strategy, recipe)
+            prompt = self._build_prompt(strategy, recipe, fmt=fmt)
             negative_prompt = self._build_negative_prompt(strategy)
 
             generated_base, provider = self._generate_base_image(
@@ -254,6 +250,7 @@ class ThumbnailPipeline:
                 quality_tier=strategy.get("quality_tier", "epic_cinematic"),
                 recraft_style=style_hint,
                 reference_images=strategy.get("reference_images") or [],
+                fmt=fmt,
             )
             self.compositor.compose_thumbnail(
                 base_image_path=str(generated_base),
@@ -263,13 +260,14 @@ class ThumbnailPipeline:
                 composition=recipe.get("composition", "subject_left_text_right"),
                 kicker_text=self._build_kicker_text(strategy),
                 quality_tier=strategy.get("quality_tier", "epic_cinematic"),
+                thumbnail_format=fmt,
             )
 
             # Validacion cuantitativa post-generacion (luminancia, tercios,
             # paleta, histograma). El score alimenta _select_best_variant
             # para priorizar miniaturas que realmente cumplen los targets
             # de alto CTR, no solo la que tiene el mejor hook textual.
-            quality_report = self._evaluate_variant_quality(final_path)
+            quality_report = self._evaluate_variant_quality(final_path, fmt=fmt)
 
             variants.append(
                 {
@@ -305,6 +303,8 @@ class ThumbnailPipeline:
             "thumbnail_strategy": strategy,
             "thumbnail_enrichment": enriched_context,
             "thumbnail_variants": variants,
+            "thumbnail_format": fmt.key,
+            "thumbnail_size": [fmt.width, fmt.height],
             "generated_at": timestamp,
         }
 
@@ -472,7 +472,7 @@ class ThumbnailPipeline:
         clean = re.sub(r"[^A-Za-z0-9?!. ]+", " ", str(text or "").upper())
         return [token for token in clean.split() if token]
 
-    def _evaluate_variant_quality(self, image_path: Path) -> Dict[str, Any]:
+    def _evaluate_variant_quality(self, image_path: Path, fmt=LANDSCAPE_16_9) -> Dict[str, Any]:
         """Corre el validador cuantitativo sobre una miniatura ya compuesta.
 
         Devuelve un dict con 'total_score' 0-100, 'verdict', 'passes' y
@@ -487,7 +487,7 @@ class ThumbnailPipeline:
             path_str = str(image_path)
             if not Path(path_str).is_file():
                 return {"total_score": 0.0, "verdict": "missing", "passes": {}, "suggestions": []}
-            report = _validate_thumb_quality(path_str)
+            report = _validate_thumb_quality(path_str, thumbnail_format=fmt)
             verdict = report.get("verdict", "unknown")
             score = float(report.get("total_score", 0.0))
             self.log(
@@ -509,7 +509,7 @@ class ThumbnailPipeline:
             self.log(f"[quality] validacion de thumbnail fallo: {e}")
             return {"total_score": 0.0, "verdict": "error", "passes": {}, "suggestions": []}
 
-    def _build_prompt(self, strategy: Dict[str, Any], recipe: Dict[str, Any]) -> str:
+    def _build_prompt(self, strategy: Dict[str, Any], recipe: Dict[str, Any], fmt=LANDSCAPE_16_9) -> str:
         parts = []
         # 1. Contexto de la historia y sujeto
         for item in (
@@ -522,7 +522,7 @@ class ThumbnailPipeline:
             self._reference_clause(strategy.get("reference_images")),
             self._list_clause("reference anchors", strategy.get("reference_queries")),
             strategy.get("web_summary"),
-            recipe.get("prompt_suffix"),
+            fmt.variant_suffix(recipe.get("composition"), recipe.get("prompt_suffix")),
         ):
             clean = str(item or "").strip()
             if clean:
@@ -531,12 +531,16 @@ class ThumbnailPipeline:
         # 2. Super-prompt: reglas de composicion cuantitativas (CTR-optimized).
         # Estas reglas son las mismas que valida thumbnail_quality_validator.py
         # post-generacion, asi que el modelo y el validador estan alineados.
-        parts.extend(self.SUPER_PROMPT_COMPOSITION_RULES)
+        # Las de encuadre salen del FORMATO: en vertical, "sujeto en el tercio
+        # izquierdo, aire arriba a la derecha" no significa nada y ademas choca
+        # con la franja que YouTube tapa abajo en la grilla de Shorts.
+        parts.extend(fmt.composition_rules)
 
         # 3. Constraints finales (formato + prohibiciones hard)
         parts.extend([
-            "horizontal 16:9 YouTube thumbnail, 1920x1080",
-            "high-end browse image with one dominant subject and clear negative space in the upper right",
+            fmt.prompt_constraint,
+            "high-end browse image with one dominant subject and clear negative space "
+            + ("in the bottom fifth" if fmt.is_vertical else "in the upper right"),
             "must visibly show topic-specific iconography or action from the story",
             "no text inside the image, no watermark, no logo, no subtitles (text is added in post-production)",
         ])
@@ -567,6 +571,7 @@ class ThumbnailPipeline:
         quality_tier: str,
         recraft_style: Optional[str],
         reference_images: List[Dict[str, Any]],
+        fmt=LANDSCAPE_16_9,
     ) -> Tuple[Path, str]:
         del subject_hint, reference_images
 
@@ -583,6 +588,7 @@ class ThumbnailPipeline:
                 output_path=output_path,
                 negative_prompt=negative_prompt,
                 style_hint=selected_style or style_hint,
+                fmt=fmt,
             )
             if candidate and Path(candidate).exists():
                 self.log(f"Thumbnail base generated with {provider_name}: {Path(candidate).name}")
@@ -627,12 +633,13 @@ class ThumbnailPipeline:
         output_path: Path,
         negative_prompt: str,
         style_hint: str,
+        fmt=LANDSCAPE_16_9,
     ) -> Optional[Path]:
         if provider_name == "google_ai" and self.google_ai_image_client:
             image_bytes = self.google_ai_image_client.generate_image(
                 prompt=prompt,
-                width=1280,
-                height=720,
+                width=fmt.width,
+                height=fmt.height,
                 negative_prompt=negative_prompt,
                 style=style_hint,
             )
@@ -642,8 +649,8 @@ class ThumbnailPipeline:
             result = self.recraft_client.generate_image(
                 prompt=prompt,
                 style="realistic_image" if "photo" in style_hint or "realistic" in style_hint else "digital_illustration",
-                width=1280,
-                height=720,
+                width=fmt.width,
+                height=fmt.height,
                 negative_prompt=negative_prompt,
                 output_path=str(output_path),
             )
@@ -663,8 +670,8 @@ class ThumbnailPipeline:
         if provider_name == "fal" and self.fal_client and hasattr(self.fal_client, "generate_image"):
             result = self.fal_client.generate_image(
                 prompt=prompt,
-                width=1280,
-                height=720,
+                width=fmt.width,
+                height=fmt.height,
                 negative_prompt=negative_prompt,
                 style=style_hint,
             )
@@ -674,12 +681,12 @@ class ThumbnailPipeline:
         if provider_name == "comfy_schnell" and self.comfyui_image_client and hasattr(self.comfyui_image_client, "generate_image"):
             result = self.comfyui_image_client.generate_image(
                 prompt=prompt,
-                width=1280,
-                height=720,
+                width=fmt.width,
+                height=fmt.height,
                 output_path=str(output_path),
                 negative_prompt=negative_prompt,
                 style=style_hint,
-                preset="thumbnail_16x9_schnell",
+                preset=fmt.comfy_preset,
             )
             if isinstance(result, str) and Path(result).exists():
                 return Path(result)
@@ -693,15 +700,6 @@ class ThumbnailPipeline:
         output_path.write_bytes(image_bytes)
         return output_path
 
-    def _download_reference_image(self, reference_images: List[Dict[str, Any]], output_path: Path) -> Optional[Path]:
-        for item in reference_images or []:
-            for url in (item.get("thumbnail"), item.get("url"), item.get("context")):
-                if not url:
-                    continue
-                downloaded = self._download_image(str(url), output_path)
-                if downloaded and downloaded.exists():
-                    return downloaded
-        return None
 
     def _download_image(self, url: str, output_path: Path) -> Optional[Path]:
         try:

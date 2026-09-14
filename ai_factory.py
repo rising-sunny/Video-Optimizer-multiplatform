@@ -25,10 +25,6 @@ class AIFactory:
         except Exception:
             pass
 
-    def set_default_llm(self, name):
-        """Mantiene compatibilidad, pero el runtime de texto usa solo Groq."""
-        normalized = str(name or "").strip().lower()
-        self._default_llm = "groq" if normalized in self._TEXT_LLM_ALIASES else "groq"
 
     def get_llm_client(self):
         """Retorna el cliente principal de texto (Groq, via wrapper compatible)."""

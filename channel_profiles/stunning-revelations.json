@@ -1,0 +1,22 @@
+{
+  "channel_identity": {
+    "channel_id": "UC66EnGiys6V3gKe-J0XD-_Q",
+    "channel_name": "Stunning Revelations",
+    "channel_handle": "stunning-revelations",
+    "language": "en",
+    "niche": "history, conflict, military history, archaeology, catastrophes and historical mysteries",
+    "positioning": "Compact evidence-led historical stories. Distinguish facts, interpretations, hypotheses, disputed claims and unknowns."
+  },
+  "production_policy": {"preferred_format": "micro_documentary", "pilot_batch_size": 3, "review_after": [3, 6], "automatic_scaling": false, "shorts_campaign_enabled": false},
+  "micro_documentary": {"target_seconds": 270, "min_seconds": 210, "max_seconds": 330, "effective_wpm": 120},
+  "tts": {"default_voice": "en-US-GuyNeural", "rate": "+5%", "language": "en"},
+  "visual_style": "Photorealism",
+  "subtitle_style": "hormozi",
+  "transition_type": "Fade Smooth",
+  "transition_duration": 0.3,
+  "shorts_rules": {"target_duration": 150, "min_duration": 121, "max_duration": 180, "hard_limit": 180},
+  "hook_patterns": {"allowed": [], "prohibited": ["Welcome back", "Today we are going to explore", "Throughout history"]},
+  "narration_tone": {"style": ["serious", "precise", "high narrative density"], "avoid": ["sensational certainty", "filler"]},
+  "categories": [{"name": "Military History", "priority": "HIGH"}, {"name": "Archaeology", "priority": "HIGH"}, {"name": "Historical Mysteries", "priority": "MEDIUM"}],
+  "editorial_principles": ["Packaging before script", "No generic intro", "Never present a hypothesis as established fact"]
+}

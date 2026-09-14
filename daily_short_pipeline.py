@@ -71,6 +71,9 @@ except Exception as e:
 # ═══════════════════════════════════════════════════════════════════════════
 
 from channel_strategy import (
+    get_channel_name,
+
+
     get_channel_strategy,
     get_shorts_rules,
     get_all_category_names,
@@ -87,7 +90,7 @@ _tts = _strategy.get("tts", {})
 
 CHANNEL_CONFIG = {
     "channel_id": _identity.get("channel_id", "UC66EnGiys6V3gKe-J0XD-_Q"),
-    "channel_handle": _identity.get("channel_handle", "Stunning-Revelations"),
+    "channel_handle": _identity.get("channel_handle", "this-channel"),
     "language": _identity.get("language", "en"),
     "categories": get_all_category_names(),
     "target_duration": _shorts.get("target_duration", 50),
@@ -104,6 +107,22 @@ CHANNEL_CONFIG = {
 BEST_PERFORMING_CATEGORIES = [
     c["name"] for c in get_categories_by_priority()
 ]
+
+
+def refresh_channel_config():
+    """Refresh imported CLI defaults when the GUI switches channel."""
+    strategy = get_channel_strategy()
+    identity = strategy.get('channel_identity', {})
+    tts = strategy.get('tts', {})
+    CHANNEL_CONFIG.update(
+        channel_id=identity.get('channel_id', ''), channel_handle=identity.get('channel_handle', 'this-channel'),
+        language=identity.get('language', 'en'), categories=get_all_category_names(),
+        target_duration=get_shorts_rules().get('target_duration', 50),
+        visual_style=strategy.get('visual_style', 'Photorealism'), subtitle_style=strategy.get('subtitle_style', 'capcut'),
+        transition_type=strategy.get('transition_type', 'Fade Smooth'), transition_duration=strategy.get('transition_duration', 0.3),
+        default_voice=tts.get('default_voice', 'en-US-GuyNeural'), tts_rate=tts.get('rate', '+5%'),
+        trend_regions=identity.get('trend_regions', ['US', 'GB', 'GLOBAL']))
+    BEST_PERFORMING_CATEGORIES[:] = [c['name'] for c in get_categories_by_priority()]
 
 EDITORIAL_FOCUS_KEYWORDS = {
     "history",
@@ -1300,11 +1319,15 @@ def assemble_video(storyboard: dict, output_dir: Path,
                     transition_duration: float = None,
                     pregenerate_images: bool = True,
                     strict_existing_visuals: bool = False,
-                    platform: str = "youtube_short") -> str:
+                    platform: str = "youtube_short",
+                    assembly_options: dict = None) -> str:
     """Ensambla el video final con imágenes, audio y subtítulos."""
     log("Ensamblando video final...", "STEP")
 
     output_dir = Path(output_dir)
+    if strict_existing_visuals:
+        from project_media_paths import prepare_existing_media
+        prepare_existing_media(storyboard, output_dir)
     generator = storyboard.pop("_generator", None)
     manual_bgm = storyboard.pop("_manual_bgm_path", None)
     storyboard["_project_path"] = str(output_dir)
@@ -1398,7 +1421,7 @@ def assemble_video(storyboard: dict, output_dir: Path,
     elif strict_existing_visuals:
         log("  Ensamblado estricto: usando solo imágenes ya guardadas en el draft", "INFO")
 
-    result = generator.assemble_video_from_storyboard(
+    render_params = dict(
         storyboard_data=storyboard,
         platform=platform,
         add_subtitles=True,
@@ -1415,6 +1438,9 @@ def assemble_video(storyboard: dict, output_dir: Path,
         manual_bgm_path=manual_bgm,
         allow_visual_regeneration=not strict_existing_visuals,
     )
+
+    render_params.update(assembly_options or {})
+    result = generator.assemble_video_from_storyboard(**render_params)
 
     if not result or not result.get("video_path"):
         log("Error ensamblando video", "ERROR")
@@ -1601,7 +1627,7 @@ def build_youtube_chapters(storyboard: dict) -> str:
 
 def _normalize_youtube_metadata(payload: dict, topic: str) -> dict:
     return {
-        "title": str(payload.get("title") or topic or "Stunning Revelations").strip(),
+        "title": str(payload.get("title") or topic or get_channel_name()).strip(),
         "description": _sanitize_description_text(payload.get("description") or ""),
         "tags": _normalize_tags(payload.get("tags"), limit=22),
     }
@@ -1609,21 +1635,21 @@ def _normalize_youtube_metadata(payload: dict, topic: str) -> dict:
 
 def _normalize_facebook_metadata(payload: dict, topic: str) -> dict:
     return {
-        "title": str(payload.get("title") or topic or "Stunning Revelations").strip()[:255],
+        "title": str(payload.get("title") or topic or get_channel_name()).strip()[:255],
         "description": _sanitize_description_text(payload.get("description") or "")[:2200],
     }
 
 
 def _normalize_instagram_metadata(payload: dict, topic: str) -> dict:
     return {
-        "title": str(payload.get("title") or topic or "Stunning Revelations").strip()[:120],
+        "title": str(payload.get("title") or topic or get_channel_name()).strip()[:120],
         "description": _sanitize_description_text(payload.get("description") or "")[:2200],
     }
 
 
 def _youtube_metadata_fallback(storyboard: dict) -> dict:
     return {
-        "title": storyboard.get("topic", "Stunning Revelations"),
+        "title": storyboard.get("topic", get_channel_name()),
         "description": f"Discover the truth about {storyboard.get('topic', 'this mystery')}. #history #mystery #shorts",
         "tags": ["history", "mystery", "conspiracy", "paranormal", "shorts"],
         "is_short": True,
@@ -1655,11 +1681,11 @@ def _place_chapters(description: str, chapters_block: str) -> str:
 
 
 def _youtube_longform_metadata_fallback(storyboard: dict) -> dict:
-    topic = storyboard.get("topic", "Stunning Revelations")
+    topic = storyboard.get("topic", get_channel_name())
     script = str(storyboard.get("script") or "").strip()
     intro = script[:300].strip() or f"The full story behind {topic}."
     desc = (
-        f"{intro}\n\nSubscribe to Stunning Revelations for more forgotten history, "
+        f"{intro}\n\nSubscribe to {get_channel_name()} for more forgotten history, "
         "lost civilizations, and mysteries that still disturb the modern world."
     )
     desc = _place_chapters(desc, build_youtube_chapters(storyboard))
@@ -1692,7 +1718,7 @@ def _generate_longform_youtube_metadata(storyboard: dict, output_dir: Path,
             raise RuntimeError("Groq no disponible")
 
         used_str = "\n".join(f"  - {t}" for t in set(used_titles)) if used_titles else "None"
-        prompt = f"""You are a YouTube SEO expert for LONG-FORM documentaries on the channel "Stunning Revelations" (forgotten history, lost civilizations, dark mysteries).
+        prompt = f"""You are a YouTube SEO expert for LONG-FORM documentaries on the channel {get_channel_name()} (forgotten history, lost civilizations, dark mysteries).
 
 This is a full documentary (8-15 min), NOT a Short. Never use #shorts anywhere.
 
@@ -1706,7 +1732,7 @@ Already-published titles (avoid duplicates):
 
 Generate JSON with:
 1. "title": A searchable documentary title, 50-70 chars. Lead with the main SEARCH KEYWORD (a proper name or place people type), include one concrete number when natural. No #shorts. Examples: "Derinkuyu: The Underground City That Hid 20,000 People", "The Wow! Signal: 72 Seconds That Never Came Back".
-2. "description": 3-5 sentences with REAL line breaks between paragraphs. Sentence 1 = the hook/scale. Then what the documentary covers. End with the line: "Subscribe to Stunning Revelations for more forgotten history, lost civilizations, and mysteries that still disturb the modern world." Do NOT invent chapter timestamps (they are added automatically). Finish with 6-8 topical hashtags, never #shorts.
+2. "description": 3-5 sentences with REAL line breaks between paragraphs. Sentence 1 = the hook/scale. Then what the documentary covers. End with the line: "Subscribe to {get_channel_name()} for more forgotten history, lost civilizations, and mysteries that still disturb the modern world." Do NOT invent chapter timestamps (they are added automatically). Finish with 6-8 topical hashtags, never #shorts.
 3. "tags": Array of 12-18 lowercase SEO tags. Include "documentary", "history documentary", the main subject/place, and "stunning revelations". Never include "shorts".
 
 Respond ONLY with valid JSON, no markdown."""
@@ -1731,7 +1757,7 @@ Respond ONLY with valid JSON, no markdown."""
 
 
 def _facebook_metadata_fallback(storyboard: dict, youtube_metadata: dict | None = None) -> dict:
-    topic = storyboard.get("topic", "Stunning Revelations")
+    topic = storyboard.get("topic", get_channel_name())
     script = str(storyboard.get("script") or "").strip()
     preview = script[:260].strip()
     description = (
@@ -1747,7 +1773,7 @@ def _facebook_metadata_fallback(storyboard: dict, youtube_metadata: dict | None 
 
 def _instagram_metadata_fallback(storyboard: dict, youtube_metadata: dict | None = None,
                                  facebook_metadata: dict | None = None) -> dict:
-    topic = storyboard.get("topic", "Stunning Revelations")
+    topic = storyboard.get("topic", get_channel_name())
     script = str(storyboard.get("script") or "").strip()
     preview = script[:320].strip()
     description = (
@@ -1820,7 +1846,7 @@ def generate_youtube_metadata(storyboard: dict, output_dir: Path, used_titles: l
         max_retries = 3
         response = None
         for attempt in range(max_retries):
-            prompt = f"""You are a YouTube Shorts SEO expert optimizing for the channel "Stunning Revelations".
+            prompt = f"""You are a YouTube Shorts SEO expert optimizing for the channel {get_channel_name()}.
 
 CHANNEL ANALYTICS (real data from YouTube Studio):
 - Shorts get 4x more views and 3.5x more subscribers than long videos
@@ -1904,7 +1930,7 @@ def generate_facebook_metadata(storyboard: dict, output_dir: Path,
         script = storyboard.get("script", "")
         youtube_title = (youtube_metadata or {}).get("title", "")
 
-        prompt = f"""You are a Facebook Reels growth strategist for the page "Stunning Revelations".
+        prompt = f"""You are a Facebook Reels growth strategist for the page {get_channel_name()}.
 Return ONLY valid JSON.
 
 CURRENT VIDEO:
@@ -1961,7 +1987,7 @@ def generate_instagram_metadata(storyboard: dict, output_dir: Path, youtube_meta
         youtube_title = (youtube_metadata or {}).get("title", "")
         facebook_title = (facebook_metadata or {}).get("title", "")
 
-        prompt = f"""You are an Instagram Reels copy strategist for the account "Stunning Revelations".
+        prompt = f"""You are an Instagram Reels copy strategist for the account {get_channel_name()}.
 Return ONLY valid JSON.
 
 CURRENT VIDEO:
@@ -2011,6 +2037,8 @@ def generate_platform_metadata(storyboard: dict, output_dir: Path) -> tuple[dict
     output_dir = Path(output_dir)
     used_titles = get_used_titles()
     youtube_metadata = generate_youtube_metadata(storyboard, output_dir, used_titles=used_titles)
+    from channel_profiles import active_channel
+    youtube_metadata['channel_profile'] = storyboard.get('channel_profile') or active_channel()
     
     if _is_longform_storyboard(storyboard):
         _save_platform_metadata_files(output_dir, youtube_metadata, {}, {})
@@ -2431,7 +2459,7 @@ def run_pipeline(topic: str = None, voice_id: str = None, upload: bool = False,
     start_time = time.time()
 
     print("\n" + "═" * 60)
-    print("   DAILY SHORT PIPELINE — Stunning Revelations")
+    print(f"   DAILY SHORT PIPELINE — {get_channel_name()}")
     print("═" * 60 + "\n")
 
     # ── Inicializar IA ────────────────────────────────────────────────
@@ -2583,7 +2611,7 @@ def run_pipeline(topic: str = None, voice_id: str = None, upload: bool = False,
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Pipeline automatizado para generar Shorts diarios — Stunning Revelations",
+        description=f"Pipeline automatizado para generar Shorts diarios — {get_channel_name()}",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--topic", "-t", type=str, default=None,
@@ -2658,7 +2686,13 @@ def main():
     parser.add_argument("--list-transitions", action="store_true",
                         help="Listar transiciones disponibles y salir")
 
+    from channel_profiles import CHANNELS, DEFAULT_CHANNEL, select_channel
+    parser.add_argument('--channel', choices=list(CHANNELS), default=DEFAULT_CHANNEL)
     args = parser.parse_args()
+    select_channel(args.channel)
+    from channel_strategy import get_channel_strategy
+    if get_channel_strategy().get('production_policy', {}).get('shorts_campaign_enabled') is False:
+        parser.error('Este canal está en piloto microdocumentary. Usa long_form_builder.py --format micro_documentary --channel ' + args.channel)
 
     if args.list_voices:
         list_voices()

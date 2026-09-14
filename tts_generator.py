@@ -416,6 +416,11 @@ class TextToSpeechGenerator:
     @staticmethod
     def _is_transient_edge_tts_error(error: Exception) -> bool:
         """Detecta errores recuperables de Edge-TTS para aplicar reintentos."""
+        # Por TIPO antes que por texto: `str(asyncio.TimeoutError())` es la
+        # cadena VACIA, asi que buscar "timeout" en el mensaje no lo detecta y
+        # el corte por timeout se trataba como error definitivo.
+        if isinstance(error, (asyncio.TimeoutError, TimeoutError)):
+            return True
         message = str(error).lower()
         if "verify that your parameters are correct" in message:
             return False
@@ -435,6 +440,18 @@ class TextToSpeechGenerator:
         )
         return any(marker in message for marker in transient_markers)
     
+    # Piso y ritmo del timeout de Edge-TTS. El servicio sintetiza bastante mas
+    # rapido que tiempo real; 1s por cada 40 caracteres deja margen de sobra
+    # sin dejar que un cuelgue se eternice. Un bloque de 3500 chars (el maximo
+    # por request) da ~88s.
+    EDGE_TTS_MIN_TIMEOUT_S = 45.0
+    EDGE_TTS_SECONDS_PER_CHAR = 1 / 40.0
+
+    def _edge_tts_timeout_for(self, script: str) -> float:
+        """Timeout en segundos para UN request de Edge-TTS, segun el largo."""
+        largo = len(script or "")
+        return max(self.EDGE_TTS_MIN_TIMEOUT_S, largo * self.EDGE_TTS_SECONDS_PER_CHAR)
+
     async def _generate_edge_tts_narration(
         self,
         script: str,
@@ -464,7 +481,17 @@ class TextToSpeechGenerator:
                         pass
 
                 communicate = edge_module.Communicate(script, voice_id, rate=rate)
-                await communicate.save(filename)
+                # `save()` abre un WebSocket contra Microsoft y NO tiene
+                # timeout: si la conexion queda a medias (TCP abierto pero sin
+                # datos, o el servicio no responde) espera para siempre. El
+                # 2026-09-02 eso colgo el ensamblaje en "Generando narracion",
+                # con un dialogo modal SIN boton de cancelar: no habia salida
+                # mas que matar la app. Los reintentos de abajo tampoco servian
+                # porque un cuelgue nunca lanza excepcion.
+                await asyncio.wait_for(
+                    communicate.save(filename),
+                    timeout=self._edge_tts_timeout_for(script),
+                )
 
                 if os.path.exists(filename) and os.path.getsize(filename) > 0:
                     return filename
@@ -472,10 +499,17 @@ class TextToSpeechGenerator:
             except Exception as e:
                 last_error = e
                 is_retryable = self._is_transient_edge_tts_error(e)
+                # Un TimeoutError no trae mensaje: sin esto el log decia
+                # "fallo temporalmente: ." y no se entendia nada.
+                detalle = str(e) or (
+                    f"sin respuesta en {self._edge_tts_timeout_for(script):.0f}s"
+                    if isinstance(e, (asyncio.TimeoutError, TimeoutError))
+                    else type(e).__name__
+                )
                 if attempt < attempts and is_retryable:
                     backoff_seconds = min(3.0, 0.8 * attempt)
                     print(
-                        f"️ Edge-TTS falló temporalmente (intento {attempt}/{attempts}): {e}. "
+                        f"️ Edge-TTS falló temporalmente (intento {attempt}/{attempts}): {detalle}. "
                         f"Reintentando en {backoff_seconds:.1f}s..."
                     )
                     await asyncio.sleep(backoff_seconds)
@@ -488,7 +522,8 @@ class TextToSpeechGenerator:
                     os.remove(filename)
                 except Exception:
                     pass
-            print(f"\u274c Error Edge-TTS: {last_error}")
+            _detalle_final = str(last_error) or type(last_error).__name__
+            print(f"\u274c Error Edge-TTS: {_detalle_final}")
         return None
     
     def generate_narration(

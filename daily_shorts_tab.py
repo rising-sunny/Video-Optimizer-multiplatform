@@ -2828,13 +2828,6 @@ class DailyShortsTab(QWidget):
 
     # ─── Pipeline Control ─────────────────────────────────────────────
 
-    def _start_pipeline(self):
-        """Compat wrapper for older signal connections."""
-        self._start_image_generation()
-
-    def _run_next_short(self):
-        """Compat wrapper for older callbacks."""
-        self._run_next_task()
 
     def _cancel_pipeline(self):
         if self.worker and self.worker.isRunning():

@@ -199,11 +199,6 @@ def normalize_recraft_style(style: str) -> str:
     return "Photorealism"
 
 
-def is_vector_style(style: str) -> bool:
-    """True when style belongs to vector/icon-style families."""
-    return normalize_recraft_style(style) in VECTOR_STYLE_SET
-
-
 def to_recraft_style_family(style: str) -> str:
     """
     Map style to a broader fallback style accepted by Recraft.

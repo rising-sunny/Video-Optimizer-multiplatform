@@ -42,6 +42,20 @@ from studio_video_assembly_handlers import StudioVideoAssemblyHandlers
 from recraft_style_catalog import RECRAFT_STYLE_OPTIONS
 from thumbnail_pipeline import ThumbnailPipeline
 from groq_client import GroqAiClient
+
+
+def get_channel_name(default: str = "this channel") -> str:
+    """Nombre visible del canal, leido del Channel Bible.
+
+    Import perezoso: este modulo se carga antes que el perfil en algunos flujos.
+    """
+    try:
+        from channel_strategy import get_channel_name as _real
+        return _real(default)
+    except Exception:
+        return default
+
+
 try:
     from tts_generator import TextToSpeechGenerator as StandaloneTextToSpeechGenerator
 except ImportError:
@@ -154,7 +168,7 @@ class AutoVideoStudioTab(QWidget):
     _download_error_signal = pyqtSignal(str)
     _download_progress_signal = pyqtSignal(int)
     _publish_done_signal = pyqtSignal(dict)
-    LONG_HORIZONTAL_MIN_DURATION_SECONDS = 900
+    LONG_HORIZONTAL_MIN_DURATION_SECONDS = 120
     LONG_HORIZONTAL_DEFAULT_DURATION_SECONDS = 1800
     DURATION_SLIDER_MAX_SECONDS = 7200
     SHORT_VERTICAL_MIN_DURATION_SECONDS = 30
@@ -183,8 +197,8 @@ class AutoVideoStudioTab(QWidget):
         self.current_thread = None
         self.thumbnail_worker = None
         self.thumbnail_thread = None
-        self.auto_save_enabled = False  # Auto-guardado deshabilitado por defecto
-        self.selected_research_snippets = []  # Snippets de investigacion (compatibilidad con AnalysisMixin)
+        self.auto_save_enabled = True
+        self.selected_research_snippets = []  # Snippets de investigacion
         self._loading_project = False  # Guard para evitar auto-save durante carga de proyecto
         self._project_state_token = 0
         self._current_worker_project_token = None
@@ -233,7 +247,7 @@ class AutoVideoStudioTab(QWidget):
         if not project_path:
             return None
         try:
-            return os.path.normcase(os.path.abspath(str(project_path)))
+            return os.path.normcase(os.path.realpath(str(project_path)))
         except Exception:
             return str(project_path)
 
@@ -301,10 +315,33 @@ class AutoVideoStudioTab(QWidget):
     def _bind_current_worker_to_project(self):
         """Ata el worker en curso al estado actual del proyecto."""
         self._current_worker_project_token = self._project_state_token
+        # La ruta ademas del token: recargar el MISMO proyecto (cosa que hace
+        # el propio flujo de generacion) cambia el token pero no la ruta.
+        self._current_worker_project_path = self.current_project_path
 
     def _should_accept_current_worker_callback(self):
-        """Descarta resultados asíncronos de un proyecto/estado obsoleto."""
-        return self._current_worker_project_token == self._project_state_token
+        """Descarta resultados asíncronos de un proyecto/estado obsoleto.
+
+        Antes comparaba solo el token, y el flujo de generacion recarga el
+        proyecto en el medio: el guion volvia, se lo daba por viejo y se
+        tiraba, con el storyboard ya guardado en disco y todos los botones
+        deshabilitados (2026-09-10, "El saqueo de Bagdad").
+        """
+        from worker_context import should_accept_worker_result
+
+        aceptar, motivo = should_accept_worker_result(
+            self._current_worker_project_token,
+            self._project_state_token,
+            getattr(self, '_current_worker_project_path', None),
+            self.current_project_path,
+        )
+        if not aceptar:
+            # A consola tambien: en el panel de la GUI el aviso se perdia
+            # entre cientos de lineas y parecia que nada habia pasado.
+            print(f"[Worker] Resultado descartado: {motivo}")
+        elif motivo != "mismo estado de proyecto":
+            print(f"[Worker] Resultado aceptado: {motivo}")
+        return aceptar
 
     def _bind_thumbnail_worker_to_project(self):
         """Ata la generación de miniaturas al proyecto activo actual."""
@@ -442,6 +479,13 @@ class AutoVideoStudioTab(QWidget):
 
     def _connect_auto_save_signals(self):
         """Conecta signals de auto-guardado a los controles de configuraciÃ³n"""
+        # Durante el constructor lazy, el proxy del parent todavía devuelve
+        # _Dummy. El QLineEdit real ya pertenece a este Studio tras setup_ui().
+        topic_input = getattr(self, 'topic_input', None)
+        if topic_input is not None and hasattr(topic_input, 'editingFinished'):
+            topic_input.editingFinished.connect(
+                lambda: self._trigger_config_auto_save('tema del nuevo proyecto')
+                if not self.last_storyboard_data else None)
         # Conectar cambios en controles a auto-guardado
         if hasattr(self, 'platform_combo'):
             self.platform_combo.currentIndexChanged.connect(
@@ -484,6 +528,14 @@ class AutoVideoStudioTab(QWidget):
         if hasattr(self, 'transition_duration_spin'):
             self.transition_duration_spin.valueChanged.connect(
                 lambda: self._trigger_config_auto_save("cambio de duraciÃ³n de transiciÃ³n"))
+
+        if hasattr(self, 'transition_sfx_check'):
+            self.transition_sfx_check.toggled.connect(
+                lambda: self._trigger_config_auto_save("cambio de sonido de transicion"))
+
+        if hasattr(self, 'transition_sfx_combo'):
+            self.transition_sfx_combo.currentIndexChanged.connect(
+                lambda: self._trigger_config_auto_save("cambio de archivo de transicion"))
 
         if hasattr(self, 'duration_slider'):
             # Solo auto-guardar cuando se suelta el slider (no durante el arrastre)
@@ -576,18 +628,6 @@ class AutoVideoStudioTab(QWidget):
         se aplica automáticamente post-TTS con FFmpeg atempo."""
         return "+0%"
 
-    def get_selected_platform_keys(self):
-        """Lista de claves de plataforma internas para los formatos seleccionados."""
-        keys = []
-        for profile in self.get_selected_output_profiles():
-            platform_key = profile.get('platform', 'youtube')
-            if platform_key not in keys:
-                keys.append(platform_key)
-        return keys
-
-    def is_dual_output_format_selected(self) -> bool:
-        """True cuando se seleccionó generar 16:9 y 1:1 al mismo tiempo."""
-        return len(self.get_selected_output_profiles()) > 1
 
     def get_selected_platform_key(self):
         """
@@ -628,7 +668,7 @@ class AutoVideoStudioTab(QWidget):
             return {
                 'min': self.LONG_HORIZONTAL_MIN_DURATION_SECONDS,
                 'max': self.DURATION_SLIDER_MAX_SECONDS,
-                'tick': 300,
+                'tick': 60,
                 'label': 'YouTube horizontal',
             }
         if platform_key == 'youtube_short':
@@ -726,6 +766,89 @@ class AutoVideoStudioTab(QWidget):
         else:
             # Formatos cortos / verticales: 1 imagen por segmento
             self.images_per_segment_spin.setValue(1)
+
+    def _default_transition_sfx_path(self) -> str | None:
+        root = Path(__file__).resolve().parent
+        for candidate in (
+            root / "transition_overlays" / "swoosh.wav",
+            root / "swoosh.wav",
+        ):
+            if candidate.exists():
+                return str(candidate)
+        return None
+
+    def _transition_sfx_display_name(self, path: str) -> str:
+        name = os.path.splitext(os.path.basename(path or ""))[0]
+        if name.lower() == "swoosh":
+            return "Swoosh (wosh)"
+        return name.replace("_", " ").replace("-", " ").title() or "Swoosh"
+
+    def _populate_transition_sfx_combo(self, selected_path: str | None = None):
+        if not hasattr(self, "transition_sfx_combo"):
+            return
+        combo = self.transition_sfx_combo
+        current = selected_path or (combo.currentData() if combo.count() else None)
+        combo.blockSignals(True)
+        combo.clear()
+        seen = set()
+        root = Path(__file__).resolve().parent
+        search_dirs = [root / "transition_overlays", root]
+        for folder in search_dirs:
+            if not folder.is_dir():
+                continue
+            for wav in sorted(folder.glob("*.wav")):
+                key = str(wav.resolve())
+                if key.lower() in seen:
+                    continue
+                seen.add(key.lower())
+                combo.addItem(self._transition_sfx_display_name(str(wav)), key)
+        if current and os.path.exists(current):
+            abs_current = str(Path(current).resolve())
+            idx = combo.findData(abs_current)
+            if idx < 0:
+                combo.addItem(
+                    f"Personalizado: {os.path.basename(abs_current)}",
+                    abs_current,
+                )
+                idx = combo.findData(abs_current)
+            if idx >= 0:
+                combo.setCurrentIndex(idx)
+        elif combo.count() == 0:
+            combo.addItem("Swoosh (wosh)", self._default_transition_sfx_path())
+        combo.blockSignals(False)
+
+    def _on_transition_sfx_toggled(self, enabled: bool):
+        if hasattr(self, "transition_sfx_combo"):
+            self.transition_sfx_combo.setEnabled(bool(enabled))
+        if hasattr(self, "btn_pick_transition_sfx"):
+            self.btn_pick_transition_sfx.setEnabled(bool(enabled))
+
+    def _on_pick_transition_sfx(self):
+        start_dir = str(Path(__file__).resolve().parent / "transition_overlays")
+        if not os.path.isdir(start_dir):
+            start_dir = str(Path(__file__).resolve().parent)
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Elegir sonido de transicion",
+            start_dir,
+            "Audio (*.wav *.mp3 *.ogg);;WAV (*.wav);;Todos (*.*)",
+        )
+        if not path:
+            return
+        self._populate_transition_sfx_combo(selected_path=path)
+        self._trigger_config_auto_save("archivo de transicion personalizado")
+
+    def is_transition_sfx_enabled(self) -> bool:
+        return bool(getattr(self, "transition_sfx_check", None) and self.transition_sfx_check.isChecked())
+
+    def get_transition_sfx_path(self) -> str | None:
+        if not self.is_transition_sfx_enabled():
+            return None
+        if hasattr(self, "transition_sfx_combo"):
+            data = self.transition_sfx_combo.currentData()
+            if data and os.path.exists(str(data)):
+                return str(data)
+        return self._default_transition_sfx_path()
 
     def _get_selected_image_provider_text(self):
         """Retorna el texto visible del proveedor de imágenes seleccionado."""
@@ -1039,7 +1162,7 @@ class AutoVideoStudioTab(QWidget):
         """Activa el auto-guardado cuando cambia la configuraciÃ³n"""
         if self._loading_project:
             return
-        if self.auto_save_enabled and hasattr(self, 'project_manager') and self.current_project_path:
+        if self.auto_save_enabled and hasattr(self, 'project_manager'):
             # Usar QTimer para debounce de 2 segundos
             if not hasattr(self, '_config_auto_save_timer') or not self._config_auto_save_timer:
                 from PyQt6.QtCore import QTimer
@@ -1060,39 +1183,22 @@ class AutoVideoStudioTab(QWidget):
             # Usar archivo local para mayor portabilidad
             config_file = Path("last_project_path.txt")
             with open(config_file, 'w', encoding='utf-8') as f:
-                f.write(project_path)
+                f.write(project_path or "")
         except Exception as e:
             print(f"âš ï¸ No se pudo guardar Ãºltimo proyecto: {e}")
 
-    def _load_last_project(self):
-        """Carga automÃ¡ticamente el Ãºltimo proyecto usado al iniciar la app"""
-        try:
-            from pathlib import Path
-            # Intentar cargar desde archivo local
-            config_file = Path("last_project_path.txt")
-            
-            # Fallback a ubicaciÃ³n antigua si no existe local
-            if not config_file.exists():
-                old_config = Path.home() / '.video_optimizer' / 'last_project.txt'
-                if old_config.exists():
-                    config_file = old_config
+    def _clear_last_project_path(self):
+        """Olvida el último proyecto para que un 'Nuevo' no lo vuelva a abrir al reiniciar.
 
-            if not config_file.exists():
-                return
+        Escribe una MARCA y no una cadena vacia: un archivo vacio no distingue
+        "el usuario pidio empezar de cero" de "el puntero se perdio", y por esa
+        confusion la app arrancaba sin proyecto y sin explicar por que.
+        """
+        from project_autoload import NEW_PROJECT_SENTINEL
 
-            with open(config_file, 'r', encoding='utf-8') as f:
-                last_project_path = f.read().strip()
+        self._save_last_project_path(NEW_PROJECT_SENTINEL)
+        print("[Project] Proyecto nuevo: no se reabrira el anterior al reiniciar")
 
-            if not last_project_path or not os.path.exists(last_project_path):
-                return
-
-            # Cargar el proyecto silenciosamente
-            self.log(f"ðŸ“‚ Cargando Ãºltimo proyecto usado: {os.path.basename(last_project_path)}")
-            if hasattr(self, 'project_manager'):
-                self.project_manager.load_project_from_path(last_project_path)
-        except Exception as e:
-            # Silenciar errores para no molestar al usuario
-            print(f"âš ï¸ No se pudo cargar Ãºltimo proyecto: {e}")
 
     def _play_local_file(self, file_path):
         """Abre un archivo multimedia con el reproductor predeterminado del sistema."""
@@ -1117,6 +1223,11 @@ class AutoVideoStudioTab(QWidget):
         """Reproduce el último video ensamblado."""
         video_path = None
 
+        from project_video_result import saved_video_result
+        saved = saved_video_result(getattr(self, 'current_project_path', None))
+        if saved:
+            self.last_generated_video_data = saved
+
         if hasattr(self, 'last_generated_video_data') and self.last_generated_video_data:
             video_path = self.last_generated_video_data.get('video_path')
 
@@ -1135,7 +1246,7 @@ class AutoVideoStudioTab(QWidget):
         if not video_path or not os.path.exists(video_path):
             return
 
-        self.log(f" Reproduciendo video: {os.path.basename(video_path)}")
+        self.log(f" Reproduciendo video: {video_path}")
         self._play_file_signal.emit(video_path)
 
     def publish_video_to_platforms(self):
@@ -1145,6 +1256,7 @@ class AutoVideoStudioTab(QWidget):
         do_youtube = self.chk_publish_youtube.isChecked()
         do_facebook = self.chk_publish_facebook.isChecked()
         do_instagram = self.chk_publish_instagram.isChecked()
+        do_x = self.chk_publish_x.isChecked() if hasattr(self, 'chk_publish_x') else False
 
         publish_at_youtube = None
         if hasattr(self, 'chk_schedule_youtube') and self.chk_schedule_youtube.isChecked():
@@ -1158,7 +1270,7 @@ class AutoVideoStudioTab(QWidget):
             dt_utc = dt.toUTC()
             publish_at_facebook = dt_utc.toString(Qt.DateFormat.ISODate)
 
-        if not (do_youtube or do_facebook or do_instagram):
+        if not (do_youtube or do_facebook or do_instagram or do_x):
             QMessageBox.warning(self, "Sin plataforma", "Selecciona al menos una plataforma para publicar.")
             return
 
@@ -1194,6 +1306,11 @@ class AutoVideoStudioTab(QWidget):
         format_val = getattr(self, 'get_selected_video_format', lambda: '')()
         is_long = format_val == '16:9' or platform_key in ('youtube', '16:9') or (hasattr(self, 'duration_slider') and self.duration_slider.value() > 60)
 
+        from studio_channel_controls import project_channel_config
+        from channel_profiles import CHANNELS
+        upload_channel = project_channel_config(self)['upload_channel']
+        upload_channel_name = CHANNELS[upload_channel]['name']
+
         # -- Leer metadata del Metadata Studio si ya fue generada --
         youtube_meta = None
         facebook_meta = None
@@ -1219,6 +1336,14 @@ class AutoVideoStudioTab(QWidget):
                     instagram_meta = {"title": ig_title, "description": ig_desc}
         except Exception as _e_mt:
             self.log(f" ⚠️ No se pudo leer del Metadata Studio: {_e_mt}")
+
+        if storyboard.get('format_strategy') == 'micro_documentary' and self.current_project_path:
+            from pathlib import Path
+            pilot_folder = Path(self.current_project_path).parent
+            pilot_metadata = pilot_folder / 'youtube_metadata.json'
+            if pilot_metadata.exists():
+                import json
+                youtube_meta = json.loads(pilot_metadata.read_text(encoding='utf-8'))
 
         if youtube_meta:
             self.log(" ✅ Metadata del Metadata Studio lista para publicar.")
@@ -1246,7 +1371,9 @@ class AutoVideoStudioTab(QWidget):
                 groq = GroqAiClient()
                 if not groq.client:
                     raise RuntimeError("Groq no disponible")
-                prompt = f"""You are an expert YouTube SEO strategist for a documentary channel \"Stunning Revelations\".
+                prompt = f"""You are an expert YouTube SEO strategist for a documentary channel {upload_channel_name}.
+Use only this channel identity for subscription calls to action and branded hashtags.
+Preserve the topic and facts; never invent numbers or claims.
 CURRENT VIDEO:
 - Topic: {topic}
 - Script preview: {preview}
@@ -1301,7 +1428,8 @@ Respond ONLY with valid JSON."""
                     "description": ig_description[:2200],
                 }
         platforms_str = ", ".join(
-            p for p, v in [("YouTube", do_youtube), ("Facebook", do_facebook), ("Instagram", do_instagram)] if v
+            p for p, v in [("YouTube", do_youtube), ("Facebook", do_facebook),
+                           ("Instagram", do_instagram), ("X", do_x)] if v
         )
         self.log(f" Publicando en: {platforms_str}")
         self.btn_publish.setEnabled(False)
@@ -1314,9 +1442,18 @@ Respond ONLY with valid JSON."""
 
         # Capturar variables para el closure
         _video_path = video_path
+        from studio_channel_controls import project_channel_config
+        from upload_metadata import metadata_for_channel
+        youtube_meta = metadata_for_channel(youtube_meta, upload_channel)
+        self.log(f" Canal de YouTube seleccionado: {youtube_meta['upload_channel']}")
         _youtube_meta = youtube_meta
-        _facebook_meta = facebook_meta
-        _instagram_meta = instagram_meta
+        # Si el Metadata Studio no tiene campos propios de una red, se cae a
+        # los de YouTube. Antes se guardaba None, `json.dump` escribia el
+        # literal `null` en el archivo y el uploader reventaba con
+        # "'NoneType' object has no attribute 'get'" (2026-09-09).
+        _facebook_meta = facebook_meta or youtube_meta or {}
+        _instagram_meta = instagram_meta or facebook_meta or youtube_meta or {}
+        _x_meta = instagram_meta or facebook_meta or youtube_meta or {}
         _thumbnail_path = getattr(self, 'selected_thumbnail_path', None)
         _is_long = is_long
         _publish_at_youtube = publish_at_youtube
@@ -1355,6 +1492,7 @@ Respond ONLY with valid JSON."""
                     ("youtube_metadata.json", _youtube_meta),
                     ("facebook_metadata.json", _facebook_meta),
                     ("instagram_metadata.json", _instagram_meta),
+                    ("x_metadata.json", _x_meta),
                 ]:
                     with open(staging / fname, "w", encoding="utf-8") as f:
                         json.dump(data, f, ensure_ascii=False, indent=2)
@@ -1373,16 +1511,53 @@ Respond ONLY with valid JSON."""
                     except Exception as yt_err:
                         self.log(f"️ YouTube error: {yt_err}")
                         results['youtube'] = None
+                # Cada red en su propio try: sin esto, una excepcion de
+                # Facebook o Instagram salta al except exterior y las redes
+                # que venian DESPUES no se ejecutan nunca. Y esas excepciones
+                # ocurren incluso con la publicacion ya hecha (el error 100 de
+                # Facebook del 2026-09-03 llegaba despues de publicar el reel).
                 if do_facebook:
                     self.log(" Subiendo a Facebook (via VPS)...")
-                    results['facebook'] = self._upload_facebook_via_vps(
-                        staging, _video_path, _facebook_meta, is_long=_is_long, publish_at=_publish_at_facebook
-                    )
+                    try:
+                        results['facebook'] = self._upload_facebook_via_vps(
+                            staging, _video_path, _facebook_meta, is_long=_is_long, publish_at=_publish_at_facebook
+                        )
+                    except Exception as fb_err:
+                        self.log(f"⚠ Facebook error: {fb_err}")
+                        results['facebook'] = None
                 if do_instagram:
                     self.log(" Subiendo a Instagram (via VPS)...")
-                    results['instagram'] = self._upload_instagram_via_vps(
-                        staging, _video_path, _instagram_meta
-                    )
+                    try:
+                        results['instagram'] = self._upload_instagram_via_vps(
+                            staging, _video_path, _instagram_meta
+                        )
+                    except Exception as ig_err:
+                        self.log(f"⚠ Instagram error: {ig_err}")
+                        results['instagram'] = None
+                if do_x:
+                    self.log(" Subiendo a X...")
+                    try:
+                        from x_video_uploader import upload_from_metadata as _x_meta_up
+
+                        # Si YouTube ya publico, se cita el short: X premia el
+                        # video nativo, pero el enlace suma trafico al canal.
+                        _yt = results.get('youtube') or {}
+                        _yt_url = str(_yt.get('url') or '') if isinstance(_yt, dict) else ''
+
+                        def _x_prog(enviado, total):
+                            if total:
+                                self.log(f"   X: {int(enviado / total * 100)}%")
+
+                        results['x'] = _x_meta_up(
+                            output_dir=str(staging), on_progress=_x_prog,
+                            video_url=_yt_url,
+                        )
+                        self.log(f" X publicado: {results['x'].get('url')}")
+                    except Exception as x_err:
+                        # Igual que con Facebook: un fallo en una red no puede
+                        # tumbar las publicaciones que ya salieron bien.
+                        self.log(f"️ X error: {x_err}")
+                        results['x'] = None
             except Exception as e:
                 self.log(f" Error en publicación: {e}")
                 import traceback
@@ -1426,11 +1601,24 @@ Respond ONLY with valid JSON."""
         ]
 
         try:
-            # 1. Create remote temp dir
-            subprocess.run(
-                ["ssh", ssh_host, f"mkdir -p {remote_tmp}"],
-                check=True, capture_output=True, timeout=30
+            # 1. Create remote temp dir. Con check=True el CalledProcessError
+            # solo dice "returned non-zero exit status 255" y se pierde el
+            # stderr de ssh, que es lo unico que explica QUE fallo (host caido,
+            # clave rechazada, DNS). Paso el 2026-09-03: el VPS no respondia en
+            # el puerto 22 y el log no lo decia.
+            proc_mkdir = subprocess.run(
+                ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10",
+                 ssh_host, f"mkdir -p {remote_tmp}"],
+                capture_output=True, timeout=40
             )
+            if proc_mkdir.returncode != 0:
+                detalle = (proc_mkdir.stderr or b"").decode("utf-8", errors="ignore").strip()
+                self.log(f"️ No se pudo conectar al VPS ({ssh_host}): "
+                         f"{detalle[-220:] or 'exit %d sin detalle' % proc_mkdir.returncode}")
+                if fallback_fn:
+                    self.log(f"   [!] Fallando a upload local para {platform}...")
+                    return fallback_fn()
+                return None
 
             # 2. SCP staging dir contents (video + metadata JSONs)
             self.log(f"   Copiando video al VPS ({ssh_host})...")
@@ -1661,6 +1849,8 @@ Respond ONLY with valid JSON."""
         # Layout principal con scroll
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
+        from studio_channel_controls import install_controls
+        install_controls(self, main_layout)
 
         # Scroll area con scroll vertical y horizontal mejorado
         scroll = QScrollArea()
@@ -1741,7 +1931,7 @@ Respond ONLY with valid JSON."""
         review_panel = self.create_review_panel()
         content_layout.addWidget(review_panel)
 
-        # Miniaturas para videos verticales largos
+        # Miniaturas (9:16 para Shorts, 16:9 para vertical largo)
         thumbnail_panel = self.create_thumbnail_intelligence_section()
         content_layout.addWidget(thumbnail_panel)
 
@@ -2033,7 +2223,7 @@ Respond ONLY with valid JSON."""
         preset_label.setMinimumWidth(150)
         preset_layout.addWidget(preset_label)
 
-        self.btn_preset_mysteries = QPushButton(" Misterios historicos (@Stunning-Revelations)")
+        self.btn_preset_mysteries = QPushButton(" Preset de calidad (FAL Flux + Kling)")
         self.btn_preset_mysteries.setToolTip(
             "Configura el estudio para el canal @Stunning-Revelations:\n"
             "- Proveedor imagen: FAL Flux dev (calidad)\n"
@@ -2218,6 +2408,33 @@ Respond ONLY with valid JSON."""
 
         layout.addLayout(transitions_layout)
 
+        sfx_row = QHBoxLayout()
+        self.transition_sfx_check = QCheckBox("Sonido de transicion")
+        self.transition_sfx_check.setChecked(True)
+        self.transition_sfx_check.setToolTip(
+            "Agrega un whoosh/swoosh solo cuando cambia la imagen de escena.\n"
+            "No se reproduce en cada frase del mismo still."
+        )
+        sfx_row.addWidget(self.transition_sfx_check)
+
+        self.transition_sfx_combo = QComboBox()
+        self.transition_sfx_combo.setMinimumWidth(180)
+        self.transition_sfx_combo.setMaximumWidth(280)
+        self.transition_sfx_combo.setToolTip("Archivo WAV usado en cada corte visual.")
+        sfx_row.addWidget(self.transition_sfx_combo)
+
+        self.btn_pick_transition_sfx = QPushButton("Elegir WAV...")
+        self.btn_pick_transition_sfx.setMaximumWidth(120)
+        self.btn_pick_transition_sfx.setToolTip("Usa un WAV propio (whoosh, riser, hit, etc.).")
+        self.btn_pick_transition_sfx.clicked.connect(self._on_pick_transition_sfx)
+        sfx_row.addWidget(self.btn_pick_transition_sfx)
+        sfx_row.addStretch()
+        layout.addLayout(sfx_row)
+
+        self._populate_transition_sfx_combo()
+        self.transition_sfx_check.toggled.connect(self._on_transition_sfx_toggled)
+        self._on_transition_sfx_toggled(self.transition_sfx_check.isChecked())
+
         # Conectar cambios para actualizar preview automÃ¡ticamente
         # Nota: on_transition_changed no estÃ¡ implementado aÃºn, se puede agregar en el futuro
         # self.transition_type_combo.currentTextChanged.connect(
@@ -2293,6 +2510,26 @@ Respond ONLY with valid JSON."""
         self.subtitle_style_combo.setMaximumWidth(300)  # Limitar ancho
         subtitles_row.addWidget(self.subtitle_style_combo)
 
+        # Vista previa animada al elegir estilo. Se usa `activated` y NO
+        # `currentIndexChanged`: el primero solo dispara cuando el usuario
+        # toca el combo, asi que restaurar un proyecto no abre la ventana.
+        self.subtitle_style_combo.activated.connect(
+            self.show_subtitle_style_preview)
+
+        self.btn_subtitle_preview = QPushButton("Ver ejemplos")
+        self.btn_subtitle_preview.setToolTip(
+            "Muestra una animacion de ejemplo de cada estilo de subtitulos, "
+            "generada con el mismo motor que usa el video final.")
+        self.btn_subtitle_preview.setMaximumWidth(120)
+        self.btn_subtitle_preview.setEnabled(self.subtitles_check.isChecked())
+        self.btn_subtitle_preview.clicked.connect(
+            lambda: self.show_subtitle_style_preview(None))
+        self.subtitles_check.stateChanged.connect(
+            lambda: self.btn_subtitle_preview.setEnabled(
+                self.subtitles_check.isChecked())
+        )
+        subtitles_row.addWidget(self.btn_subtitle_preview)
+
         subtitles_row.addStretch()
         options_layout.addLayout(subtitles_row)
 
@@ -2304,6 +2541,7 @@ Respond ONLY with valid JSON."""
 
         self.auto_save_check = QCheckBox("Guardar automÃ¡ticamente despuÃ©s de cada paso")
         self.auto_save_check.setToolTip("Guarda automÃ¡ticamente el proyecto despuÃ©s de completar cada paso importante")
+        self.auto_save_check.setChecked(True)
         self.auto_save_check.stateChanged.connect(self._on_auto_save_changed)
         QTimer.singleShot(100, self._sync_auto_save_state)
         checkboxes_row1.addWidget(self.auto_save_check)
@@ -2455,7 +2693,13 @@ Respond ONLY with valid JSON."""
         self.chk_publish_youtube = QCheckBox("YouTube")
         self.chk_publish_facebook = QCheckBox("Facebook")
         self.chk_publish_instagram = QCheckBox("Instagram")
-        for chk in (self.chk_publish_youtube, self.chk_publish_facebook, self.chk_publish_instagram):
+        self.chk_publish_x = QCheckBox("X")
+        self.chk_publish_x.setToolTip(
+            "Publica el video en X (Twitter) con las credenciales TWITTER_* del .env.\n"
+            "Verificalas antes con: .venv\\Scripts\\python.exe x_video_uploader.py --check"
+        )
+        for chk in (self.chk_publish_youtube, self.chk_publish_facebook,
+                    self.chk_publish_instagram, self.chk_publish_x):
             chk.setEnabled(True)
             chk.setStyleSheet("font-size: 11px;")
             publish_checks_layout.addWidget(chk)
@@ -2896,7 +3140,7 @@ Respond ONLY with valid JSON."""
         return group
 
     def create_thumbnail_intelligence_section(self):
-        """Panel para miniaturas 16:9 orientadas a watch time en videos verticales largos."""
+        """Panel de miniaturas: 9:16 para Shorts, 16:9 para vertical largo."""
         group = QGroupBox("Hook Thumbnail (Watch Time)")
         layout = QVBoxLayout(group)
         layout.setContentsMargins(12, 12, 12, 12)
@@ -2935,6 +3179,18 @@ Respond ONLY with valid JSON."""
         )
         self.btn_generate_super_prompt.clicked.connect(self.generate_super_prompt_for_external_ai)
         controls_row.addWidget(self.btn_generate_super_prompt)
+
+        # Con esto tildado el prompt le pide a la IA externa que ESCRIBA el
+        # titular en la imagen. Sin tildar, deja el hueco libre y el texto se
+        # superpone despues con el compositor.
+        self.chk_super_prompt_text = QCheckBox("La IA escribe el texto")
+        self.chk_super_prompt_text.setChecked(True)
+        self.chk_super_prompt_text.setToolTip(
+            "Tildado: el prompt incluye el titular entre comillas y las directivas de\n"
+            "tipografia para que la IA externa lo dibuje sobre la miniatura.\n"
+            "Sin tildar: pide la imagen limpia y el texto se compone despues aca."
+        )
+        controls_row.addWidget(self.chk_super_prompt_text)
         
         self.btn_load_external_thumbnail = QPushButton("Cargar externa...")
         self.btn_load_external_thumbnail.setToolTip("Cargar miniatura generada en una IA externa para que se publique con el video.")
@@ -2975,12 +3231,24 @@ Respond ONLY with valid JSON."""
         self._refresh_thumbnail_module_state()
         return group
 
-    def _is_watchtime_thumbnail_target(self) -> bool:
-        return self.get_selected_platform_key() == 'youtube_vertical'
+    # Plataformas que aceptan miniatura propia. YouTube habilito las
+    # miniaturas de Shorts el 2026-07-24; hasta entonces este modulo solo
+    # tenia sentido para el vertical largo, y por eso estaba restringido.
+    # El FORMATO de la miniatura lo decide `thumbnail_formats.resolve_format`
+    # a partir de la plataforma: un Short la lleva 9:16 y un vertical largo
+    # la lleva 16:9, porque ese va al feed normal de YouTube.
+    THUMBNAIL_PLATFORMS = ('youtube_vertical', 'youtube_short')
+
+    def _supports_custom_thumbnail(self) -> bool:
+        return self.get_selected_platform_key() in self.THUMBNAIL_PLATFORMS
+
+    # Alias historico: el nombre viejo sugeria que solo servia para
+    # watch time, que ya no es el caso.
+    _is_watchtime_thumbnail_target = _supports_custom_thumbnail
 
     def _refresh_thumbnail_module_state(self):
         """Activa o desactiva el modulo segun el formato y el estado del proyecto."""
-        is_watchtime_target = self._is_watchtime_thumbnail_target()
+        is_watchtime_target = self._supports_custom_thumbnail()
         has_storyboard = bool(self.last_storyboard_data and self.last_storyboard_data.get('segments'))
         is_generating = bool(self.thumbnail_thread and self.thumbnail_thread.isRunning())
         recommended_variant_id = None
@@ -3013,7 +3281,8 @@ Respond ONLY with valid JSON."""
             self.thumbnail_status_label.setText("Generando variantes 16:9 con IA y composicion...")
         elif not is_watchtime_target:
             self.thumbnail_status_label.setText(
-                "Este modulo se activa solo para '9:16 · Vertical Largo (>3 min, YouTube)'."
+                "Este modulo se activa para '9:16 · Vertical (YouTube Shorts)' y "
+                "'9:16 · Vertical Largo (>3 min, YouTube)'."
             )
         elif not has_storyboard:
             self.thumbnail_status_label.setText(
@@ -3074,76 +3343,10 @@ Respond ONLY with valid JSON."""
             comfyui_image_client,
         )
 
-    THUMBNAIL_SUPER_PROMPT_TEMPLATE = """ROLE
-You are a senior YouTube thumbnail art director specialized in cinematic historical / war / empire content. Your only goal is to design a single 16:9 thumbnail that maximizes CTR while keeping documentary credibility.
-
-INPUT VARIABLES (replace before pasting)
-- event_name: {{event_name}}
-- year: {{year}}
-- location: {{location}}
-- central_figure: {{central_figure}}
-- emotional_hook: {{emotional_hook}}   # fear / betrayal / shock / loss / glory
-- short_text: {{short_text}}            # max 3 words, ALL CAPS, will be overlaid
-- era_anchor: {{era_anchor}}            # exact period markers (armor type, weapons, banners, architecture)
-
-MANDATORY COMPOSITION RULES
-1. Aspect ratio strictly 16:9, 1920x1080, photoreal cinematic still.
-2. Rule of thirds: place the main subject's face / eyes on the LEFT third intersection.
-3. Subject occupies 55-70% of frame height. Eyes visible, expression matches emotional_hook.
-4. Strong left-to-right luminance gradient: left side noticeably brighter than right (delta >= 20 on 0-255 luminance).
-5. Negative space on the RIGHT third reserved for the short_text overlay.
-6. Lighting: cinematic rim light + warm key light from upper-left, cool fill from right. Golden hour or torch-lit if night.
-7. Lens look: 50mm full-frame, shallow depth of field, subject tack sharp, background softly defocused.
-8. Background must clearly suggest location + era (architecture, terrain, banners, smoke, weather).
-9. Color palette: warm dominants (amber, ember, blood-red, bronze) against cool shadows (steel blue, slate). No pastels, no neon.
-10. High micro-contrast on the face. Skin texture visible. Sweat / dust / blood acceptable if historically plausible.
-11. NO modern objects, NO wristwatches, NO zippers, NO synthetic fabrics, NO contemporary haircuts.
-12. NO garbled letters, NO fake glyphs, NO watermark, NO logo, NO frame, NO border.
-13. Composition must read clearly at 320x180 px (mobile feed test).
-14. One single focal subject. Secondary figures only as silhouettes or out of focus.
-15. Mood: cinematic poster, History Channel x A24, photographic realism, NOT illustration, NOT 3D render, NOT anime.
-
-QUANTITATIVE TARGETS (the image must satisfy these)
-- Average luminance: 100-150 (out of 255).
-- Left-half mean luminance minus right-half mean luminance: >= 20.
-- Edge density on the left third: >= 55% of total edge mass.
-- Warm channel (R+G) minus cool channel (B): >= 15 on average.
-- No single histogram bin should hold more than 30% of pixels (avoid flat / washed images).
-
-COLOR SYSTEM
-- Highlights: #f3c267, #e07a2b, #b32a1c
-- Mids: #6a3a1e, #2f3a44
-- Shadows: #0e1318, #1a2330
-
-ERA RIGOR
-Strictly respect era_anchor. If year < 500 BC: bronze weapons, no stirrups, linen/wool only. If medieval: chainmail or plate per century. If 20th century: documented uniforms only. When unsure, default to the most conservative documented variant.
-
-EMOTIONAL HOOK IMPLEMENTATION
-Translate emotional_hook into facial micro-expression: widened eyes for shock, downward gaze for loss, clenched jaw for betrayal, half-lit profile for fear, raised chin + side light for glory.
-
-PROHIBITED ELEMENTS (negative prompt)
-garbled text, fake letters, deformed hands, extra fingers, extra limbs, modern clothing, wristwatch, sunglasses, smartphone, plastic, neon, pastel colors, cartoon, anime, 3d render, cgi look, low contrast, washed out, flat lighting, centered subject, symmetrical composition, watermark, logo, signature, frame, border, blurry subject, motion blur on face, multiple faces competing, crowd as main subject, text artifacts.
-
-OUTPUT FORMAT
-Return exactly two blocks:
-[POSITIVE PROMPT]
-<one dense paragraph, English, comma separated, all rules above applied, ending with: cinematic 16:9, 1920x1080, photoreal, 50mm, shallow depth of field, dramatic lighting>
-
-[NEGATIVE PROMPT]
-<the prohibited elements list above, comma separated>
-
-SELF-VERIFICATION CHECKLIST (run mentally before answering)
-[ ] Subject face on LEFT third, eyes visible
-[ ] Right third clear for overlay text
-[ ] Left brighter than right by >= 20 luminance
-[ ] Warm vs cool contrast present
-[ ] Era-accurate clothing / weapons / setting
-[ ] No modern artifacts, no garbled text
-[ ] Reads at 320x180
-[ ] Single focal subject
-[ ] Photoreal, not illustration
-[ ] Emotional expression matches hook
-"""
+    # La plantilla estatica del super prompt vivia aca: 70 lineas clavadas en
+    # 16:9 que ademas prohibian todo texto en la imagen. Nadie la leia (el
+    # prompt real se arma en `claude_client.generate_thumbnail_super_prompt`),
+    # asi que era documentacion que contradecia al codigo. Se elimino.
 
     def generate_super_prompt_for_external_ai(self):
         """Llama al LLM para generar [POSITIVE PROMPT] y [NEGATIVE PROMPT] listos para copiar."""
@@ -3192,12 +3395,28 @@ SELF-VERIFICATION CHECKLIST (run mentally before answering)
         self.btn_generate_super_prompt.setEnabled(False)
         self.btn_generate_super_prompt.setText("Generando...")
 
+        # El formato manda: un Short necesita 9:16 y reglas de encuadre propias.
+        from thumbnail_formats import resolve_format
+        fmt = resolve_format(
+            video_format=self.get_selected_video_format() if hasattr(self, 'get_selected_video_format') else None,
+            platform=self.get_selected_platform_key() if hasattr(self, 'get_selected_platform_key') else None,
+            project_data=project_data or {},
+        )
+        render_text = (
+            self.chk_super_prompt_text.isChecked()
+            if hasattr(self, 'chk_super_prompt_text') else True
+        )
+        self.log(f" Super prompt: formato {fmt.aspect_label}, "
+                 f"texto {'dibujado por la IA' if render_text else 'superpuesto despues'}")
+
         def _run():
             return llm_client.generate_thumbnail_super_prompt(
                 topic=topic,
                 script_excerpt=script_excerpt,
                 category=category,
                 language=language,
+                thumbnail_format=fmt,
+                render_text=render_text,
             )
 
         def _on_done(result):
@@ -3217,38 +3436,53 @@ SELF-VERIFICATION CHECKLIST (run mentally before answering)
             layout.setSpacing(10)
 
             layout.addWidget(QLabel(
-                "<b>Copia estos prompts y pégalos en Midjourney, DALL-E, Stable Diffusion, etc.</b>"
+                f"<b>Miniatura {fmt.aspect_label} ({fmt.width}x{fmt.height}).</b> "
+                "Copia estos prompts y pégalos en Recraft, gpt-image, Midjourney, Ideogram, etc."
             ))
 
-            layout.addWidget(QLabel("<b>[POSITIVE PROMPT]</b>"))
-            pos_edit = QTextEdit()
-            pos_edit.setPlainText(positive)
-            pos_edit.setReadOnly(True)
-            pos_edit.setMinimumHeight(210)
-            layout.addWidget(pos_edit)
+            hook_text = result.get('text', '')
+            if hook_text:
+                etiqueta = ("La IA debe escribir este texto en la imagen:"
+                            if render_text else
+                            "Texto sugerido (se superpone después, no lo dibuja la IA):")
+                layout.addWidget(QLabel(f"<b>{etiqueta}</b>"))
+                hook_edit = QTextEdit()
+                hook_edit.setPlainText(hook_text)
+                hook_edit.setReadOnly(True)
+                hook_edit.setMaximumHeight(52)
+                layout.addWidget(hook_edit)
 
-            btn_copy_pos = QPushButton("Copiar Positive Prompt")
-            def _copy_pos():
-                QApplication.clipboard().setText(pos_edit.toPlainText())
-                btn_copy_pos.setText("Copiado!")
-                QTimer.singleShot(1500, lambda: btn_copy_pos.setText("Copiar Positive Prompt"))
-            btn_copy_pos.clicked.connect(_copy_pos)
-            layout.addWidget(btn_copy_pos)
+            # Un solo bloque: positivo + negativo juntos. Dos cuadros con dos
+            # botones obligaban a pegar dos veces y se prestaba a llevarse solo
+            # la mitad. Es editable por si querés retocarlo antes de copiar.
+            from claude_client import build_copyable_prompt
+            combinado = result.get('combined') or build_copyable_prompt(positive, negative)
 
-            layout.addWidget(QLabel("<b>[NEGATIVE PROMPT]</b>"))
-            neg_edit = QTextEdit()
-            neg_edit.setPlainText(negative)
-            neg_edit.setReadOnly(True)
-            neg_edit.setMinimumHeight(100)
-            layout.addWidget(neg_edit)
+            layout.addWidget(QLabel("<b>Prompt completo (positivo + negativo)</b>"))
+            prompt_edit = QTextEdit()
+            prompt_edit.setPlainText(combinado)
+            prompt_edit.setMinimumHeight(330)
+            layout.addWidget(prompt_edit)
 
-            btn_copy_neg = QPushButton("Copiar Negative Prompt")
-            def _copy_neg():
-                QApplication.clipboard().setText(neg_edit.toPlainText())
-                btn_copy_neg.setText("Copiado!")
-                QTimer.singleShot(1500, lambda: btn_copy_neg.setText("Copiar Negative Prompt"))
-            btn_copy_neg.clicked.connect(_copy_neg)
-            layout.addWidget(btn_copy_neg)
+            btn_copy = QPushButton("Copiar prompt completo")
+
+            # El timer que restaura el texto vive DENTRO del dialogo: si el
+            # usuario copia y cierra antes de 1.5s, un singleShot suelto
+            # disparaba sobre un boton ya destruido -> "wrapped C/C++ object
+            # of type QPushButton has been deleted" como excepcion fatal
+            # (crash_log, 2026-09-10). Con el dialogo como padre, cerrar la
+            # ventana mata el timer con ella.
+            restore_timer = QTimer(dialog)
+            restore_timer.setSingleShot(True)
+            restore_timer.setInterval(1500)
+            restore_timer.timeout.connect(lambda: btn_copy.setText("Copiar prompt completo"))
+
+            def _copy_all():
+                QApplication.clipboard().setText(prompt_edit.toPlainText())
+                btn_copy.setText("Copiado!")
+                restore_timer.start()
+            btn_copy.clicked.connect(_copy_all)
+            layout.addWidget(btn_copy)
 
             btn_close = QPushButton("Cerrar")
             btn_close.clicked.connect(dialog.accept)
@@ -3597,12 +3831,19 @@ SELF-VERIFICATION CHECKLIST (run mentally before answering)
             btn_apply.setEnabled(True)
 
     def generate_watchtime_thumbnails(self):
-        """Genera variantes 16:9 para videos verticales largos."""
-        if not self._is_watchtime_thumbnail_target():
+        """Genera las variantes de miniatura del proyecto activo.
+
+        El formato sale de la plataforma elegida: 9:16 (1080x1920) para un
+        Short, 16:9 para un vertical largo.
+        """
+        if not self._supports_custom_thumbnail():
             QMessageBox.information(
                 self,
                 "Formato no compatible",
-                "Este modulo esta pensado para '9:16 · Vertical Largo (>3 min, YouTube)'."
+                "Este modulo funciona con '9:16 · Vertical (YouTube Shorts)' y con\n"
+                "'9:16 · Vertical Largo (>3 min, YouTube)'.\n\n"
+                "El Short lleva miniatura 9:16 (1080x1920); el vertical largo la\n"
+                "lleva 16:9, porque aparece en el feed normal de YouTube."
             )
             return
 
@@ -3909,6 +4150,19 @@ SELF-VERIFICATION CHECKLIST (run mentally before answering)
                 saved_storyboard = project_data.get('storyboard', {})
                 if not (saved_storyboard and saved_storyboard.get('segments')):
                     return
+                memory = getattr(self, 'last_storyboard_data', None)
+                try:
+                    from storyboard_generator import prefer_in_memory_storyboard
+                    keep_memory = prefer_in_memory_storyboard(memory, saved_storyboard)
+                except Exception:
+                    keep_memory = bool(memory and len(memory.get('segments') or []) > len(saved_storyboard.get('segments') or []))
+                if keep_memory:
+                    print(
+                        f"[Timeline] Conservando storyboard en memoria "
+                        f"({len(memory.get('segments', []))} segs) en vez de disco "
+                        f"({len(saved_storyboard.get('segments', []))} segs)"
+                    )
+                    return
                 print(
                     f"[Timeline] Actualizando segmentos desde proyecto guardado "
                     f"({len(saved_storyboard.get('segments', []))} segmentos)"
@@ -3983,6 +4237,7 @@ SELF-VERIFICATION CHECKLIST (run mentally before answering)
                 )
 
             _refresh_storyboard_from_project()
+            self._storyboard_just_generated = False
 
             # Si la ventana ya existe y está visible, actualizar datos y traerla al frente
             if self.timeline_editor_window and self.timeline_editor_window.isVisible():
@@ -4044,7 +4299,7 @@ SELF-VERIFICATION CHECKLIST (run mentally before answering)
         self._refresh_assemble_button_state()
 
         # Auto-guardar si estÃ¡ habilitado y hay un proyecto cargado
-        if self.auto_save_enabled and self.current_project_path:
+        if self.auto_save_enabled:
             self.auto_save_project("despuÃ©s de modificar Timeline Editor")
 
     def create_log_section(self):
@@ -4330,6 +4585,25 @@ SELF-VERIFICATION CHECKLIST (run mentally before answering)
             self.btn_preview_voice.setEnabled(True)
             self.btn_preview_voice.setText("Escuchar muestra")
             QMessageBox.critical(self, "Error en muestra de voz", f"Error al reproducir la muestra de voz:\n{str(e)}")
+
+    def show_subtitle_style_preview(self, _index=None):
+        """Abre la ventana con las animaciones de ejemplo de cada estilo."""
+        try:
+            from subtitle_style_preview_dialog import SubtitleStylePreviewDialog
+
+            etiquetas = [self.subtitle_style_combo.itemText(i)
+                         for i in range(self.subtitle_style_combo.count())]
+            dialogo = SubtitleStylePreviewDialog(
+                self, labels=etiquetas,
+                current_label=self.subtitle_style_combo.currentText())
+            if dialogo.exec() == QDialog.DialogCode.Accepted:
+                elegido = dialogo.selected_label
+                idx = self.subtitle_style_combo.findText(elegido)
+                if idx >= 0 and idx != self.subtitle_style_combo.currentIndex():
+                    self.subtitle_style_combo.setCurrentIndex(idx)
+                    self.log(f" Estilo de subtitulos: {elegido}")
+        except Exception as exc:
+            self.log(f" No se pudo abrir la vista previa de subtitulos: {exc}")
 
     def get_subtitle_style_name(self):
         """Obtiene el nombre del estilo de subtÃ­tulos seleccionado"""
@@ -5044,266 +5318,6 @@ SELF-VERIFICATION CHECKLIST (run mentally before answering)
         except Exception as e:
             pass  # Fallar silenciosamente
 
-    def generate_external_ai_prompt(self):
-        """Genera un prompt optimizado para enviar a una IA externa"""
-        # Obtener parÃ¡metros del formulario
-        topic = self.parent_gui.topic_input.text().strip()
-        if not topic:
-            QMessageBox.warning(self, "Tema VacÃ­o",
-                              "Ingresa un tema en la pestaÃ±a de AnÃ¡lisis primero")
-            return
-
-        category = self.parent_gui.category_combo.currentText()
-        self._enforce_duration_policy_for_selected_platform()
-        duration = self.duration_slider.value()
-        language = 'es' if self.lang_es.isChecked() else 'en'
-        style = self.get_selected_visual_style() or "Sin estilo visual del proveedor"
-
-        # Calcular palabras aproximadas
-        words = int((duration / 60) * 150)
-        segment_range = "10-18" if duration >= self.LONG_HORIZONTAL_MIN_DURATION_SECONDS else "4-8"
-
-        # Generar prompt completo
-        lang_instruction = "ESCRIBE TODO EN ESPAÃ‘OL." if language == 'es' else "WRITE EVERYTHING IN ENGLISH."
-
-        prompt = f"""Eres un experto guionista de videos documentales para YouTube.
-
-TAREA: Genera un guion completo en formato JSON para un video sobre "{topic}".
-
-PARÃMETROS:
-- Tema: {topic}
-- CategorÃ­a: {category}
-- DuraciÃ³n objetivo: {duration} segundos (~{words} palabras)
-- Idioma: {lang_instruction}
-- Estilo: {style}
-
-INSTRUCCIONES CRÃTICAS:
-1. CRITICAL LANGUAGE REQUIREMENT:
-   - ALL narration text MUST be in {'English' if language == 'en' else 'Spanish'}
-   - Do NOT mix languages. Use ONLY {'English' if language == 'en' else 'Spanish'} throughout the entire script.
-   - This applies to ALL segments: narration_text must be entirely in {'English' if language == 'en' else 'Spanish'}.
-   - The visual_prompt can be in English (for Wikimedia search), but narration_text MUST be in {'English' if language == 'en' else 'Spanish'}.
-
-2. Genera un guion narrativo completo de aproximadamente {words} palabras
-3. Divide el guion en segmentos de {segment_range} segundos cada uno
-4. Para cada segmento, crea:
-   - Un texto de narraciÃ³n claro y conciso (EN {'ENGLISH' if language == 'en' else 'SPANISH'})
-   - Un prompt visual optimizado para buscar imÃ¡genes en Wikimedia Commons (usa tÃ©rminos especÃ­ficos: lugares, eventos histÃ³ricos, objetos, fechas)
-   - Una duraciÃ³n aproximada en segundos
-   - Un tiempo de inicio acumulado
-
-5. Los prompts visuales deben ser tÃ©rminos de bÃºsqueda efectivos para Wikimedia (ej: "Mongol Empire", "Genghis Khan", "ancient China", NO uses palabras artÃ­sticas como "cinematic", "stunning", etc.)
-6. El guion debe ser educativo, entretenido y apropiado para YouTube
-7. Si es contenido histÃ³rico, sÃ© preciso con fechas, lugares y nombres
-
-FORMATO DE RESPUESTA (JSON VÃLIDO, sin markdown, sin explicaciones):
-{{
-  "topic": "{topic}",
-  "category": "{category}",
-  "language": "{language}",
-  "script": "Texto completo del guion narrativo aquÃ­...",
-  "segments": [
-    {{
-      "segment_id": 1,
-      "narration_text": "Texto de narraciÃ³n para este segmento",
-      "visual_prompt": "TÃ©rminos de bÃºsqueda para Wikimedia (lugares, eventos, objetos especÃ­ficos)",
-      "duration": 5.0,
-      "start_time": 0.0
-    }},
-    {{
-      "segment_id": 2,
-      "narration_text": "Siguiente parte de la narraciÃ³n",
-      "visual_prompt": "MÃ¡s tÃ©rminos especÃ­ficos para Wikimedia",
-      "duration": 6.0,
-      "start_time": 5.0
-    }}
-    // ... mÃ¡s segmentos hasta completar ~{duration} segundos
-  ]
-}}
-
-IMPORTANTE:
-- Responde SOLO con el JSON, sin explicaciones adicionales
-- AsegÃºrate de que el JSON sea vÃ¡lido
-- Los visual_prompt deben ser tÃ©rminos de bÃºsqueda efectivos para Wikimedia Commons
-- El script completo debe tener aproximadamente {words} palabras
-- Divide en segmentos lÃ³gicos de {segment_range} segundos cada uno
-
-Ahora genera el guion completo en formato JSON:"""
-
-        # Mostrar el prompt en el campo de texto
-        self.prompt_text.setPlainText(prompt)
-        self.btn_copy_prompt.setEnabled(True)
-
-        self.log(f"\n{'='*50}")
-        self.log(f"ðŸ“‹ PROMPT GENERADO PARA IA EXTERNA")
-        self.log(f"   Tema: {topic}")
-        self.log(f"   DuraciÃ³n: {duration}s (~{words} palabras)")
-        self.log(f"   Idioma: {language.upper()}")
-        self.log(f"{'='*50}\n")
-        self.log("ðŸ’¡ Copia el prompt y envÃ­alo a ChatGPT, Claude, Gemini, etc.")
-        self.log(
-            "ðŸ’¡ Luego carga el JSON resultante con el botÃ³n 'Cargar JSON Generado'")
-
-    def copy_prompt_to_clipboard(self):
-        """Copia el prompt al portapapeles"""
-        prompt = self.prompt_text.toPlainText()
-        if not prompt:
-            QMessageBox.warning(self, "Sin Prompt", "Primero genera el prompt")
-            return
-
-        clipboard = QApplication.clipboard()
-        clipboard.setText(prompt)
-        self.log("âœ… Prompt copiado al portapapeles")
-        QMessageBox.information(
-    self,
-    "Copiado",
-     "Prompt copiado al portapapeles.\n\nAhora puedes pegarlo en tu IA externa.")
-
-    def paste_from_clipboard(self):
-        """Pega el contenido del portapapeles en el campo de texto"""
-        clipboard = QApplication.clipboard()
-        clipboard_text = clipboard.text()
-
-        if not clipboard_text:
-            QMessageBox.warning(self, "Portapapeles VacÃ­o",
-                              "El portapapeles estÃ¡ vacÃ­o o no contiene texto.")
-            return
-
-        # Limpiar el texto (remover markdown code blocks si existen)
-        cleaned_text = clipboard_text.strip()
-        if cleaned_text.startswith("```json"):
-            cleaned_text = cleaned_text[7:]  # Remover ```json
-        elif cleaned_text.startswith("```"):
-            cleaned_text = cleaned_text[3:]  # Remover ```
-        if cleaned_text.endswith("```"):
-            cleaned_text = cleaned_text[:-3]  # Remover ``` al final
-        cleaned_text = cleaned_text.strip()
-
-        self.json_paste_text.setPlainText(cleaned_text)
-        self.log("âœ… Contenido del portapapeles pegado en el campo de texto")
-
-    def load_pasted_json(self):
-        """Carga el JSON que estÃ¡ pegado en el campo de texto"""
-        json_text = self.json_paste_text.toPlainText().strip()
-
-        if not json_text:
-            QMessageBox.warning(self, "Campo VacÃ­o",
-                              "El campo de texto estÃ¡ vacÃ­o.\n\n"
-                              "Pega el JSON generado por tu IA externa o haz clic en 'Pegar desde Portapapeles'.")
-            return
-
-        # Limpiar el texto (remover markdown code blocks si existen)
-        cleaned_text = json_text
-        if cleaned_text.startswith("```json"):
-            cleaned_text = cleaned_text[7:]  # Remover ```json
-        elif cleaned_text.startswith("```"):
-            cleaned_text = cleaned_text[3:]  # Remover ```
-        if cleaned_text.endswith("```"):
-            cleaned_text = cleaned_text[:-3]  # Remover ``` al final
-        cleaned_text = cleaned_text.strip()
-
-        try:
-            storyboard_data = json.loads(cleaned_text)
-
-            # Validar estructura bÃ¡sica
-            if 'segments' not in storyboard_data:
-                QMessageBox.warning(self, "JSON InvÃ¡lido",
-                                  "El JSON debe contener un campo 'segments' con los segmentos del video.\n\n"
-                                  "Estructura esperada:\n"
-                                  '{\n'
-                                  '  "topic": "...",\n'
-                                  '  "segments": [...]\n'
-                                  '}')
-                return
-
-            self.log(f"\n{'='*50}")
-            self.log(f"ðŸ§ª MODO PRUEBA: Cargando JSON pegado")
-            self.log(
-                f"   Segmentos: {len(storyboard_data.get('segments', []))}")
-            self.log(f"{'='*50}\n")
-
-            # Generar audio automÃ¡ticamente si no existe
-            if 'audio_path' not in storyboard_data or not storyboard_data.get(
-                'audio_path'):
-                self.log("ðŸŽ™ï¸ Generando audio de narraciÃ³n (gTTS)...")
-                storyboard_data = self._generate_audio_for_storyboard(
-                    storyboard_data)
-                if not storyboard_data:
-                    return  # Error ya fue reportado
-
-            # Simular callback de finished
-            self.on_storyboard_finished(storyboard_data)
-
-        except json.JSONDecodeError as e:
-            error_msg = str(e)
-            QMessageBox.critical(
-                self,
-                "Error JSON",
-                f"Error parseando JSON:\n\n{error_msg}\n\n"
-                "AsegÃºrate de que:\n"
-                "â€¢ El JSON estÃ© completo y bien formateado\n"
-                "â€¢ No haya caracteres extraÃ±os\n"
-                "â€¢ Las comillas estÃ©n correctamente cerradas"
-            )
-            return
-        except Exception as e:
-            QMessageBox.critical(
-    self, "Error", f"Error procesando JSON:\n\n{e}")
-            return
-
-    def load_external_json(self):
-        """Carga el JSON generado por la IA externa desde un archivo"""
-        file_path, _ = QFileDialog.getOpenFileName(
-            self,
-            "Cargar JSON Generado por IA Externa",
-            "",
-            "JSON Files (*.json);;All Files (*)"
-        )
-        if not file_path:
-            return
-
-        try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                storyboard_data = json.load(f)
-
-            # Validar estructura bÃ¡sica
-            if 'segments' not in storyboard_data:
-                QMessageBox.warning(self, "JSON InvÃ¡lido",
-                                  "El JSON debe contener un campo 'segments' con los segmentos del video")
-                return
-
-            self.log(f"\n{'='*50}")
-            self.log(f"ðŸ§ª MODO PRUEBA: Cargando JSON de IA externa")
-            self.log(f"   Archivo: {file_path}")
-            self.log(
-                f"   Segmentos: {len(storyboard_data.get('segments', []))}")
-            self.log(f"{'='*50}\n")
-
-            # TambiÃ©n mostrar el JSON en el campo de texto para referencia
-            with open(file_path, 'r', encoding='utf-8') as f:
-                json_content = f.read()
-            self.json_paste_text.setPlainText(json_content)
-
-            # Generar audio automÃ¡ticamente si no existe
-            if 'audio_path' not in storyboard_data or not storyboard_data.get(
-                'audio_path'):
-                self.log("ðŸŽ™ï¸ Generando audio de narraciÃ³n (gTTS)...")
-                storyboard_data = self._generate_audio_for_storyboard(
-                    storyboard_data)
-                if not storyboard_data:
-                    return  # Error ya fue reportado
-
-            # Simular callback de finished
-            self.on_storyboard_finished(storyboard_data)
-
-        except json.JSONDecodeError as e:
-            QMessageBox.critical(
-    self, "Error JSON", f"Error parseando JSON:\n\n{e}")
-            return
-        except Exception as e:
-            QMessageBox.critical(
-    self, "Error", f"Error cargando archivo:\n\n{e}")
-            return
 
     def _generate_audio_for_storyboard(self, storyboard_data):
         """Genera el audio de narraciÃ³n para un storyboard cargado manualmente"""
@@ -5326,14 +5340,21 @@ Ahora genera el guion completo en formato JSON:"""
             return
 
         if not self._should_accept_current_worker_callback():
-            self.log("️ Resultado de storyboard obsoleto ignorado.")
+            self.log("️ Resultado de storyboard descartado: pertenece a otro proyecto o "
+                     "a un estado anterior. Si el guion quedo guardado, abrilo con "
+                     "'Abrir proyecto' y los botones se habilitan.")
             return
 
         self.log("\nâœ… PASO 1 COMPLETADO")
         # Flag para evitar que _sync_timeline_editor_to_storyboard sobreescriba
         # el nuevo storyboard con segmentos obsoletos del timeline anterior
         self._storyboard_just_generated = True
+        if isinstance(result, dict) and not result.get('generated_at'):
+            result['generated_at'] = time.time()
         self.last_storyboard_data = result
+        segment_count = len((result or {}).get('segments') or [])
+        print(f"[Storyboard] Aceptado en memoria: {segment_count} segmento(s)")
+        self.log(f" Storyboard en memoria: {segment_count} segmento(s). Guardando proyecto...")
 
         # Poblar panel de revisiÃ³n
         self.populate_review_panel(
@@ -5354,9 +5375,14 @@ Ahora genera el guion completo en formato JSON:"""
 
         self.update_status("Storyboard listo - Revisa y edita si deseas")
 
-        # Auto-guardar si estÃ¡ habilitado
-        if self.auto_save_enabled:
-            self.auto_save_project("Paso 1 completado (Storyboard)")
+        # Siempre persistir el storyboard nuevo. Si no, al abrir el timeline se
+        # recarga el project.json anterior (p. ej. 3 escenas de rechazo).
+        try:
+            self.auto_save_project("Storyboard generado (forzado)")
+        except Exception as save_error:
+            print(f"[Storyboard] Error guardando proyecto: {save_error}")
+            self.log(f" Error guardando el storyboard nuevo: {save_error}")
+        self._storyboard_just_generated = True
 
         # Cleanup thread
         self.cleanup_thread()
@@ -5730,7 +5756,6 @@ Ahora genera el guion completo en formato JSON:"""
         """Resetea todos los campos y configuraciones a sus valores por defecto"""
         try:
             # Deshabilitar auto-guardado temporalmente para evitar guardar durante el reset
-            original_auto_save = getattr(self, 'auto_save_enabled', False)
             self.auto_save_enabled = False
             self._project_state_token += 1
             self._current_worker_project_token = None
@@ -5743,6 +5768,9 @@ Ahora genera el guion completo en formato JSON:"""
             
             # Limpiar ruta del proyecto
             self.current_project_path = None
+            self._storyboard_just_generated = False
+            if hasattr(self, '_clear_last_project_path'):
+                self._clear_last_project_path()
             
             # Limpiar datos del proyecto
             self.last_storyboard_data = None
@@ -5895,12 +5923,15 @@ Ahora genera el guion completo en formato JSON:"""
             if hasattr(self, 'update_cost_display'):
                 self.update_cost_display()
             
-            # Restaurar auto-guardado
-            self.auto_save_enabled = original_auto_save
-            
             self.log("Configuracion restaurada a valores por defecto")
             
         except Exception as e:
             self.log(f"âš ï¸ Error reseteando configuraciÃ³n: {e}")
             import traceback
             traceback.print_exc()
+        finally:
+            self.auto_save_enabled = True
+            if hasattr(self, 'auto_save_check'):
+                self.auto_save_check.blockSignals(True)
+                self.auto_save_check.setChecked(True)
+                self.auto_save_check.blockSignals(False)

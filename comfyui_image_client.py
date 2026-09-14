@@ -103,17 +103,6 @@ class ComfyUiImageClient:
                 pass
         print(message)
 
-    def check_connection(self) -> dict:
-        """Return a lightweight availability report without queueing work."""
-        try:
-            response = self.session.get(
-                f"{self.base_url}/system_stats",
-                timeout=10,
-            )
-            response.raise_for_status()
-            return {"available": True, "base_url": self.base_url, "error": None}
-        except Exception as exc:
-            return {"available": False, "base_url": self.base_url, "error": str(exc)}
 
     def generate_image(
         self,

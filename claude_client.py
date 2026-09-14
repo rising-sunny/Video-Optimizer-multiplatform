@@ -9,6 +9,19 @@ import platform
 import json
 import re
 
+
+def get_channel_name(default: str = "this channel") -> str:
+    """Nombre visible del canal, leido del Channel Bible.
+
+    Import perezoso: este modulo se carga antes que el perfil en algunos flujos.
+    """
+    try:
+        from channel_strategy import get_channel_name as _real
+        return _real(default)
+    except Exception:
+        return default
+
+
 # Importar Groq como backend unico
 try:
     from groq_client import GroqAiClient
@@ -42,6 +55,97 @@ def load_env_file():
 # Cargar variables de entorno desde .env
 load_env_file()
 
+
+_LLM_REFUSAL_RE = re.compile(
+    r"(i['’]?m sorry[\s,]+but i can['’]?t fulfill|"
+    r"i can(?:not|['’]?t)\s+fulfill that request|"
+    r"i can(?:not|['’]?t)\s+assist with|"
+    r"i can(?:not|['’]?t)\s+help with that|"
+    r"i must decline|"
+    r"as an ai (?:language )?model|"
+    r"i(?: am|'m) not able to (?:fulfill|comply|write|create)|"
+    r"lo siento[, ]+no puedo (?:cumplir|ayudar)|"
+    r"no puedo (?:cumplir|acceder a) (?:esa|esta) (?:solicitud|petici[oó]n))",
+    re.IGNORECASE,
+)
+
+
+def is_llm_refusal(text) -> bool:
+    """True when the model returned a refusal instead of a narration script."""
+    if not text or not isinstance(text, str):
+        return False
+    sample = text.strip()
+    if not sample:
+        return False
+    if _LLM_REFUSAL_RE.search(sample[:500]):
+        return True
+    return len(sample.split()) <= 40 and bool(_LLM_REFUSAL_RE.search(sample))
+
+
+def target_word_budget(duration_seconds) -> int:
+    try:
+        return int((max(1, int(duration_seconds)) / 60.0) * 150)
+    except Exception:
+        return 150
+
+
+def minimum_script_words(duration_seconds, target_words=None) -> int:
+    """Minimum usable narration length for this runtime."""
+    target = int(target_words if target_words is not None else target_word_budget(duration_seconds))
+    try:
+        duration = int(duration_seconds)
+    except Exception:
+        duration = 60
+    if duration <= 90:
+        return max(25, int(target * 0.30))
+    if duration < 600:
+        return max(80, int(target * 0.30))
+    return max(200, int(target * 0.28))
+
+
+def script_is_too_short(script, duration_seconds, target_words=None) -> bool:
+    if not script or not isinstance(script, str) or is_llm_refusal(script):
+        return True
+    return len(script.split()) < minimum_script_words(duration_seconds, target_words)
+
+
+def _ascii_hook(texto: str) -> str:
+    """Titular de miniatura en MAYUSCULAS y ASCII puro.
+
+    Red de seguridad por si el LLM ignora la instruccion de escribirlo en
+    ingles sin tildes: las IA de imagen se equivocan con los acentos. Caso
+    real (2026-09-03): se pidio "6 PIRAMIDES" y la imagen volvio diciendo
+    "6 PIRAMIDAS".
+    """
+    import unicodedata
+
+    limpio = str(texto or "").strip().strip('"').strip("'").strip()
+    # NFKD separa la tilde de la letra; al descartar los combinantes queda ASCII.
+    plano = "".join(
+        c for c in unicodedata.normalize("NFKD", limpio)
+        if not unicodedata.combining(c)
+    )
+    return " ".join(plano.split()).upper()
+
+
+def build_copyable_prompt(positive: str, negative: str = "") -> str:
+    """Positivo + negativo en UN solo texto para copiar de una.
+
+    La mayoria de las IA de imagen que se usan a mano (gpt-image, Gemini,
+    Midjourney en chat) toman un unico bloque: copiar y pegar dos veces es un
+    paso de mas y se presta a pegar solo la mitad.
+
+    El negativo va como una linea en ingles y en imperativo porque asi lo
+    entienden los modelos conversacionales; los que tienen campo negativo
+    aparte lo ignoran sin romperse.
+    """
+    positivo = " ".join(str(positive or "").split())
+    negativo = " ".join(str(negative or "").split())
+    if not negativo:
+        return positivo
+    return f"{positivo}\n\nDo NOT include: {negativo}"
+
+
 class ClaudeAiClient:
     """
     Cliente para interactuar con Claude Code CLI (ejecuciÃ³n local).
@@ -73,13 +177,6 @@ class ClaudeAiClient:
             # Si hay al menos un cliente disponible (Groq o Claude), marcar como disponible
             if (self.groq_client and self.groq_client.client) or self.claude_cmd:
                 self.client_available = True
-        elif False:
-            print("âš ï¸ ADVERTENCIA: Claude Code CLI no encontrado en el sistema (fallback no disponible)")
-            # Si Groq estÃ¡ disponible, marcar como disponible aunque no haya Claude
-            if self.groq_client and self.groq_client.client:
-                self.client_available = True
-            print("   AsegÃºrate de tener Claude Code instalado y accesible desde PATH")
-            print("   O configurar la ruta en CLAUDE_CLI_PATH si estÃ¡ en ubicaciÃ³n personalizada")
 
     @property
     def client(self):
@@ -367,142 +464,7 @@ class ClaudeAiClient:
             return f"{period}, {loc}"
         return str(period).strip()
     
-    def _find_claude_command(self):
-        """Compatibilidad legacy: Claude CLI fue desactivado en favor de Groq."""
-        return None
     
-    def _generate_with_claude_cli(self, prompt_text, max_tokens=4096):
-        """Genera texto usando Claude Code CLI con verificaciÃ³n de cuotas"""
-        if not self.claude_cmd:
-            print("âš ï¸ Claude Code CLI no disponible: comando no encontrado")
-            return None
-        
-        try:
-            print(f"[DEBUG] Ejecutando Claude CLI...")
-            
-            # Primero verificar cuotas disponibles con un comando simple
-            try:
-                print("[DEBUG] Verificando cuotas de Claude CLI...")
-                quota_check = subprocess.run(
-                    [self.claude_cmd, "--version"],
-                    capture_output=True,
-                    text=True,
-                    timeout=10,
-                    shell=True if platform.system() == "Windows" else False
-                )
-                
-                if quota_check.returncode != 0:
-                    print("   âš ï¸ Claude CLI no responde (posible problema de cuotas o conexiÃ³n)")
-                    if quota_check.stderr:
-                        error_msg = quota_check.stderr.lower()
-                        if any(keyword in error_msg for keyword in ["quota", "limit", "rate", "429", "usage"]):
-                            print("   âŒ Error de cuotas detectado en Claude CLI")
-                            return "ERROR_QUOTA_EXCEEDED"
-                        elif any(keyword in error_msg for keyword in ["auth", "permission", "403", "unauthorized"]):
-                            print("   âŒ Error de autenticaciÃ³n en Claude CLI")
-                            return "ERROR_AUTH"
-                    return None
-                else:
-                    print(f"   âœ… Claude CLI operativo: {quota_check.stdout.strip()}")
-            except Exception as e:
-                print(f"   âš ï¸ No se pudo verificar cuotas de Claude CLI: {str(e)[:50]}")
-            
-            # CRÃTICO: En Windows, usar subprocess.run con mejor manejo de recursos
-            # evita el crash STATUS_STACK_BUFFER_OVERRUN (0xC0000409)
-            
-            # Crear flags de creaciÃ³n especÃ­ficos para Windows
-            creation_flags = 0
-            if platform.system() == "Windows":
-                # CREATE_NO_WINDOW evita crear ventana de consola adicional
-                creation_flags = subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0x08000000
-
-            # Intentar diferentes formas de llamar a Claude CLI
-            # Algunas versiones pueden requerir flags especÃ­ficos
-            claude_args = [self.claude_cmd]
-            
-            # Verificar si el comando es un .CMD o .BAT (Windows)
-            if self.claude_cmd.lower().endswith('.cmd') or self.claude_cmd.lower().endswith('.bat'):
-                # En Windows, los .CMD/.BAT pueden necesitar ser llamados con cmd.exe
-                claude_args = ['cmd.exe', '/c', self.claude_cmd]
-            
-            # Usar subprocess.run (mÃ¡s simple y robusto que Popen)
-            result = subprocess.run(
-                claude_args,
-                input=prompt_text,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                encoding='utf-8',  # Asegurar codificaciÃ³n UTF-8
-                errors='replace',  # Reemplazar caracteres invÃ¡lidos
-                timeout=120,  # 2 minutos timeout
-                creationflags=creation_flags,
-                # CRÃTICO: Cerrar handles automÃ¡ticamente en Windows
-                close_fds=True if platform.system() != "Windows" else False
-            )
-
-            # Verificar resultado
-            stdout_text = result.stdout.strip() if result.stdout else ""
-            stderr_text = result.stderr.strip() if result.stderr else ""
-            
-            # Caso 1: Ã‰xito con contenido
-            if result.returncode == 0 and stdout_text:
-                response = stdout_text
-                print("[DEBUG] Claude CLI completado exitosamente")
-                return response
-            
-            # Caso 2: CÃ³digo 0 pero sin contenido (puede ser que Claude CLI no respondiÃ³ correctamente)
-            if result.returncode == 0 and not stdout_text:
-                print(f"âš ï¸ Claude Code CLI completÃ³ sin errores pero no devolviÃ³ contenido")
-                if stderr_text:
-                    print(f"   Stderr: {stderr_text[:300]}")
-                print("   ðŸ’¡ Posibles causas:")
-                print("      - Claude CLI puede requerir autenticaciÃ³n interactiva")
-                print("      - El prompt puede ser demasiado largo")
-                print("      - Claude CLI puede estar esperando entrada adicional")
-                return None
-            
-            # Caso 3: Error con cÃ³digo distinto de 0
-            print(f"âš ï¸ Claude Code CLI retornÃ³ cÃ³digo de error: {result.returncode}")
-            error_msg = stderr_text
-            if error_msg:
-                print(f"   Error: {error_msg[:300]}")
-            elif stdout_text:
-                # A veces el error estÃ¡ en stdout
-                print(f"   Output: {stdout_text[:300]}")
-            
-            # Detectar errores de cuotas/rate limits
-            error_lower = error_msg.lower() if error_msg else ""
-            stdout_lower = stdout_text.lower() if stdout_text else ""
-            combined_error = f"{error_lower} {stdout_lower}"
-            
-            # Palabras clave que indican cuotas agotadas
-            quota_keywords = [
-                "quota", "rate limit", "429", "insufficient", 
-                "exceeded", "limit reached", "too many requests",
-                "cuota", "lÃ­mite", "agotado", "excedido", "usage"
-            ]
-            
-            # Palabras clave que indican errores de autenticaciÃ³n
-            auth_keywords = [
-                "auth", "permission", "403", "unauthorized", "forbidden",
-                "authentication", "login", "credential"
-            ]
-            
-            if any(keyword in combined_error for keyword in quota_keywords):
-                print("   ðŸ’¡ Detectado: Error de cuotas agotadas en Claude CLI")
-                return "ERROR_QUOTA_EXCEEDED"
-            elif any(keyword in combined_error for keyword in auth_keywords):
-                print("   ðŸ’¡ Detectado: Error de autenticaciÃ³n en Claude CLI")
-                return "ERROR_AUTH"
-                
-            return None
-
-        except subprocess.TimeoutExpired:
-            print("   âš ï¸ Claude CLI timeout (mÃ¡s de 2 minutos)")
-            return None
-        except Exception as e:
-            print(f"   âš ï¸ Error ejecutando Claude CLI: {str(e)[:100]}")
-            return None
     
     def _generate(self, prompt_text, max_tokens=4096, task_type="general"):
         if not (self.groq_client and self.groq_client.client):
@@ -519,40 +481,6 @@ class ClaudeAiClient:
 
         print("   WARNING Groq no pudo generar una respuesta valida")
         return groq_result
-
-        """Genera texto usando Groq como IA principal, con Claude Code CLI como fallback"""
-        # Intentar primero con Groq (IA principal)
-        if self.groq_client and self.groq_client.client:
-            print("   âš¡ Consultando a Groq (IA principal)...")
-            groq_result = self.groq_client._generate(
-                prompt_text,
-                max_tokens=max_tokens,
-                task_type=task_type
-            )
-            if groq_result and not (isinstance(groq_result, str) and groq_result.startswith("ERROR")):
-                print("   âœ… Groq generÃ³ respuesta exitosamente")
-                return groq_result
-            print("   âš ï¸ Groq fallÃ³, intentando con Claude Code CLI como fallback...")
-        else:
-            print("   âš ï¸ Groq no estÃ¡ disponible, intentando con Claude Code CLI...")
-        
-        # Si Groq no estÃ¡ disponible o fallÃ³, intentar con Claude Code CLI como fallback
-        if not self.claude_cmd:
-            print("   âŒ Claude Code CLI no estÃ¡ disponible")
-            if not (self.groq_client and self.groq_client.client):
-                print("   âŒ Funciones de IA deshabilitadas (Groq no configurado y Claude no disponible)")
-            return None
-        
-        # Intentar con Claude Code CLI como fallback
-        result = self._generate_with_claude_cli(prompt_text, max_tokens)
-        
-        # Si Claude tambiÃ©n falla, retornar el resultado (puede ser None o error)
-        if not result or result == "ERROR_QUOTA_EXCEEDED" or result == "ERROR_AUTH" or (isinstance(result, str) and result.startswith("ERROR")):
-            print("   âš ï¸ Claude Code CLI tambiÃ©n fallÃ³")
-            return result
-        
-        print("   âœ… Claude Code CLI generÃ³ respuesta exitosamente (fallback)")
-        return result
 
     def generate_thumbnail_prompt(self, topic, category, style, provider='recraft'):
         """Genera prompt para thumbnail"""
@@ -684,94 +612,182 @@ Return ONLY a JSON array, no markdown, no extra text:
         print(f"[WARN] generate_thumbnail_text_suggestions: no valid JSON array found. Raw: {result[:300]}")
         return []
 
-    def generate_thumbnail_super_prompt(self, topic, script_excerpt="", category="", language="es"):
-        """Genera [POSITIVE PROMPT] y [NEGATIVE PROMPT] para thumbnail en IA externa.
+    def generate_thumbnail_super_prompt(self, topic, script_excerpt="", category="",
+                                        language="es", thumbnail_format=None,
+                                        render_text=True):
+        """Genera los prompts de miniatura listos para pegar en una IA externa.
 
-        Devuelve un dict {'positive': str, 'negative': str} o None si falla.
+        Devuelve {'positive', 'negative', 'text'} o None si falla.
+
+        Dos cosas que antes no hacia:
+
+        - `render_text`: el prompt pedia un `short_text` de 2-3 palabras,
+          reservaba espacio para el... y en la regla 12 prohibia "NO text in the
+          image". La palabra se calculaba y se tiraba, y la miniatura volvia con
+          un hueco vacio. Ahora, con render_text=True, se le pide a la IA que la
+          ESCRIBA, con tipografia, tamano y ubicacion concretos. Con False vuelve
+          al comportamiento viejo (hueco reservado) para superponerla despues con
+          `thumbnail_compositor`.
+        - `thumbnail_format`: estaba clavado en 16:9. Un Short necesita 9:16 y
+          reglas de encuadre distintas (ver `thumbnail_formats`).
         """
-        print("Generando super prompt de thumbnail para IA externa...")
-        lang_note = "The video is in Spanish." if language == "es" else "The video is in English."
-        script_block = f"\nScript excerpt (first 1200 chars):\n{script_excerpt[:1200]}" if script_excerpt else ""
+        from thumbnail_formats import LANDSCAPE_16_9
 
-        prompt = f"""You are a senior YouTube thumbnail art director specialized in cinematic historical, war, and mystery content.
+        fmt = thumbnail_format or LANDSCAPE_16_9
+        print(f"Generando super prompt de thumbnail para IA externa ({fmt.aspect_label})...")
+
+        lang_note = "The video is in Spanish." if language == "es" else "The video is in English."
+        script_block = (
+            f"\nScript excerpt (first 1200 chars):\n{script_excerpt[:1200]}"
+            if script_excerpt else ""
+        )
+
+        reglas_encuadre = "\n".join(
+            f"{i}. {regla}" for i, regla in enumerate(fmt.composition_rules, start=1)
+        )
+
+        if render_text:
+            directivas = "\n".join(f"- {d}" for d in fmt.text_render_directives())
+            bloque_texto = (
+                "TEXT RENDERING (the image generator MUST draw this text into the image):\n"
+                f"{directivas}\n"
+            )
+            prohibido_texto = (
+                "misspelled words, duplicated letters, garbled glyphs, extra text, "
+                "subtitles, captions, watermark, logo, signature"
+            )
+            nota_salida = (
+                "The [POSITIVE PROMPT] must include the literal short_text in quotes "
+                "and the typography directives, so the generator writes it."
+            )
+        else:
+            directivas = ""
+            bloque_texto = (
+                "TEXT RENDERING: none. Leave the reserved area as calm empty space; "
+                "the text is composited afterwards in post-production.\n"
+            )
+            prohibido_texto = (
+                "any text, letters, garbled glyphs, subtitles, captions, watermark, "
+                "logo, signature"
+            )
+            nota_salida = (
+                "The [POSITIVE PROMPT] must NOT ask for any text inside the image."
+            )
+
+        prompt = f"""You are a senior YouTube thumbnail art director for documented-history content.
 
 VIDEO DATA:
 - Title / Topic: {topic}
-- Category: {category or "mystery / history"}
+- Category: {category or "documented history"}
 - {lang_note}{script_block}
 
-TASK: Analyze the video data above and generate a cinematic thumbnail prompt for an external AI image generator (Midjourney, DALL-E, Stable Diffusion, etc.).
+TASK: Analyze the video data and produce a thumbnail prompt for an external AI
+image generator (Recraft, gpt-image, Midjourney, Ideogram, Flux, etc.).
 
 From the video data, infer and fill these variables:
 - event_name: full title or event
-- year_era: period (e.g. "1908", "ancient Rome", "medieval", etc.)
+- year_era: period (e.g. "1100 AD", "ancient Nubia", "medieval")
 - location: geographic / historical setting
-- central_figure: the single most impactful visual subject (person, creature, object, landscape)
-- emotional_hook: one of — fear / betrayal / shock / loss / glory
-- short_text: 2-3 ALL CAPS words for text overlay (max 3 words, punchy, in the video's language)
-- era_anchor: one sentence describing the exact period-accurate scene (clothing, weapons, architecture, light, season)
+- hero_subject: the single most impactful visual element. PREFER the historical
+  thing itself -- the structure, the artifact, the terrain, the wreck, the
+  moment -- over a person's face. A human is only worth including when it gives
+  SCALE to something enormous.
+- shot_type: choose the one that fits the topic best, and say it explicitly:
+    * scale        -> wide shot, the structure dwarfs a small figure seen from behind
+    * detail       -> tight macro on texture, tooling marks, an object in a hand
+    * aerial       -> impossible high viewpoint revealing the whole layout
+    * aftermath    -> the place empty, abandoned, weathered, nobody in frame
+    * moment       -> the action mid-event, figures small and in motion
+- emotional_hook: one of - fear / betrayal / shock / loss / glory
+- short_text: 2-3 ALL CAPS words, punchy, ALWAYS IN ENGLISH regardless of the
+  narration language, and plain ASCII only (no accents, no diacritics, no
+  special characters). Image generators misspell accented words -- a Spanish
+  hook came back rendered as "6 PIRAMIDAS" instead of "6 PIRAMIDES". Prefer a
+  concrete number or a hard noun over an abstraction.
+- era_anchor: one sentence with the period-accurate scene (clothing, weapons,
+  architecture, light, season)
+
+FORMAT: {fmt.prompt_constraint}
+{fmt.llm_brief}
 
 MANDATORY COMPOSITION RULES (all must be respected):
-1. 16:9, 1920x1080, photoreal cinematic still.
-2. Rule of thirds: main subject face/eyes on the LEFT third intersection.
-3. Subject occupies 55-70% of frame height. Eyes visible, expression matches emotional_hook.
-4. Strong left-to-right luminance gradient: left side brighter than right by >= 20 luminance points.
-5. RIGHT third kept as calm negative space (sky, smoke, darkness) — reserved for the short_text overlay. Do NOT place the subject there.
-6. Cinematic rim light + warm key light from upper-left, cool fill from right.
-7. 50mm full-frame lens look, shallow depth of field, subject tack sharp, background softly defocused.
-8. Background clearly suggests location + era (architecture, terrain, banners, smoke, weather).
-9. Color palette: warm dominants (amber, ember, blood-red, bronze) against cool shadows (steel blue, slate). No pastels, no neon.
-10. High micro-contrast on the face. Skin texture visible. Sweat / dust acceptable if plausible.
-11. NO modern objects, NO wristwatches, NO zippers, NO synthetic fabrics, NO contemporary haircuts.
-12. NO garbled letters, NO fake glyphs, NO watermark, NO logo, NO frame, NO border, NO text in the image.
-13. Reads clearly at 320x180 px (mobile feed test).
-14. ONE single focal subject. Secondary figures only as silhouettes or out of focus.
-15. Mood: cinematic poster, History Channel x A24, photographic realism — NOT illustration, NOT anime.
+{reglas_encuadre}
 
+{bloque_texto}
 QUANTITATIVE TARGETS:
 - Average luminance: 100-150 (out of 255).
-- Left-half mean luminance minus right-half mean luminance: >= 20.
-- Edge density on the left third: >= 55% of total edge mass.
+- Subject zone brighter than the calm zone by >= 20 luminance points.
+- Edge density in the subject third: >= 55% of total edge mass.
 - Warm channel (R+G) minus cool channel (B): >= 15 on average.
 - No single histogram bin > 30% of pixels.
 
-COLOR SYSTEM — Highlights: #f3c267, #e07a2b, #b32a1c — Mids: #6a3a1e, #2f3a44 — Shadows: #0e1318, #1a2330
+COLOR SYSTEM - Highlights: #f3c267, #e07a2b, #b32a1c - Mids: #6a3a1e, #2f3a44 - Shadows: #0e1318, #1a2330
 
-EMOTIONAL HOOK:
-- shock → widened eyes, open mouth, tense shoulders
-- fear → half-lit profile, darting eyes
-- betrayal → clenched jaw, narrowed eyes
-- loss → downward gaze, slack expression
-- glory → raised chin, side light, confident expression
+EMOTIONAL HOOK -- express it through the SCENE, not through a face:
+- shock -> impossible scale, a tiny human against something enormous
+- fear -> deep shadow swallowing most of the frame, one lit edge
+- betrayal -> something broken, toppled or defaced in the foreground
+- loss -> emptiness, dust, weeds reclaiming worked stone, nobody there
+- glory -> low sun raking across the structure, long shadows, haze and depth
 
-PROHIBITED ELEMENTS (for negative prompt):
-garbled text, fake letters, text artifacts, deformed hands, extra fingers, extra limbs, modern clothing, wristwatch, sunglasses, smartphone, plastic, neon, pastel colors, cartoon, anime, 3d render, cgi look, low contrast, washed out, flat lighting, centered subject, symmetrical composition, watermark, logo, signature, frame, border, blurry subject, motion blur on face, multiple faces competing, crowd as main subject
+PROHIBITED ELEMENTS (for the negative prompt):
+{prohibido_texto}, centered person facing camera, posed portrait, studio model
+pose, smiling subject, symmetrical bust shot, person standing with arms at their
+sides, stock-photo actor, deformed hands, extra fingers, extra limbs, modern clothing,
+wristwatch, sunglasses, smartphone, plastic, neon, pastel colors, cartoon, anime,
+3d render, cgi look, low contrast, washed out, flat lighting, symmetrical
+composition, frame, border, blurry subject, motion blur on face, multiple faces
+competing, crowd as main subject
 
-Return EXACTLY two blocks with no extra text before, between, or after them:
+{nota_salida}
+
+Return EXACTLY three blocks, with no extra text before, between or after them:
+
+[TEXT]
+<the short_text, ALL CAPS, nothing else>
 
 [POSITIVE PROMPT]
-<one dense paragraph in English, comma-separated, all rules applied, ending with: cinematic 16:9, 1920x1080, photoreal, 50mm, shallow depth of field, dramatic lighting>
+<one dense paragraph in English, comma-separated, all rules applied, ending with:
+{fmt.prompt_constraint}, photoreal, 50mm, shallow depth of field, dramatic lighting>
 
 [NEGATIVE PROMPT]
 <prohibited elements list, comma-separated>
 """
-        result = self._generate(prompt, max_tokens=1200, task_type="script_quality")
+        result = self._generate(prompt, max_tokens=1400, task_type="script_quality")
         if not result or (isinstance(result, str) and result.startswith("ERROR")):
             return None
 
         import re
-        pos_match = re.search(r'\[POSITIVE PROMPT\]\s*\n(.*?)(?=\[NEGATIVE PROMPT\]|\Z)', result, re.DOTALL)
-        neg_match = re.search(r'\[NEGATIVE PROMPT\]\s*\n(.*?)$', result, re.DOTALL)
+        # `\s*` y NO `\s*\n`: el modelo devuelve los bloques pegados a la
+        # etiqueta la mitad de las veces ("[TEXT]20,000 PEOPLE[POSITIVE...").
+        # Exigir el salto de linea hacia que el bloque no se reconociera y el
+        # prompt positivo se tragara las tres etiquetas.
+        txt_match = re.search(r"\[TEXT\]\s*(.*?)(?=\[POSITIVE PROMPT\]|\Z)", result, re.DOTALL)
+        pos_match = re.search(r"\[POSITIVE PROMPT\]\s*(.*?)(?=\[NEGATIVE PROMPT\]|\Z)", result, re.DOTALL)
+        neg_match = re.search(r"\[NEGATIVE PROMPT\]\s*(.*?)$", result, re.DOTALL)
 
         positive = pos_match.group(1).strip() if pos_match else result.strip()
+        hook = _ascii_hook(txt_match.group(1)) if txt_match else ""
         negative = neg_match.group(1).strip() if neg_match else (
-            "garbled text, fake letters, text artifacts, deformed hands, extra fingers, extra limbs, "
-            "modern clothing, wristwatch, sunglasses, smartphone, plastic, neon, pastel colors, cartoon, "
-            "anime, 3d render, cgi look, low contrast, washed out, flat lighting, centered subject, "
-            "symmetrical composition, watermark, logo, signature, frame, border, blurry subject, "
-            "motion blur on face, multiple faces competing, crowd as main subject"
+            "misspelled words, duplicated letters, garbled glyphs, extra text, "
+            "subtitles, captions, watermark, logo, signature, deformed hands, "
+            "extra fingers, extra limbs, modern clothing, wristwatch, smartphone, "
+            "neon, pastel colors, cartoon, anime, 3d render, cgi look, low contrast, "
+            "washed out, flat lighting, frame, border, blurry subject"
         )
-        return {"positive": positive, "negative": negative}
+
+        # Red de seguridad: si el LLM devolvio el hook pero no lo metio en el
+        # prompt, la IA de imagen nunca lo escribiria. Se agrega explicito.
+        if render_text and hook and f'"{hook}"' not in positive:
+            directivas = ", ".join(fmt.text_render_directives(hook))
+            positive = f"{positive}, {directivas}"
+
+        return {
+            "positive": positive,
+            "negative": negative,
+            "text": hook,
+            "combined": build_copyable_prompt(positive, negative),
+        }
 
     def _estimate_script_max_tokens(self, duration_seconds: int) -> int:
         """Calcula un presupuesto de tokens de salida para guiones largos."""
@@ -794,18 +810,18 @@ Return EXACTLY two blocks with no extra text before, between, or after them:
         if tone_profile == "mystery":
             return (
                 'Role: Expert Scriptwriter for a YouTube channel about mysteries, '
-                'conspiracies, and unexplained phenomena ("Stunning Revelations").'
+                f'conspiracies, and unexplained phenomena ({get_channel_name()}).'
             )
         if tone_profile == "dramatic_factual":
             return (
                 'Role: Expert Scriptwriter for cinematic documentaries about extreme '
-                'natural events and disasters ("Stunning Revelations" channel). Your style '
+                f'natural events and disasters ({get_channel_name()} channel). Your style '
                 'is dramatic and tense, but STRICTLY FACTUAL — no paranormal, no curses, '
                 'no unproven theories.'
             )
         # documentary (default)
         return (
-            'Role: Expert historian and documentary scriptwriter for the "Stunning Revelations" '
+            f'Role: Expert historian and documentary scriptwriter for the {get_channel_name()} '
             'channel. Your style is a serious, cinematically dark documentary (think BBC dark '
             'history, Apple TV+ documentaries, Ken Burns). Your content is STRICTLY HISTORICAL '
             'AND VERIFIABLE — no invented curses, no impossible civilizations, no UFOs, no '
@@ -894,9 +910,6 @@ Return EXACTLY two blocks with no extra text before, between, or after them:
         - IF YOU RUN OUT OF NEW FACTS, DO NOT CUT THE SCRIPT SHORT. First go deeper with documented material: prior historical context, biographies of real protagonists, documented critical decisions, verifiable consequences (short-term and across years/decades), parallels with similar documented events, primary-source testimonies. Only if you genuinely exhausted documented material may you shorten. NEVER fabricate filler.
         """
 
-    def _build_script_quality_block(self) -> str:
-        """Backward-compat shim — defaults to mystery profile (legacy behavior)."""
-        return self._build_script_quality_block_for_profile("mystery")
 
     def _build_short_block(self) -> str:
         try:
@@ -904,7 +917,7 @@ Return EXACTLY two blocks with no extra text before, between, or after them:
             _sr = _get_sr()
             _hook_instr = build_hook_prompt_instructions()
             return f"""
-        STRICT RULES FOR SHORTS — @Stunning-Revelations Channel Bible:
+        STRICT RULES FOR SHORTS — {get_channel_name()} Channel Bible:
 
         DURATION: {_sr.get('min_duration', 45)} to {_sr.get('max_duration', 58)} seconds. NEVER exceed {_sr.get('hard_limit', 60)} seconds.
 
@@ -954,16 +967,6 @@ Return EXACTLY two blocks with no extra text before, between, or after them:
         "LONG_FORM_ANGLE", "SERIES_FIT",
     ]
 
-    @staticmethod
-    def _extract_cover_text(script: str) -> str:
-        import re
-        match = re.search(r'COVER_TEXT:\s*(.+)', script, re.IGNORECASE)
-        if match:
-            text = match.group(1).strip().strip('"').strip("'").upper()
-            words = text.split()
-            if 1 <= len(words) <= 3:
-                return " ".join(words)
-        return ""
 
     @classmethod
     def _extract_script_metadata(cls, script: str) -> dict:
@@ -991,10 +994,6 @@ Return EXACTLY two blocks with no extra text before, between, or after them:
             script = re.sub(rf'\n*{key}:\s*.+', '', script, flags=re.IGNORECASE)
         return script.rstrip()
 
-    @staticmethod
-    def _strip_cover_text_line(script: str) -> str:
-        import re
-        return re.sub(r'\n*COVER_TEXT:\s*.+', '', script, flags=re.IGNORECASE).rstrip()
 
     def _script_needs_refinement(self, script: str, target_words: int) -> bool:
         if not script:
@@ -1054,6 +1053,215 @@ Return EXACTLY two blocks with no extra text before, between, or after them:
             paragraphs = [p for i, p in enumerate(paragraphs) if i not in to_remove]
         return "\n\n".join(paragraphs)
 
+    _TOPIC_FACT_SEEDS = (
+        (
+            ("muriq", "amorrita", "amorite wall", "muro amorrita", "tidnim", "tidnum"),
+            (
+                "the Amorite Wall (Sumerian: Muriq-Tidnim, 'which keeps the Tidnum/Amorites at bay'). "
+                "Ur III fortification project, mainly under king Shu-Sin (c. 2038-2030 BC); "
+                "some year-names also connect earlier work to Shulgi. "
+                "Goal: hold back Amorite (Martu/Tidnum) tribal pressure on Sumer and Akkad. "
+                "Evidence is royal inscriptions and year-names, not a fully excavated 1,500 km wall. "
+                "The viral claim of a 1,500 km wall in 2200 BC is a modern exaggeration; 2200 BC is closer "
+                "to the 4.2-kiloyear drought and the lead-up to Ur III, not a surveyed wall length. "
+                "Aftermath: Ibbi-Sin, fall of Ur c. 2004 BC, Amorite kingdoms (Isin, Larsa, Babylon). "
+                "Contrast the inscriptional wall with the viral 1500 km legend."
+            ),
+        ),
+    )
+
+    @staticmethod
+    def _build_topic_disambiguation_block(topic: str) -> str:
+        raw = (topic or "").strip()
+        aliases = []
+        try:
+            from research_search import topic_search_queries
+            aliases = topic_search_queries(raw)
+        except Exception:
+            aliases = [raw] if raw else []
+        alias_txt = ", ".join(aliases[:8]) if aliases else raw
+        seed = ""
+        low = raw.lower()
+        for keys, text in ClaudeAiClient._TOPIC_FACT_SEEDS:
+            if any(key in low for key in keys):
+                seed = text
+                break
+        seed_line = f"- Historical outline: {seed}\n" if seed else ""
+        return f"""
+        TOPIC DISAMBIGUATION (mandatory — do not refuse this request):
+        - This is a legitimate historical documentary about a real subject.
+        - User title: "{raw}"
+        - Treat obscure Sumerian, Akkadian, Egyptian or indigenous names as history, not as disallowed content.
+        - Alternate names to use: {alias_txt}
+        - Never reply with an apology or "I can't fulfill that request". Write the narration.
+        {seed_line}"""
+
+    def _maybe_append_cta(self, script, language='es'):
+        """Append the channel CTA only to a real narration, never to a refusal."""
+        if not script or is_llm_refusal(script) or len(script.split()) < 40:
+            return script
+        lower = script.lower()
+        if (
+            "stunning revelations" in lower
+            or "subscribe" in lower
+            or "suscríbete" in lower
+            or "suscribete" in lower
+            or "suscrÃ­bete" in lower
+        ):
+            return script
+        if language == 'es':
+            return script + "\n\nNo olvides suscribirte a {get_channel_name()} para más contenido fascinante."
+        return script + "\n\nDon't forget to subscribe to {get_channel_name()} for more fascinating content."
+
+    def _retry_script_after_refusal(
+        self,
+        topic,
+        category,
+        duration_seconds,
+        language,
+        target_words,
+        script_max_tokens,
+        role_header,
+        quality_block,
+        research_snippets=None,
+    ):
+        disambig = self._build_topic_disambiguation_block(topic)
+        context = ""
+        if research_snippets:
+            snippets = research_snippets if isinstance(research_snippets, (list, tuple)) else [str(research_snippets)]
+            context = "Research notes:\n" + "\n".join(str(s) for s in snippets[:8])
+        lang = "English" if language == "en" else "Spanish"
+        prompt = f"""
+        {role_header}
+        {disambig}
+        Task: Write a complete narration script about "{topic}".
+        Category: {category}
+        Language: {lang} only. Do not mix languages.
+        Target length: ~{target_words} words.
+
+        {context}
+
+        {quality_block}
+
+        CRITICAL:
+        - Output ONLY the narration. No apology, no meta-commentary, no "I can't".
+        - This is a standard historical documentary, not disallowed content.
+        - Use the aliases and documented outline above if the user title looks obscure.
+
+        Format: narration text only.
+        """
+        return self._generate(
+            prompt,
+            max_tokens=script_max_tokens,
+            task_type="script_quality",
+        )
+
+    def _postprocess_generated_script(
+        self,
+        script,
+        topic,
+        category,
+        duration_seconds,
+        language,
+        target_words,
+        script_max_tokens,
+        role_header,
+        quality_block,
+        is_short,
+        research_snippets=None,
+    ):
+        if script == "ERROR_QUOTA_EXCEEDED" or script == "ERROR_AUTH" or (script and str(script).startswith("ERROR")):
+            return script
+        if not script:
+            return script
+
+        if is_short:
+            meta = self._extract_script_metadata(script)
+            self._last_cover_text = meta.get("cover_text", "")
+            self._last_script_metadata = meta
+            script = self._strip_metadata_lines(script)
+
+        if is_llm_refusal(script) or script_is_too_short(script, duration_seconds, target_words):
+            print("   ⚠️ Guion rechazado o demasiado corto. Reintentando con brief histórico...")
+            retry = self._retry_script_after_refusal(
+                topic=topic,
+                category=category,
+                duration_seconds=duration_seconds,
+                language=language,
+                target_words=target_words,
+                script_max_tokens=script_max_tokens,
+                role_header=role_header,
+                quality_block=quality_block,
+                research_snippets=research_snippets,
+            )
+            if retry and not str(retry).startswith("ERROR") and not is_llm_refusal(retry):
+                if is_short:
+                    meta = self._extract_script_metadata(retry)
+                    self._last_cover_text = meta.get("cover_text", "")
+                    self._last_script_metadata = meta
+                    retry = self._strip_metadata_lines(retry)
+                script = retry
+
+        if is_llm_refusal(script):
+            print("   ❌ El LLM rechazó el tema. No se usará el texto de rechazo como guion.")
+            return "ERROR_SCRIPT_REFUSAL"
+
+        if self._script_needs_refinement(script, target_words):
+            print("   ⚠️ Guion con baja densidad detectado. Aplicando refinamiento anti-relleno...")
+            context = ""
+            if research_snippets:
+                snippets = research_snippets if isinstance(research_snippets, (list, tuple)) else [str(research_snippets)]
+                context = "Research context:\n" + "\n".join(str(s) for s in snippets[:8])
+            refine_prompt = f"""
+            {role_header.replace('Role: Expert Scriptwriter', 'Role: Senior Script Editor')}
+            Task: Rewrite this narration script to be more engaging and substantive.
+
+            Language: {'English' if language == 'en' else 'Spanish'} only.
+            Keep same topic: "{topic}".
+            Category: {category}
+            Target length: ~{target_words} words.
+            {self._build_topic_disambiguation_block(topic)}
+            {quality_block}
+            {context}
+
+            Additional rewrite constraints:
+            - Remove repetitive phrases and generic filler.
+            - Do NOT output a refusal or apology.
+            - Return ONLY the final narration text.
+
+            Script to rewrite:
+            {script}
+            """
+            refined = self._generate(
+                refine_prompt,
+                max_tokens=script_max_tokens,
+                task_type="script_quality"
+            )
+            if (
+                refined
+                and not str(refined).startswith("ERROR")
+                and not is_llm_refusal(refined)
+                and (
+                    len(refined.split()) >= int(target_words * 0.65)
+                    or len(refined.split()) > max(len(script.split()) * 2, 80)
+                )
+            ):
+                script = refined
+
+        if script_is_too_short(script, duration_seconds, target_words):
+            word_count = len(script.split()) if script else 0
+            needed = minimum_script_words(duration_seconds, target_words)
+            print(
+                f"   ❌ Guion demasiado corto ({word_count} palabras; mínimo {needed} "
+                f"para {duration_seconds}s). Abortando en vez de crear escenas basura."
+            )
+            return "ERROR_SCRIPT_TOO_SHORT"
+
+        if script:
+            script = self._deduplicate_cta(script)
+            script = self._maybe_append_cta(script, language)
+        return script
+
     def generate_video_script(self, topic, category, duration_seconds, language='es', narrative_profile=None):
         """Genera guion de video"""
         print(f"ðŸ¤– Claude: Generando guion ({language})...")
@@ -1104,6 +1312,7 @@ Return EXACTLY two blocks with no extra text before, between, or after them:
 
         prompt = f"""
         {role_header}
+        {self._build_topic_disambiguation_block(topic)}
         Task: Write a captivating narration script about "{topic}".
         Category: {category} (tone profile: {tone_profile})
 
@@ -1128,7 +1337,7 @@ Return EXACTLY two blocks with no extra text before, between, or after them:
 
         Length: ~{words} words.
         Format: Just the narration text. No intro/outro notes.
-        IMPORTANT: At the very end of the script (and ONLY at the very end, never before), add ONE single call to subscribe to the channel "Stunning Revelations" in a natural and engaging way, in {'English' if language == 'en' else 'Spanish'}. Do NOT repeat this call anywhere else in the script.
+        IMPORTANT: At the very end of the script (and ONLY at the very end, never before), add ONE single call to subscribe to the channel {get_channel_name()} in a natural and engaging way, in {'English' if language == 'en' else 'Spanish'}. Do NOT repeat this call anywhere else in the script.
         {self._build_metadata_request_block() if is_short else ""}
         """
 
@@ -1137,53 +1346,18 @@ Return EXACTLY two blocks with no extra text before, between, or after them:
             max_tokens=script_max_tokens,
             task_type="script_quality"
         )
-        if script == "ERROR_QUOTA_EXCEEDED" or script == "ERROR_AUTH" or (script and script.startswith("ERROR")):
-            return script
-
-        if is_short and script:
-            meta = self._extract_script_metadata(script)
-            self._last_cover_text = meta.get("cover_text", "")
-            self._last_script_metadata = meta
-            script = self._strip_metadata_lines(script)
-
-        if self._script_needs_refinement(script, words):
-            print("   âš ï¸ Guion con baja densidad detectado. Aplicando refinamiento anti-relleno...")
-            refine_prompt = f"""
-            {role_header.replace('Role: Expert Scriptwriter', 'Role: Senior Script Editor')}
-            Task: Rewrite this narration script to be more engaging and substantive, following the tone profile "{tone_profile}".
-
-            Language: {'English' if language == 'en' else 'Spanish'} only.
-            Keep same topic: "{topic}".
-            Category: {category} (tone profile: {tone_profile})
-            Target length: ~{words} words.
-            {quality_block}
-
-            Additional rewrite constraints:
-            - Remove repetitive phrases and generic filler.
-            - Stay strictly within the tone profile "{tone_profile}" — do NOT add mystery/conspiracy/paranormal framing if the profile is "documentary" or "dramatic_factual".
-            - Build engagement via tension, pacing, and dramatic transitions anchored to verifiable facts.
-            - Return ONLY the final narration text.
-
-            Script to rewrite:
-            {script}
-            """
-            refined = self._generate(
-                refine_prompt,
-                max_tokens=script_max_tokens,
-                task_type="script_quality"
-            )
-            if refined and not str(refined).startswith("ERROR") and len(refined.split()) >= int(words * 0.65):
-                script = refined
-
-        if script:
-            script = self._deduplicate_cta(script)
-
-        if script and "stunning revelations" not in script.lower() and "suscrÃ­bete" not in script.lower() and "subscribe" not in script.lower():
-            if language == 'es':
-                script += "\n\nNo olvides suscribirte a Stunning Revelations para mÃ¡s contenido fascinante."
-            else:
-                script += "\n\nDon't forget to subscribe to Stunning Revelations for more fascinating content."
-        return script
+        return self._postprocess_generated_script(
+            script=script,
+            topic=topic,
+            category=category,
+            duration_seconds=duration_seconds,
+            language=language,
+            target_words=words,
+            script_max_tokens=script_max_tokens,
+            role_header=role_header,
+            quality_block=quality_block,
+            is_short=is_short,
+        )
 
     def _extract_historical_context(self, topic, full_script, research_context):
         """Extrae contexto histÃ³rico del tema y script completo (con cachÃ©)"""
@@ -1364,6 +1538,7 @@ Output ONLY valid JSON (no explanations, no markdown):
 
         prompt = f"""
         {role_header}
+        {self._build_topic_disambiguation_block(topic)}
         Task: Write a captivating script about "{topic}" using this research as inspiration:
         {context}
         Category: {category} (tone profile: {tone_profile})
@@ -1390,7 +1565,7 @@ Output ONLY valid JSON (no explanations, no markdown):
 
         Length: ~{words} words.
         Format: Just the narration text.
-        IMPORTANT: At the very end of the script (and ONLY at the very end, never before), add ONE single call to subscribe to the channel "Stunning Revelations" in a natural and engaging way, in {'English' if language == 'en' else 'Spanish'}. Do NOT repeat this call anywhere else in the script.
+        IMPORTANT: At the very end of the script (and ONLY at the very end, never before), add ONE single call to subscribe to the channel {get_channel_name()} in a natural and engaging way, in {'English' if language == 'en' else 'Spanish'}. Do NOT repeat this call anywhere else in the script.
         {self._build_metadata_request_block() if is_short else ""}
         """
         
@@ -1399,59 +1574,19 @@ Output ONLY valid JSON (no explanations, no markdown):
             max_tokens=script_max_tokens,
             task_type="script_quality"
         )
-        # El mÃ©todo _generate ya intenta Groq primero y Claude como fallback
-        # Si ambos fallan, retornar error
-        if script == "ERROR_QUOTA_EXCEEDED" or script == "ERROR_AUTH" or (script and script.startswith("ERROR")):
-            return script
-
-
-        if is_short and script:
-            meta = self._extract_script_metadata(script)
-            self._last_cover_text = meta.get("cover_text", "")
-            self._last_script_metadata = meta
-            script = self._strip_metadata_lines(script)
-        if self._script_needs_refinement(script, words):
-            print("   âš ï¸ Guion investigado con baja densidad detectado. Aplicando refinamiento...")
-            refine_prompt = f"""
-            {role_header.replace('Role: Expert Scriptwriter', 'Role: Senior Script Editor')}
-            Task: Rewrite this script to be more engaging and substantive, following the tone profile "{tone_profile}", using the research as the factual base.
-
-            Language: {'English' if language == 'en' else 'Spanish'} only.
-            Topic: "{topic}".
-            Category: {category} (tone profile: {tone_profile})
-            Target length: ~{words} words.
-            Research context:
-            {context}
-
-            {quality_block}
-
-            Additional rewrite constraints:
-            - Remove filler and generic repetition.
-            - Stay strictly within the tone profile "{tone_profile}" — do NOT add mystery/conspiracy/paranormal framing if the profile is "documentary" or "dramatic_factual".
-            - Weave research facts into a coherent, profile-appropriate narrative.
-            - Build engagement via tension and pacing, anchored to verifiable facts.
-            - Return ONLY the final narration text.
-
-            Script to rewrite:
-            {script}
-            """
-            refined = self._generate(
-                refine_prompt,
-                max_tokens=script_max_tokens,
-                task_type="script_quality"
-            )
-            if refined and not str(refined).startswith("ERROR") and len(refined.split()) >= int(words * 0.65):
-                script = refined
-
-        if script:
-            script = self._deduplicate_cta(script)
-
-        if script and "stunning revelations" not in script.lower() and "suscrÃ­bete" not in script.lower() and "subscribe" not in script.lower():
-            if language == 'es':
-                script += "\n\nNo olvides suscribirte a Stunning Revelations para mÃ¡s contenido fascinante."
-            else:
-                script += "\n\nDon't forget to subscribe to Stunning Revelations for more fascinating content."
-        return script
+        return self._postprocess_generated_script(
+            script=script,
+            topic=topic,
+            category=category,
+            duration_seconds=duration_seconds,
+            language=language,
+            target_words=words,
+            script_max_tokens=script_max_tokens,
+            role_header=role_header,
+            quality_block=quality_block,
+            is_short=is_short,
+            research_snippets=research_snippets,
+        )
 
     def generate_prompts_for_segment(self, segment_text, category, style, topic=None,
                                      full_script=None, research_context=None, narrative_context=None,

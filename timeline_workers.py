@@ -543,36 +543,15 @@ class AIImageRegenerationWorker(QThread):
         return 1820, 1024
 
     def _fix_prompt_orientation(self, prompt: str) -> str:
-        """Strip vertical/portrait keywords and inject 16:9 guidance for horizontal platforms."""
-        import re
-        width, height = self._resolve_dimensions()
-        if width <= height:
-            return prompt  # vertical or square: keep as-is
-
-        portrait_patterns = [
-            r",?\s*vertical\s+9:16\s+portrait\s+composition\s+(?:for\s+youtube\s+shorts\s+)?",
-            r",?\s*vertical\s+portrait\s+composition(?:\s+optimized\s+for\s+mobile[^,]*)?",
-            r",?\s*portrait\s+orientation",
-            r",?\s*mobile[- ]safe\s+viewing",
-            r",?\s*lower[- ]third\s+negative\s+space(?:\s+for\s+subtitles)?",
-            r",?\s*subject\s+centered\s+in\s+the\s+middle\s+safe\s+area",
-            r",?\s*no\s+important\s+details\s+at\s+the\s+edges",
-            r"\bvertical\s+portrait\b",
-            r"\b9:16\b",
-        ]
-        for pat in portrait_patterns:
-            prompt = re.sub(pat, "", prompt, flags=re.IGNORECASE)
-
-        prompt = re.sub(r",\s*,+", ", ", prompt)
-        prompt = re.sub(r"^\s*,\s*", "", prompt)
-        prompt = re.sub(r"\s+", " ", prompt).strip()
-
-        horizontal_markers = ("16:9", "wide shot", "horizontal composition",
-                              "landscape framing", "wide angle", "rule of thirds")
-        if not any(m in prompt.lower() for m in horizontal_markers):
-            prompt = f"{prompt}, cinematic 16:9 horizontal framing, wide establishing composition"
-
-        return prompt
+        """Inyecta el ratio de imagen (16:9 / 9:16 / 1:1) según el formato configurado."""
+        from image_generation_manager import (
+            apply_aspect_ratio_to_visual_prompt,
+            primary_aspect_ratio_from_format,
+        )
+        platform = str(self.generation_config.get("platform") or "youtube")
+        video_format = self.generation_config.get("video_format")
+        ratio = primary_aspect_ratio_from_format(video_format, platform)
+        return apply_aspect_ratio_to_visual_prompt(prompt, ratio)
 
     def _build_output_path(self, images_dir: str, extension: str):
         import hashlib
@@ -613,9 +592,6 @@ class AIImageRegenerationWorker(QThread):
             if provider == "manual":
                 self.error.emit("El proveedor actual esta en modo manual.")
                 return
-
-                image_path = self._build_output_path(images_dir, ".jpg")
-                self.generated_image_source = "fal_ai"
 
             elif provider == "google_ai":
                 client = GoogleAiImageClient(log_callback=self.progress.emit)
@@ -688,7 +664,11 @@ class ContextualAIImageRegenerationWorker(QThread):
             from video_config import VideoConfig
             from gemini_ai_client import GeminiAiClient
             from prompt_processor import PromptProcessor
-            from image_generation_manager import ImageGenerationManager
+            from image_generation_manager import (
+                ImageGenerationManager,
+                apply_aspect_ratio_to_visual_prompt,
+                primary_aspect_ratio_from_format,
+            )
             from recraft_client import RecraftClient
             from google_ai_image_client import GoogleAiImageClient
 
@@ -761,6 +741,13 @@ class ContextualAIImageRegenerationWorker(QThread):
             if not visual_prompt:
                 self.error.emit("El segmento no tiene prompt visual util para regenerar la imagen.")
                 return
+
+            aspect_ratio = primary_aspect_ratio_from_format(
+                self.generation_config.get("video_format"),
+                platform,
+            )
+            visual_prompt = apply_aspect_ratio_to_visual_prompt(visual_prompt, aspect_ratio)
+            segment["visual_prompt"] = visual_prompt
 
             # Forzar regeneracion para este segmento sin tocar archivos/estado previo.
             segment.pop("image_path", None)

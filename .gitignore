@@ -3,8 +3,6 @@
 .env.*
 !.env.example
 .env.txt
-local_paths.py
-.venv_registry.json
 *.token
 client_secrets.json
 token.json
@@ -26,8 +24,6 @@ __pycache__/
 .venv/
 venv/
 env/
-python_portable/
-nodejs_portable/
 
 # --- IDE / tooling ---
 .vscode/
@@ -51,6 +47,13 @@ thumbnails_recraft/
 transition_overlays/
 scratch/
 comfyui_workflows/output/
+
+# --- Estado de runtime (la app lo reescribe; no va a git) ---
+crash_log.txt
+gui_config.json
+last_project_path.txt
+last_dir.txt
+test_comfy_output/
 
 # --- One-off scratch HTML / debug dumps ---
 bing.html
@@ -80,8 +83,4 @@ bing.html
 Thumbs.db
 .DS_Store
 desktop.ini
-
-# --- Sub-project handled separately ---
-shorts-saas/node_modules/
-shorts-saas/.next/
-shorts-saas/dist/
+token_*.json

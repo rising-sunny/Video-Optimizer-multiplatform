@@ -56,6 +56,8 @@ class YouTubeVideoSearchDialog(QDialog):
         super().__init__(parent)
         self.segment_data = segment_data or {}
         self.selected_video_path = None
+        self.region_edit = None
+        self._region_video_url = None
         self.videos = []
 
         # Variables para reproducción
@@ -342,6 +344,17 @@ class YouTubeVideoSearchDialog(QDialog):
         self.reset_crop_btn = reset_crop_btn
 
         crop_layout.addLayout(crop_buttons_layout)
+        region_row = QHBoxLayout()
+        self.region_edit_btn = QPushButton("Cubrir / quitar marca de agua…")
+        self.region_edit_btn.clicked.connect(self.edit_video_region)
+        region_row.addWidget(self.region_edit_btn)
+        self.region_status = QLabel("Sin efecto sobre el video")
+        region_row.addWidget(self.region_status, 1)
+        self.region_clear_btn = QPushButton("Quitar efecto")
+        self.region_clear_btn.clicked.connect(self.clear_video_region)
+        self.region_clear_btn.setEnabled(False)
+        region_row.addWidget(self.region_clear_btn)
+        crop_layout.addLayout(region_row)
         
         scroll_layout.addWidget(crop_group)
         
@@ -623,9 +636,38 @@ class YouTubeVideoSearchDialog(QDialog):
         
         QTimer.singleShot(0, load_thumbnail)
 
+    def clear_video_region(self):
+        self.region_edit = None
+        self.region_status.setText("Sin efecto sobre el video")
+        self.region_clear_btn.setEnabled(False)
+
+    def edit_video_region(self):
+        if not self.current_video_path or not os.path.isfile(self.current_video_path):
+            QMessageBox.information(self, "Video aún no disponible",
+                                    "Selecciona un video y espera a que cargue la vista previa.")
+            return
+        position = getattr(self, 'playback_position', 0.0)
+        self.stop_playback()
+        try:
+            from video_region_editor import VideoRegionEditor
+            dialog = VideoRegionEditor(self.current_video_path, position, self.region_edit, self)
+            if dialog.exec() == QDialog.DialogCode.Accepted:
+                self.region_edit = dialog.edit
+                label = {'cover': 'Cubrir', 'blur': 'Difuminar', 'remove': 'Quitar (aproximado)'}[dialog.edit['mode']]
+                self.region_status.setText(f"{label}: se aplicará al seleccionar el video")
+                self.region_clear_btn.setEnabled(True)
+        except Exception as exc:
+            QMessageBox.warning(self, "No se pudo editar la zona", str(exc))
+
     def on_selection_changed(self):
         """Habilita/deshabilita el botón de seleccionar y preview, y actualiza controles de recorte"""
         has_selection = self.results_list.currentItem() is not None
+        selected = self.results_list.currentItem()
+        selected_url = (selected.data(Qt.ItemDataRole.UserRole) or {}).get('url') if selected else None
+        if selected_url != self._region_video_url:
+            self.clear_video_region()
+            self.current_video_path = None
+            self._region_video_url = selected_url
         self.select_btn.setEnabled(has_selection)
         if hasattr(self, 'preview_btn'):
             self.preview_btn.setEnabled(has_selection)
@@ -1204,58 +1246,6 @@ class YouTubeVideoSearchDialog(QDialog):
         except Exception as e:
             print(f"️ Error mostrando frame: {e}")
 
-    def _start_ffplay_playback(self):
-        """Inicia la reproducción con FFplay externo"""
-        try:
-            # Matar proceso anterior si existe
-            if self._ffplay_process:
-                try:
-                    self._ffplay_process.terminate()
-                except:
-                    pass
-            
-            # -autoexit: cerrar al terminar
-            # -window_title: título personalizado
-            cmd = [
-                self._ffplay_path, 
-                '-autoexit', 
-                '-window_title', f"Preview: {os.path.basename(self.current_video_path)}",
-                self.current_video_path
-            ]
-            
-            # Si es modo recorte, añadir -ss y -t
-            # Nota: ffplay no soporta -to con la misma semántica exacta que ffmpeg en todos los casos, 
-            # pero -ss pos funciona. Para duración exacta es mejor -t (duration)
-            if getattr(self, '_playing_crop_range', False):
-                start = getattr(self, '_crop_play_start', 0.0)
-                end = getattr(self, '_crop_play_end', 0.0)
-                duration = end - start
-                if duration > 0:
-                    cmd.extend(['-ss', str(start), '-t', str(duration)])
-            elif self.playback_position > 0:
-                 cmd.extend(['-ss', str(self.playback_position)])
-            
-            # CREATE_NO_WINDOW para ocultar consola pero mostrar ventana de video
-            creationflags = 0x08000000 if os.name == 'nt' else 0
-            
-            print(f"️ Ejecutando FFplay: {' '.join(cmd)}")
-            
-            self._ffplay_process = subprocess.Popen(
-                cmd,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                creationflags=creationflags
-            )
-            
-            self.is_playing = True
-            if hasattr(self, 'play_btn'):
-                self.play_btn.setText("️ Stop (FFplay)")
-            if hasattr(self, 'stop_btn'):
-                self.stop_btn.setEnabled(True)
-                
-        except Exception as e:
-            print(f" Error iniciando FFplay: {e}")
-            QMessageBox.warning(self, "Error", f"No se pudo iniciar FFplay:\n{e}")
 
     def stop_playback(self):
         """Detiene la reproducción del video"""
@@ -1358,6 +1348,12 @@ class YouTubeVideoSearchDialog(QDialog):
             if downloaded_path and os.path.exists(downloaded_path):
                 # Convertir a ruta absoluta
                 downloaded_path = os.path.abspath(downloaded_path)
+                # La descarga queda como CACHE de solo lectura: cada recorte se
+                # escribe en su propio archivo. Antes se hacia os.replace()
+                # sobre ella, asi que sacar un segundo fragmento del mismo
+                # video reutilizaba el clip anterior o pisaba el segmento que
+                # ya lo estaba usando.
+                source_path = downloaded_path
                 self.current_video_path = downloaded_path  # Guardar ruta para reproducción
                 print(f" Video descargado exitosamente en: {downloaded_path}")
                 
@@ -1417,12 +1413,18 @@ class YouTubeVideoSearchDialog(QDialog):
                 # Aplicar recorte si esta habilitado (usando ffmpeg)
                 if crop_enabled and crop_start >= 0 and crop_end > crop_start and crop_end <= video_duration:
                     try:
-                        temp_output_path = downloaded_path + ".crop_temp.mp4"
+                        from output_naming import build_clip_filename
+
+                        clip_name = build_clip_filename(
+                            video_data.get('video_id', ''), video_data.get('title', ''),
+                            crop_start, crop_end)
+                        clip_path = os.path.join(os.path.dirname(source_path), clip_name)
+                        temp_output_path = clip_path + ".part.mp4"
                         duration = crop_end - crop_start
                         crop_cmd = [
                             "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
                             "-ss", f"{crop_start:.3f}",
-                            "-i", downloaded_path,
+                            "-i", source_path,
                             "-t", f"{duration:.3f}",
                             "-c:v", "libx264", "-preset", "fast",
                             "-c:a", "aac",
@@ -1434,8 +1436,11 @@ class YouTubeVideoSearchDialog(QDialog):
                             raise RuntimeError(f"ffmpeg error: {result.stderr[:300]}")
                         if not os.path.exists(temp_output_path) or os.path.getsize(temp_output_path) <= 0:
                             raise RuntimeError("El video recortado no se genero correctamente.")
-                        os.replace(temp_output_path, downloaded_path)
-                        print(f"[YouTube] Video recortado de {video_duration:.2f}s a {duration:.2f}s ({crop_start:.2f}s - {crop_end:.2f}s)")
+                        # Al archivo del recorte, NO sobre la descarga.
+                        os.replace(temp_output_path, clip_path)
+                        downloaded_path = clip_path
+                        print(f"[YouTube] Recorte {crop_start:.2f}s-{crop_end:.2f}s -> {clip_name}")
+                        print(f"[YouTube] La descarga completa queda intacta para otros recortes")
                         video_duration = duration
                     except Exception as e:
                         print(f"[WARN] Error recortando video: {e}")
@@ -1474,7 +1479,13 @@ class YouTubeVideoSearchDialog(QDialog):
 
                     if reply == QMessageBox.StandardButton.Yes:
                         try:
-                            temp_output_path = downloaded_path + ".trim_temp.mp4"
+                            from output_naming import build_clip_filename
+
+                            trim_name = build_clip_filename(
+                                video_data.get('video_id', ''), video_data.get('title', ''),
+                                0.0, segment_duration, suffix="trim")
+                            trim_path = os.path.join(os.path.dirname(source_path), trim_name)
+                            temp_output_path = trim_path + ".part.mp4"
                             trim_cmd = [
                                 "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
                                 "-i", downloaded_path,
@@ -1488,7 +1499,8 @@ class YouTubeVideoSearchDialog(QDialog):
                                 raise RuntimeError(f"ffmpeg error: {result.stderr[:300]}")
                             if not os.path.exists(temp_output_path) or os.path.getsize(temp_output_path) <= 0:
                                 raise RuntimeError("El video recortado no se genero correctamente.")
-                            os.replace(temp_output_path, downloaded_path)
+                            os.replace(temp_output_path, trim_path)
+                            downloaded_path = trim_path
                             print(f"[YouTube] Video cortado a {segment_duration:.1f}s")
                             video_duration = segment_duration
                         except Exception as e:
@@ -1547,7 +1559,17 @@ class YouTubeVideoSearchDialog(QDialog):
                                 raise RuntimeError(result.stderr or "ffmpeg loop failed")
                             if not os.path.exists(temp_output_path) or os.path.getsize(temp_output_path) <= 0:
                                 raise RuntimeError("El video extendido no se genero correctamente.")
-                            os.replace(temp_output_path, downloaded_path)
+                            # A su propio archivo: si el loop pisara la fuente,
+                            # el siguiente recorte del mismo video partiria de
+                            # un video ya repetido.
+                            from output_naming import build_clip_filename
+
+                            loop_name = build_clip_filename(
+                                video_data.get('video_id', ''), video_data.get('title', ''),
+                                0.0, segment_duration, suffix="loop")
+                            loop_path = os.path.join(os.path.dirname(source_path), loop_name)
+                            os.replace(temp_output_path, loop_path)
+                            downloaded_path = loop_path
                             print(f"[YouTube] Video extendido a {segment_duration:.1f}s mediante loop")
                             video_duration = segment_duration
                         except Exception as e:
@@ -1559,6 +1581,9 @@ class YouTubeVideoSearchDialog(QDialog):
                                 "Se mantendr? el video original."
                             )
 
+                if self.region_edit:
+                    from video_region_editor import export_region_copy
+                    downloaded_path = export_region_copy(downloaded_path, self.region_edit, self)
                 self.selected_video_path = downloaded_path
                 print(f" Ruta asignada al segmento: {self.selected_video_path}")
 

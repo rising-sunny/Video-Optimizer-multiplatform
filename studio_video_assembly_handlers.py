@@ -583,6 +583,10 @@ class StudioVideoAssemblyHandlers:
 
     def assemble_video(self):
         """Ensambla el video (Paso 2)"""
+        if (self.studio_tab.last_storyboard_data or {}).get('format_strategy') == 'micro_documentary':
+            from studio_channel_controls import open_pilot
+            open_pilot(self.studio_tab)
+            return
         # Detener reproductores multimedia en segundo plano para evitar
         # access violations nativas (VLC) durante el ensamblaje FFmpeg.
         self._stop_background_media_players()
@@ -780,6 +784,15 @@ class StudioVideoAssemblyHandlers:
 
         add_subtitles = self.studio_tab.subtitles_check.isChecked()
         add_overlays = False  # Overlays deshabilitados
+        if isinstance(modified_storyboard, dict):
+            modified_storyboard['_enable_transition_sfx'] = (
+                self.studio_tab.is_transition_sfx_enabled()
+                if hasattr(self.studio_tab, "is_transition_sfx_enabled") else True
+            )
+            modified_storyboard['_transition_sfx_path'] = (
+                self.studio_tab.get_transition_sfx_path()
+                if hasattr(self.studio_tab, "get_transition_sfx_path") else None
+            )
 
         visual_mode = 'static' if self.studio_tab.visual_static.isChecked() else 'mixed'
 
@@ -942,6 +955,8 @@ class StudioVideoAssemblyHandlers:
             cinematic_preset=self.studio_tab.cinematic_preset_combo.currentText().lower(),
             transition_type=self.studio_tab.transition_type_combo.currentText(),
             transition_duration=self.studio_tab.transition_duration_spin.value(),
+            enable_transition_sfx=self.studio_tab.is_transition_sfx_enabled() if hasattr(self.studio_tab, "is_transition_sfx_enabled") else True,
+            transition_sfx_path=self.studio_tab.get_transition_sfx_path() if hasattr(self.studio_tab, "get_transition_sfx_path") else None,
             generate_short_teaser=generate_short_teaser,
             use_wikimedia=use_wikimedia,  #  Nuevo parámetro para Wikimedia
             disable_wikimedia=disable_wikimedia,  #  Desactivar completamente Wikimedia
@@ -1048,11 +1063,27 @@ class StudioVideoAssemblyHandlers:
             _progress.show()
             QApplication.processEvents()
 
+            # Tope de pared. El TTS ya trae su propio timeout por request, pero
+            # este es el que garantiza que el dialogo SIEMPRE se cierre: no
+            # tiene boton de cancelar, asi que sin esto un cuelgue del proveedor
+            # deja la app inusable y hay que matarla (paso el 2026-09-02).
+            _limite_s = max(180.0, len(script) / 8.0)
+            _t0 = time.time()
             _t = threading.Thread(target=_tts_worker, daemon=True)
             _t.start()
             while _t.is_alive():
                 QApplication.processEvents()
                 _t.join(timeout=0.05)
+                if time.time() - _t0 > _limite_s:
+                    _progress.close()
+                    self.studio_tab.log(
+                        f"[FAIL] La generacion de narracion supero {_limite_s:.0f}s "
+                        f"y se aborto. Probá otra voz (gTTS no depende de la red "
+                        f"de Microsoft) o revisá la conexion."
+                    )
+                    modified_storyboard['audio_sync_status'] = 'error'
+                    modified_storyboard['audio_sync_error_at'] = datetime.now(timezone.utc).isoformat()
+                    return False
             _progress.close()
 
             if _tts_error[0]:

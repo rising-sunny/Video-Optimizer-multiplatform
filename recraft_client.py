@@ -68,6 +68,10 @@ RECRAFT_V3_VALID_SIZES = [
     (1024, 1707),  # ~3:5 portrait
 ]
 
+# Modelo fijado a proposito: ver el comentario del payload en generate_image.
+RECRAFT_MODEL = "recraftv3"
+
+
 class RecraftClient:
     """
     Cliente para interactuar con la API de Recraft para generación de imágenes.
@@ -175,8 +179,27 @@ class RecraftClient:
         if available_chars <= 20:
             return cls._trim_text(prompt_text, max_chars)
 
-        negative_text = cls._trim_text(negative_text, available_chars)
+        # Recortar por TERMINO COMPLETO, no por caracteres: cortar a la mitad
+        # deja fragmentos como "fused" (de "fused fingers") o "modern" (de
+        # "modern clothing"), que no filtran nada y pueden confundir al modelo.
+        negative_text = cls._trim_negative_terms(negative_text, available_chars)
+        if not negative_text:
+            return cls._trim_text(prompt_text, max_chars)
         return f"{prompt_text}{avoid_prefix}{negative_text}".rstrip()
+
+    @staticmethod
+    def _trim_negative_terms(negative: str, max_chars: int) -> str:
+        """Recorta una lista separada por comas sin partir ningun termino."""
+        terminos = [t.strip() for t in (negative or "").split(",") if t.strip()]
+        salida: list[str] = []
+        largo = 0
+        for t in terminos:
+            extra = len(t) + (2 if salida else 0)
+            if largo + extra > max_chars:
+                break
+            salida.append(t)
+            largo += extra
+        return ", ".join(salida)
 
     def generate_image(
         self,
@@ -269,10 +292,21 @@ class RecraftClient:
             
             # Payload según documentación oficial
             # Ejemplo oficial: {"prompt": "...", "style": "realistic_image", "size": "1280x1024", "model": "recraftv3"}
+            # El modelo va EXPLICITO a proposito. Sin este campo, Recraft elige
+            # el default del servidor: hoy resuelve a V3 y funciona, pero cuando
+            # muevan ese default a V4.x este payload empieza a fallar con
+            # 400 invalid_image_type ("V4.1 doesn't support style
+            # 'realistic_image'") -- verificado contra la API el 2026-08-27.
+            #
+            # Se queda en V3 tambien por resolucion: en vertical 9:16 V3 entrega
+            # 1024x1820 y V4.1 solo 768x1344, o sea mas reescalado hasta los
+            # 1080x1920 del render. Para pasar a V4/V4.1 hay que cambiar ademas
+            # `style` a "any" y el tamano a notacion "9:16".
             data = {
                 "prompt": prompt,
                 "style": style_used,
                 "size": size_str,
+                "model": RECRAFT_MODEL,
             }
             
             # Endpoint oficial según documentación
@@ -285,7 +319,7 @@ class RecraftClient:
             # Hacer la petición POST según documentación oficial
             # https://www.recraft.ai/docs/api-reference/guides
             self._log(f"    URL: {url}")
-            self._log(f"    Payload: prompt='{prompt[:50]}...', style={style_used}, size={size_str}, model=auto")
+            self._log(f"    Payload: prompt='{prompt[:50]}...', style={style_used}, size={size_str}, model={RECRAFT_MODEL}")
             response = requests.post(url, headers=headers, json=data, timeout=60)
             
             if response.status_code == 200:
@@ -436,36 +470,4 @@ class RecraftClient:
             self._log(f"    Error inesperado en Recraft: {e}")
             return None
     
-    def generate_and_save_image(
-        self,
-        prompt: str,
-        output_dir: str,
-        filename: str = None,
-        **kwargs
-    ) -> Optional[str]:
-        """
-        Genera una imagen y la guarda en el directorio especificado.
-        
-        Args:
-            prompt: Descripción de la imagen
-            output_dir: Directorio donde guardar la imagen
-            filename: Nombre del archivo (sin extensión). Si es None, se genera automáticamente
-            **kwargs: Parámetros adicionales para generate_image
-            
-        Returns:
-            Ruta completa del archivo guardado, o None si falla
-        """
-        if filename is None:
-            timestamp = int(time.time())
-            filename = f"recraft_{timestamp}.png"
-        elif not filename.endswith('.png'):
-            filename = f"{filename}.png"
-        
-        output_path = Path(output_dir) / filename
-        
-        result = self.generate_image(prompt, output_path=str(output_path), **kwargs)
-        
-        if result and result.get("path"):
-            return result["path"]
-        return None
 

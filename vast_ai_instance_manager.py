@@ -77,15 +77,6 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
-def _redact(value: Optional[str]) -> str:
-    if not value:
-        return ""
-    value = str(value)
-    if len(value) <= 8:
-        return "***"
-    return f"{value[:4]}...{value[-4:]}"
-
-
 @dataclass
 class VastAiInstanceManager:
     """Start/stop Vast.ai and expose remote ComfyUI through localhost."""
@@ -349,16 +340,6 @@ class VastAiInstanceManager:
         )
         return True
 
-    def reset_fatal_error(self) -> None:
-        """Clear the circuit breaker so the next ensure_ready() retries the API.
-
-        Call this after the user has fixed the underlying cause (added credit,
-        pointed VAST_INSTANCE_ID at a fresh instance, etc.).
-        """
-        if self._fatal_start_error is not None:
-            self._log("[Vast.ai] Reset del circuit breaker - se reintentara el arranque")
-        self._fatal_start_error = None
-        self._failover_attempted = False
 
     def start_instance(self) -> None:
         instance = self.get_instance()
@@ -570,19 +551,6 @@ class VastAiInstanceManager:
                 self._log(f"[Vast.ai] Stop request HTTP {response.status_code}: {body}")
         except Exception as exc:
             self._log(f"[Vast.ai] Stop request error: {exc}")
-
-    def describe_safe(self) -> dict[str, Any]:
-        return {
-            "enabled": self.enabled,
-            "instance_id": self.instance_id,
-            "api_key": _redact(self.api_key),
-            "ssh_host": self.ssh_host,
-            "ssh_port": self.ssh_port,
-            "local": f"{self.local_host}:{self.local_port}",
-            "remote": f"{self.remote_host}:{self.remote_port}",
-            "auto_stop_on_exit": self.auto_stop_on_exit,
-            "auto_failover": self.auto_failover,
-        }
 
 
 _DEFAULT_MANAGER: Optional[VastAiInstanceManager] = None

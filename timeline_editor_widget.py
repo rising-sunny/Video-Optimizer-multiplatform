@@ -8,7 +8,8 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTextEdit, QScrollArea, QFrame, QSplitter, QLineEdit,
     QSpinBox, QDoubleSpinBox, QGroupBox, QMessageBox, QMenu,
-    QDialog, QGridLayout, QListWidget, QListWidgetItem, QProgressBar, QCheckBox
+    QDialog, QGridLayout, QListWidget, QListWidgetItem, QProgressBar, QCheckBox,
+    QDialogButtonBox, QAbstractItemView
 )
 from PyQt6.QtCore import QTimer
 from PyQt6.QtCore import Qt, pyqtSignal, QMimeData, QPoint, QUrl, QSize
@@ -204,6 +205,120 @@ class SubtitlePreview(QLabel):
         """)
         self.setText("Vista previa de subtÃ­tulos")
 
+
+class SharedImageRangeDialog(QDialog):
+    """Elige cuántos segmentos consecutivos cubre una still, viendo el texto."""
+
+    def __init__(self, parent, segments, start_index, default_count=1):
+        super().__init__(parent)
+        self.setWindowTitle("Imagen compartida")
+        self.setMinimumSize(560, 420)
+        self._start_index = int(start_index)
+        self._candidates = []
+        remaining = list(segments[start_index:])
+        for offset, seg in enumerate(remaining):
+            if not isinstance(seg, dict):
+                seg = {}
+            abs_idx = start_index + offset
+            text = (seg.get("text") or seg.get("narration_text") or "").strip()
+            start_t = seg.get("start", seg.get("start_time"))
+            end_t = seg.get("end", seg.get("end_time"))
+            timing = ""
+            try:
+                if start_t is not None and end_t is not None:
+                    timing = f"{float(start_t):.1f}s–{float(end_t):.1f}s"
+            except (TypeError, ValueError):
+                timing = ""
+            preview = " ".join(text.split())
+            if len(preview) > 110:
+                preview = preview[:107] + "..."
+            self._candidates.append({
+                "index": abs_idx,
+                "timing": timing,
+                "preview": preview or "(sin texto)",
+            })
+
+        max_count = max(1, len(self._candidates))
+        self._count = max(1, min(int(default_count or 1), max_count))
+
+        layout = QVBoxLayout(self)
+        layout.addWidget(QLabel(
+            f"Esta still empieza en el segmento #{start_index + 1}.\n"
+            "Marca hasta dónde llega (los resaltados la compartirán)."
+        ))
+
+        self.list_widget = QListWidget()
+        self.list_widget.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
+        for i, item in enumerate(self._candidates):
+            timing = f"  ·  {item['timing']}" if item["timing"] else ""
+            row = QListWidgetItem(f"#{item['index'] + 1}{timing}\n    {item['preview']}")
+            row.setData(Qt.ItemDataRole.UserRole, i + 1)
+            self.list_widget.addItem(row)
+        self.list_widget.itemClicked.connect(self._on_item_clicked)
+        layout.addWidget(self.list_widget, 1)
+
+        controls = QHBoxLayout()
+        controls.addWidget(QLabel("Cubrir"))
+        self.count_spin = QSpinBox()
+        self.count_spin.setRange(1, max_count)
+        self.count_spin.setValue(self._count)
+        self.count_spin.valueChanged.connect(self._on_spin_changed)
+        controls.addWidget(self.count_spin)
+        controls.addWidget(QLabel("segmentos, hasta el #"))
+        self.until_label = QLabel("")
+        controls.addWidget(self.until_label)
+        controls.addStretch(1)
+        layout.addLayout(controls)
+
+        self.summary_label = QLabel("")
+        self.summary_label.setWordWrap(True)
+        layout.addWidget(self.summary_label)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Aplicar")
+        buttons.rejected.connect(self.reject)
+        buttons.accepted.connect(self.accept)
+        only_one = buttons.addButton("Solo este", QDialogButtonBox.ButtonRole.ActionRole)
+        only_one.clicked.connect(self._choose_only_one)
+        layout.addWidget(buttons)
+
+        self._refresh_highlight()
+
+    def _choose_only_one(self):
+        self.count_spin.setValue(1)
+        self.accept()
+
+    def _on_item_clicked(self, item):
+        count = item.data(Qt.ItemDataRole.UserRole)
+        if count:
+            self.count_spin.setValue(int(count))
+
+    def _on_spin_changed(self, value):
+        self._count = int(value)
+        self._refresh_highlight()
+
+    def _refresh_highlight(self):
+        until_idx = self._start_index + self._count
+        self.until_label.setText(str(until_idx))
+        self.summary_label.setText(
+            f"La imagen cubrirá los segmentos #{self._start_index + 1}–#{until_idx} "
+            f"({self._count} en total)."
+        )
+        for row in range(self.list_widget.count()):
+            item = self.list_widget.item(row)
+            covered = row < self._count
+            item.setSelected(covered)
+            if covered:
+                item.setBackground(QColor("#2d4a6f"))
+            else:
+                item.setBackground(QColor("#1e1e1e"))
+
+    def selected_count(self) -> int:
+        return int(self._count)
+
+
 class TimelineEditorWidget(QWidget):
     """
     Widget principal del Timeline Editor.
@@ -274,6 +389,59 @@ class TimelineEditorWidget(QWidget):
         except Exception:
             pass
         return segment_data
+
+    def _get_selected_image_aspect_ratio(self) -> str:
+        """Aspect ratio de imagen según el formato elegido en la GUI principal."""
+        from image_generation_manager import primary_aspect_ratio_from_format
+
+        studio = self.studio_tab or self._get_studio_tab()
+        video_format = None
+        platform = None
+        if studio is not None:
+            if hasattr(studio, "get_selected_output_profiles"):
+                try:
+                    profiles = studio.get_selected_output_profiles() or []
+                    if profiles:
+                        video_format = profiles[0].get("video_format")
+                        platform = profiles[0].get("platform")
+                except Exception:
+                    pass
+            if not video_format and hasattr(studio, "get_selected_video_format"):
+                try:
+                    video_format = studio.get_selected_video_format()
+                except Exception:
+                    pass
+            if not platform and hasattr(studio, "get_selected_platform_key"):
+                try:
+                    platform = studio.get_selected_platform_key()
+                except Exception:
+                    pass
+        return primary_aspect_ratio_from_format(video_format, platform)
+
+    def _ensure_prompt_has_selected_aspect(self, prompt: str) -> str:
+        """Inyecta 16:9 / 9:16 / 1:1 según el combo 'Formato de video' de la GUI."""
+        from image_generation_manager import apply_aspect_ratio_to_visual_prompt
+        return apply_aspect_ratio_to_visual_prompt(
+            prompt,
+            self._get_selected_image_aspect_ratio(),
+        )
+
+    def _format_label_for_copied_prompts(self) -> str:
+        """Etiqueta '16:9  (1920×1080px)' para el texto copiado al portapapeles."""
+        ratio = self._get_selected_image_aspect_ratio()
+        resolution = (1920, 1080)
+        if ratio == "9:16":
+            resolution = (1080, 1920)
+        elif ratio == "1:1":
+            resolution = (1080, 1080)
+        studio = self.studio_tab or self._get_studio_tab()
+        if studio and hasattr(studio, "get_selected_resolution"):
+            try:
+                resolution = studio.get_selected_resolution() or resolution
+            except Exception:
+                pass
+        w, h = resolution
+        return f"{ratio}  ({w}×{h}px)"
 
     def _get_recraft_prompt_style(self) -> str:
         """Obtiene el estilo Recraft visible en la UI."""
@@ -395,6 +563,21 @@ class TimelineEditorWidget(QWidget):
         prompt_data = self._resolve_recraft_prompt_for_segment(segment_index)
         prompt = (prompt_data or {}).get('prompt', '').strip()
         negative_prompt = (prompt_data or {}).get('negative_prompt', '').strip()
+
+        if not prompt:
+            prompt = str(
+                (self.segments[segment_index] if 0 <= segment_index < len(self.segments) else {})
+                .get('visual_prompt') or ''
+            ).strip()
+        if not negative_prompt and 0 <= segment_index < len(self.segments):
+            negative_prompt = str(
+                self.segments[segment_index].get('negative_prompt')
+                or self.segments[segment_index].get('neg_prompt')
+                or ''
+            ).strip()
+
+        if prompt:
+            prompt = self._ensure_prompt_has_selected_aspect(prompt)
         
         if not prompt and not negative_prompt:
             from PyQt6.QtWidgets import QMessageBox
@@ -405,7 +588,8 @@ class TimelineEditorWidget(QWidget):
             )
             return
 
-        text_to_copy = ""
+        format_label = self._format_label_for_copied_prompts()
+        text_to_copy = f"Formato: {format_label}\n\n"
         if prompt:
             # \n reales (no \\n) para que al pegar se rendericen como saltos de línea
             # y no como los dos caracteres literales backslash+n.
@@ -429,19 +613,7 @@ class TimelineEditorWidget(QWidget):
         # Asegurar que la orientación de los prompts es coherente con el formato actual
         self._fix_segment_prompts_orientation()
 
-        # Formato desde la config del studio
-        video_format = "16:9"
-        resolution = (1920, 1080)
-        if self.studio_tab and hasattr(self.studio_tab, 'get_selected_output_profiles'):
-            try:
-                profiles = self.studio_tab.get_selected_output_profiles()
-                if profiles:
-                    video_format = profiles[0].get('video_format', '16:9')
-                    resolution = profiles[0].get('resolution', (1920, 1080))
-            except Exception:
-                pass
-        w, h = resolution
-        format_label = f"{video_format}  ({w}×{h}px)"
+        format_label = self._format_label_for_copied_prompts()
 
         # Contexto del guión desde last_storyboard_data
         storyboard_data = {}
@@ -491,6 +663,9 @@ class TimelineEditorWidget(QWidget):
                 prompt = str(self.segments[i].get('visual_prompt') or self.segments[i].get('prompt') or '').strip()
             if not neg:
                 neg = str(self.segments[i].get('negative_prompt') or self.segments[i].get('neg_prompt') or '').strip()
+
+            if prompt:
+                prompt = self._ensure_prompt_has_selected_aspect(prompt)
 
             if not prompt and not neg:
                 continue
@@ -652,68 +827,6 @@ class TimelineEditorWidget(QWidget):
             print(f"[TimelineEditor] âš ï¸ No se pudo forzar commit del segmento activo: {e}")
             return False
     
-    def _force_save_now_legacy(self):
-        """Fuerza el guardado inmediato sin delay (Ãºtil al cerrar)"""
-        try:
-            # Detener timer si estÃ¡ corriendo
-            if self._auto_save_timer:
-                self._auto_save_timer.stop()
-
-            # Persistir el segmento activo (panel derecho) antes de sincronizar/guardar.
-            # Evita perder texto reciÃ©n escrito si el debounce no alcanzÃ³ a disparar.
-            if hasattr(self, 'segment_editor') and self.segment_editor:
-                if getattr(self.segment_editor, 'current_segment', None):
-                    committed = self.commit_active_segment_edits()
-                    if not committed:
-                        self.segment_editor.save_changes()
-                    if self._auto_save_timer:
-                        self._auto_save_timer.stop()
-            
-            print("[TimelineEditor] ðŸ”„ Iniciando guardado forzado...")
-            
-            # IMPORTANTE: Verificar que tenemos segmentos con videos/imÃ¡genes
-            segments_with_media = sum(1 for seg in self.segments 
-                                     if (seg.get('image_path') or seg.get('video_path')) and 
-                                     (seg.get('image_source') in ['youtube', 'wikimedia', 'pexels_video', 'wikimedia_video', 'internet_archive'] or
-                                      seg.get('video_source') in ['youtube', 'wikimedia', 'pexels_video', 'wikimedia_video', 'internet_archive']))
-            if segments_with_media > 0:
-                print(f"[TimelineEditor] ðŸ“¹ Detectados {segments_with_media} segmentos con videos/imÃ¡genes para guardar")
-                for i, seg in enumerate(self.segments):
-                    if (seg.get('image_path') or seg.get('video_path')) and (seg.get('image_source') or seg.get('video_source')):
-                        print(f"   Segmento {i+1}: image_path={seg.get('image_path')}, video_path={seg.get('video_path')}")
-                        print(f"      image_source={seg.get('image_source')}, video_source={seg.get('video_source')}")
-            
-            # Usar studio_tab guardado o buscar desde el parent
-            studio_tab = self.studio_tab
-            if not studio_tab:
-                # Fallback: buscar desde parent
-                parent = self.parent()
-                while parent:
-                    if hasattr(parent, 'studio_tab') and parent.studio_tab:
-                        studio_tab = parent.studio_tab
-                        break
-                    elif hasattr(parent, 'project_manager'):
-                        studio_tab = parent
-                        break
-                    elif hasattr(parent, 'parent'):
-                        parent = parent.parent()
-                    else:
-                        break
-            
-            if studio_tab and hasattr(studio_tab, 'project_manager'):
-                # Guardar inmediatamente (esto tambiÃ©n sincronizarÃ¡ el Timeline Editor)
-                print("[TimelineEditor] ðŸ’¾ Llamando a auto_save_project...")
-                studio_tab.project_manager.auto_save_project("guardado forzado desde Timeline Editor")
-                print("[TimelineEditor] âœ… Guardado completado")
-            else:
-                print("âš ï¸ [TimelineEditor] No se encontrÃ³ studio_tab o project_manager")
-                if hasattr(self, 'studio_tab'):
-                    print(f"   self.studio_tab existe: {self.studio_tab is not None}")
-                print(f"   studio_tab encontrado: {studio_tab is not None}")
-        except Exception as e:
-            print(f"âš ï¸ Error en guardado forzado: {e}")
-            import traceback
-            traceback.print_exc()
     
     def force_save_now(self):
         """Fuerza el guardado inmediato sin delay (útil al cerrar)."""
@@ -921,7 +1034,10 @@ class TimelineEditorWidget(QWidget):
         toolbar_layout.addStretch()
 
         copy_prompts_btn = QPushButton("Copiar todos los prompts")
-        copy_prompts_btn.setToolTip("Copia al portapapeles un prompt unificado con los visual prompts y neg prompts de todos los segmentos")
+        copy_prompts_btn.setToolTip(
+            "Copia al portapapeles los visual prompts de todos los segmentos, "
+            "incluyendo el formato de imagen seleccionado en la GUI (16:9, 9:16, 1:1)."
+        )
         copy_prompts_btn.setStyleSheet(
             "QPushButton { padding: 3px 10px; font-size: 9pt; border-radius: 4px; }"
         )
@@ -995,52 +1111,22 @@ class TimelineEditorWidget(QWidget):
         self.refresh_timeline()
 
     def _fix_segment_prompts_orientation(self):
-        """Corrige la orientación de los visual_prompt almacenados según el formato del proyecto."""
-        import re as _re
-
-        try:
-            studio_tab = self._get_studio_tab()
-            platform = "youtube"
-            if studio_tab and hasattr(studio_tab, "get_selected_platform_key"):
-                platform = studio_tab.get_selected_platform_key() or "youtube"
-        except Exception:
-            platform = "youtube"
-
-        is_horizontal = platform not in ("youtube_vertical", "youtube_short", "tiktok", "reels", "9:16")
-        if not is_horizontal:
-            return
-
-        portrait_patterns = [
-            r",?\s*vertical\s+9:16\s+portrait\s+composition\s+(?:for\s+youtube\s+shorts\s+)?",
-            r",?\s*vertical\s+portrait\s+composition(?:\s+optimized\s+for\s+mobile[^,]*)?",
-            r",?\s*portrait\s+orientation",
-            r",?\s*mobile[- ]safe\s+viewing",
-            r",?\s*lower[- ]third\s+negative\s+space(?:\s+for\s+subtitles)?",
-            r",?\s*subject\s+centered\s+in\s+the\s+middle\s+safe\s+area",
-            r",?\s*no\s+important\s+details\s+at\s+the\s+edges",
-            r"\bvertical\s+portrait\b",
-            r"\b9:16\b",
-        ]
-        horizontal_markers = ("16:9", "wide shot", "horizontal composition",
-                              "landscape framing", "wide angle", "rule of thirds")
+        """Corrige la orientación de los visual_prompt según el formato de la GUI."""
+        ratio = self._get_selected_image_aspect_ratio()
         fixed = 0
         for seg in self.segments:
             prompt = str(seg.get('visual_prompt') or '').strip()
             if not prompt:
                 continue
-            original = prompt
-            for pat in portrait_patterns:
-                prompt = _re.sub(pat, "", prompt, flags=_re.IGNORECASE)
-            prompt = _re.sub(r",\s*,+", ", ", prompt)
-            prompt = _re.sub(r"^\s*,\s*", "", prompt)
-            prompt = _re.sub(r"\s+", " ", prompt).strip()
-            if not any(m in prompt.lower() for m in horizontal_markers):
-                prompt = f"{prompt}, cinematic 16:9 horizontal framing, wide establishing composition"
-            if prompt != original:
-                seg['visual_prompt'] = prompt
+            updated = self._ensure_prompt_has_selected_aspect(prompt)
+            if updated != prompt:
+                seg['visual_prompt'] = updated
                 fixed += 1
         if fixed:
-            print(f"[TimelineEditor] Orientación de prompts corregida: {fixed} segmento(s) actualizados a 16:9")
+            print(
+                f"[TimelineEditor] Orientación de prompts corregida: "
+                f"{fixed} segmento(s) actualizados a {ratio}"
+            )
 
     def _normalize_groupable_image_path(self, image_path):
         """Normaliza una ruta candidata para agrupacion visual por imagen."""
@@ -1203,7 +1289,13 @@ class TimelineEditorWidget(QWidget):
                 wrapper.grouped_strip_watermark_requested.connect(self._on_grouped_strip_watermark_requested)
                 wrapper.grouped_generate_fal_image_requested.connect(self._on_grouped_generate_fal_image)
                 wrapper.grouped_animate_fal_video_requested.connect(self._on_grouped_animate_fal_video)
+                wrapper.grouped_extend_requested.connect(self._on_grouped_extend_requested)
+                wrapper.grouped_shrink_requested.connect(self._on_grouped_shrink_requested)
                 wrapper.set_fal_mode(_fal_mode)
+                wrapper.set_range_actions_enabled(
+                    can_extend=(g_end + 1 < total),
+                    can_shrink=(g_end > g_start),
+                )
                 self._grouped_wrappers.append(wrapper)
 
                 # Insertar secuencialmente antes del stretch final para mantener
@@ -1327,6 +1419,58 @@ class TimelineEditorWidget(QWidget):
                 seg.pop('image_source', None)
                 seg.pop('image_deleted', None)
         self._trigger_auto_save("despues de quitar imagen compartida de grupo")
+        self.refresh_timeline()
+
+    def _on_grouped_extend_requested(self, indices):
+        """Suma el segmento siguiente al grupo, reutilizando la still compartida."""
+        valid = sorted({int(i) for i in (indices or []) if isinstance(i, int) and 0 <= i < len(self.segments)})
+        if not valid:
+            return
+        last = valid[-1]
+        nxt = last + 1
+        if nxt >= len(self.segments):
+            return
+        first = valid[0]
+        image_path = self.segments[first].get("image_path")
+        if not image_path:
+            return
+        next_seg = self.segments[nxt]
+        next_img = self._get_groupable_image_path_for_segment(next_seg)
+        current_img = self._normalize_groupable_image_path(image_path)
+        if next_img and next_img != current_img:
+            reply = QMessageBox.question(
+                self,
+                "Reemplazar imagen",
+                (
+                    f"El segmento #{nxt + 1} ya tiene otra imagen.\n"
+                    "¿Reemplazarla y sumarlo a este grupo?"
+                ),
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+        next_seg["image_path"] = image_path
+        next_seg["image_source"] = self.segments[first].get("image_source") or "local"
+        if self.segments[first].get("visual_key"):
+            next_seg["visual_key"] = self.segments[first]["visual_key"]
+        next_seg.pop("video_path", None)
+        next_seg.pop("video_source", None)
+        next_seg.pop("image_deleted", None)
+        self._trigger_auto_save("despues de extender grupo de imagen compartida")
+        self.refresh_timeline()
+
+    def _on_grouped_shrink_requested(self, indices):
+        """Quita el último segmento del grupo (deja de usar la still compartida)."""
+        valid = sorted({int(i) for i in (indices or []) if isinstance(i, int) and 0 <= i < len(self.segments)})
+        if len(valid) < 2:
+            return
+        last = valid[-1]
+        seg = self.segments[last]
+        seg.pop("image_path", None)
+        seg.pop("image_source", None)
+        seg.pop("image_deleted", None)
+        self._trigger_auto_save("despues de encoger grupo de imagen compartida")
         self.refresh_timeline()
 
     def _on_grouped_image_ungroup_requested(self, indices):
@@ -2865,60 +3009,10 @@ Next segment:
             pass
         return 1
 
-    def _group_segment_indices_by_frequency(self, segment_indices, segments_per_image):
-        """
-        Agrupa indices consecutivos en bloques de tamano fijo.
-        No mezcla huecos para respetar limites naturales entre segmentos.
-        """
-        if not segment_indices:
-            return []
-
-        try:
-            chunk_size = max(1, int(segments_per_image))
-        except Exception:
-            chunk_size = 1
-
-        sorted_indices = sorted(set(segment_indices))
-        if chunk_size <= 1:
-            return [[idx] for idx in sorted_indices]
-
-        groups = []
-        current_run = [sorted_indices[0]]
-        for idx in sorted_indices[1:]:
-            if idx == current_run[-1] + 1:
-                current_run.append(idx)
-            else:
-                for i in range(0, len(current_run), chunk_size):
-                    groups.append(current_run[i:i + chunk_size])
-                current_run = [idx]
-
-        if current_run:
-            for i in range(0, len(current_run), chunk_size):
-                groups.append(current_run[i:i + chunk_size])
-
-        return groups
-
-    def _format_segment_group_preview(self, segment_groups, limit=10):
-        """Formatea grupos para mostrarlos en dialogos de confirmacion."""
-        if not segment_groups:
-            return ""
-
-        labels = []
-        for group in segment_groups[:limit]:
-            if len(group) == 1:
-                labels.append(str(group[0] + 1))
-            else:
-                labels.append(f"{group[0] + 1}-{group[-1] + 1}")
-
-        preview = ", ".join(labels)
-        if len(segment_groups) > limit:
-            preview += ", ..."
-        return preview
 
     def _generate_ai_images_for_segments(self, segment_indices, clean_existing_ai=True,
                                          segment_groups=None, segments_per_image=1):
         """Genera imagenes para una lista de segmentos."""
-        from PyQt6.QtCore import QThreadPool
         self._ai_batch_clean_mode = bool(clean_existing_ai)
         self._ai_segment_group_map = {}
         self._ai_segments_per_image = max(1, int(segments_per_image or 1))
@@ -2950,37 +3044,6 @@ Next segment:
                 platform = studio_tab.get_selected_platform_key() or "youtube"
         except Exception:
             platform = "youtube"
-
-        _is_horizontal_platform = platform not in (
-            "youtube_vertical", "youtube_short", "tiktok", "reels", "9:16"
-        )
-
-        def _fix_prompt_orientation_inline(prompt: str) -> str:
-            """Strip portrait keywords and add 16:9 guidance for horizontal platforms."""
-            import re as _re
-            if not _is_horizontal_platform:
-                return prompt
-            portrait_patterns = [
-                r",?\s*vertical\s+9:16\s+portrait\s+composition\s+(?:for\s+youtube\s+shorts\s+)?",
-                r",?\s*vertical\s+portrait\s+composition(?:\s+optimized\s+for\s+mobile[^,]*)?",
-                r",?\s*portrait\s+orientation",
-                r",?\s*mobile[- ]safe\s+viewing",
-                r",?\s*lower[- ]third\s+negative\s+space(?:\s+for\s+subtitles)?",
-                r",?\s*subject\s+centered\s+in\s+the\s+middle\s+safe\s+area",
-                r",?\s*no\s+important\s+details\s+at\s+the\s+edges",
-                r"\bvertical\s+portrait\b",
-                r"\b9:16\b",
-            ]
-            for pat in portrait_patterns:
-                prompt = _re.sub(pat, "", prompt, flags=_re.IGNORECASE)
-            prompt = _re.sub(r",\s*,+", ", ", prompt)
-            prompt = _re.sub(r"^\s*,\s*", "", prompt)
-            prompt = _re.sub(r"\s+", " ", prompt).strip()
-            horizontal_markers = ("16:9", "wide shot", "horizontal composition",
-                                  "landscape framing", "wide angle", "rule of thirds")
-            if not any(m in prompt.lower() for m in horizontal_markers):
-                prompt = f"{prompt}, cinematic 16:9 horizontal framing, wide establishing composition"
-            return prompt
 
         valid_segment_indices = sorted(set(
             idx for idx in segment_indices if isinstance(idx, int) and 0 <= idx < len(self.segments)
@@ -3065,8 +3128,7 @@ Next segment:
                     if len(group_prompts) > 3:
                         visual_prompt = f"{visual_prompt}, cohesive scene composition"
 
-            # Corregir orientación: strip portrait/9:16 keywords for horizontal projects
-            visual_prompt = _fix_prompt_orientation_inline(visual_prompt)
+            visual_prompt = self._ensure_prompt_has_selected_aspect(visual_prompt)
 
             # Unificar el prompt (ya corregido) en todos los segmentos del grupo
             for idx in group:
@@ -3083,6 +3145,7 @@ Next segment:
                 "image_provider": provider_key,
                 "style": style,
                 "platform": platform,
+                "video_format": self._get_selected_image_aspect_ratio(),
             }
             worker = AIImageRegenerationWorker(
                 segment_index,
@@ -4137,165 +4200,7 @@ Next segment:
             import traceback
             traceback.print_exc()
     
-    def _legacy_regenerate_ai_image(self, segment_index):
-        """Implementacion legacy conservada temporalmente para referencia."""
-        if segment_index < 0 or segment_index >= len(self.segments):
-            return
-        
-        segment = self.segments[segment_index]
-        visual_prompt = segment.get('visual_prompt', '')
-        
-        if not visual_prompt:
-            QMessageBox.warning(
-                self,
-                "Sin Prompt Visual",
-                "Este segmento no tiene un prompt visual para generar la imagen.\n"
-                "Se necesita un prompt visual para generar una imagen."
-            )
-            return
-        
-        # Verificar si el motor de generacion esta disponible
-        try:
-            from recraft_client import RecraftClient
-            recraft_client = RecraftClient()
-
-            if not recraft_client.api_key:
-                QMessageBox.warning(
-                    self,
-                    "API Key no configurada",
-                    "No hay API key configurada para el motor de generacion.\n"
-                    "Configura RECRAFT_API_KEY en tu archivo .env"
-                )
-                return
-        except Exception as e:
-            QMessageBox.critical(
-                self,
-                "Error",
-                f"No se pudo inicializar el motor de generacion:\n{str(e)}"
-            )
-            return
-        
-        # Confirmar regeneraciÃ³n
-        reply = QMessageBox.question(
-            self,
-            "Regenerar imagen",
-            f"¿Deseas regenerar la imagen del segmento #{segment_index + 1}?\n\n"
-            f"Prompt: {visual_prompt[:100]}...\n\n"
-            f"Esto reemplazarÃ¡ la imagen actual del segmento.",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-        )
-        
-        if reply != QMessageBox.StandardButton.Yes:
-            return
-        
-        # IMPORTANTE: Limpiar completamente imagenes antiguas al generar nuevas
-        # Esto evita mezclar imagenes de diferentes sesiones
-        
-        # Si hay una imagen anterior, eliminarla fisicamente
-        old_image_path = segment.get('image_path')
-        old_image_source = segment.get('image_source', '')
-        
-        if old_image_path and old_image_source in TIMELINE_AI_IMAGE_SOURCES:
-            try:
-                old_path = Path(old_image_path)
-                if old_path.exists():
-                    os.remove(old_path)
-                    print(f"   Imagen anterior eliminada: {old_path.name}")
-            except Exception as e:
-                print(f"   No se pudo eliminar imagen anterior: {e}")
-        
-        # Crear worker para generar imagen con timestamp Ãºnico
-        import time
-        unique_filename = f"{segment.get('assigned_filename', f'segment_{segment_index+1:03d}')}_new_{int(time.time())}"
-        worker = AIImageRegenerationWorker(segment_index, visual_prompt, unique_filename)
-        worker.finished.connect(lambda idx, path: self.on_ai_image_generated(idx, path))
-        worker.error.connect(lambda msg: QMessageBox.critical(self, "Error", f"Error generando imagen:\n{msg}"))
-        worker.progress.connect(lambda msg: print(f"   {msg}"))  # Log en consola
-        worker.start()
     
-    def _legacy_on_ai_image_generated(self, segment_index, image_path):
-        """Callback legacy conservado temporalmente para referencia."""
-        if segment_index < 0 or segment_index >= len(self.segments):
-            return
-        
-        if not image_path or not os.path.exists(image_path):
-            QMessageBox.critical(
-                self,
-                "Error",
-                "No se pudo generar la imagen. Verifica la API key configurada."
-            )
-            return
-        
-        # IMPORTANTE: Si hay un proyecto activo, copiar la imagen al proyecto
-        final_image_path = image_path
-        if hasattr(self, 'studio_tab') and hasattr(self.studio_tab, 'current_project_path') and self.studio_tab.current_project_path:
-            from pathlib import Path
-            import shutil
-            
-            project_path_obj = Path(self.studio_tab.current_project_path)
-            project_dir = project_path_obj.parent
-            project_name = project_path_obj.stem
-            
-            # Usar formato nuevo: project_media dentro de la carpeta del proyecto
-            media_dir = project_dir / "project_media"
-            media_dir.mkdir(exist_ok=True)
-            
-            # Generar nombre usando formato project_segment_XXX.jpg
-            segment_number = segment_index + 1
-            filename = f"project_segment_{segment_number:03d}.jpg"
-            dest_path = media_dir / filename
-            
-            # Generar nombre Ãºnico con timestamp y hash para evitar sobrescribir
-            import time
-            import hashlib
-            timestamp = int(time.time())
-            hash_suffix = hashlib.md5(f"{segment_index}_{final_image_path}_{timestamp}".encode()).hexdigest()[:8]
-            name_part = Path(filename).stem
-            ext = Path(filename).suffix
-            filename = f"{name_part}_{timestamp}_{hash_suffix}{ext}"
-            dest_path = media_dir / filename
-            
-            # Copiar archivo al proyecto
-            try:
-                source_path = Path(image_path)
-                if str(source_path.resolve()) != str(dest_path.resolve()):
-                    shutil.copy2(source_path, dest_path)
-                    # Actualizar ruta a relativa del proyecto
-                    final_image_path = f"project_media/{filename}"
-                    print(f"ðŸ“ Imagen regenerada copiada al proyecto: {filename}")
-            except Exception as e:
-                print(f"âš ï¸ Error copiando imagen al proyecto: {e}")
-                # Continuar con la ruta original si falla
-        
-        # Actualizar el segmento
-        self.segments[segment_index]['image_path'] = final_image_path
-        self.segments[segment_index]['image_source'] = 'recraft_ai'
-        self.segments[segment_index].pop('video_path', None)
-        self.segments[segment_index].pop('video_source', None)
-        
-        # Eliminar flag de imagen eliminada si existe (para que se muestre el preview)
-        if 'image_deleted' in self.segments[segment_index]:
-            del self.segments[segment_index]['image_deleted']
-        
-        # Activar auto-guardado automÃ¡tico
-        self._trigger_auto_save("despues de generar imagen")
-        
-        self._refresh_media_widgets(
-            [segment_index],
-            {segment_index: final_image_path},
-        )
-        
-        # Actualizar el editor de segmentos si estÃ¡ mostrando este segmento
-        if self.selected_index == segment_index:
-            self.segment_editor.load_segment(self.segments[segment_index])
-        
-        QMessageBox.information(
-            self,
-            "Imagen Regenerada",
-            f"Se regenero la imagen del segmento #{segment_index + 1}.\n\n"
-            f"Imagen guardada en: {os.path.basename(final_image_path)}\n"
-            f"La imagen se guardo en el proyecto y se restaurara al abrirlo."
-        )
     
     def regenerate_ai_image(self, segment_index, skip_confirmation: bool = False,
                             force_provider: str = None):
@@ -4394,6 +4299,7 @@ Next segment:
             "full_script": full_script,
             "research_context": research_context,
             "narrative_context": narrative_context,
+            "video_format": self._get_selected_image_aspect_ratio(),
         }
 
         worker = ContextualAIImageRegenerationWorker(segment_index, segment, generation_config)
@@ -4736,10 +4642,10 @@ Next segment:
             return False
         if self.selected_index != segment_index:
             self.on_segment_clicked(segment_index)
-        return self._assign_local_image_to_segment(
+        return self._apply_local_image_with_range(
             segment_index,
             file_path,
-            auto_save_reason="despues de soltar imagen local"
+            auto_save_reason="despues de soltar imagen local",
         )
 
     def _handle_local_video_dropped(self, segment_index, file_path):
@@ -4861,10 +4767,10 @@ Next segment:
             return False
 
         try:
-            assigned = self._assign_local_image_to_segment(
+            assigned = self._apply_local_image_with_range(
                 segment_index,
                 file_path,
-                auto_save_reason="despues de pegar imagen desde portapapeles"
+                auto_save_reason="despues de pegar imagen desde portapapeles",
             )
         finally:
             if should_cleanup_temp and file_path:
@@ -5171,7 +5077,7 @@ Next segment:
                 self.segment_widgets[idx].update_display(refresh_media=True)
         return False
 
-    def _assign_local_image_to_segment(self, segment_index, file_path, auto_save_reason="despues de insertar imagen local"):
+    def _assign_local_image_to_segment(self, segment_index, file_path, auto_save_reason="despues de insertar imagen local", propagate_ratio=True):
         """Asigna una imagen local a un segmento y refresca la UI relacionada.
 
         Si images_per_segment_ratio > 1, propaga la imagen al grupo alineado completo
@@ -5184,7 +5090,7 @@ Next segment:
 
         # Propagar al grupo alineado si el ratio es > 1
         ratio = self._get_images_per_segment_frequency()
-        if ratio > 1:
+        if propagate_ratio and ratio > 1:
             group_start = (segment_index // ratio) * ratio
             group_end = min(group_start + ratio - 1, len(self.segments) - 1)
             group_indices = list(range(group_start, group_end + 1))
@@ -5283,17 +5189,75 @@ Next segment:
         )
         return True
 
-    def _open_local_image_dialog_for_segment(self, segment_index):
-        """Abre un diálogo para seleccionar una imagen local para el segmento.
+    def _default_shared_image_count(self, start_index: int) -> int:
+        """Default de cobertura: 4 en 16:9 / videos largos, o el spin de frecuencia."""
+        remaining = max(1, len(self.segments) - int(start_index))
+        default = 1
+        studio = getattr(self, "studio_tab", None)
+        if studio is not None:
+            fmt = ""
+            platform = ""
+            duration = 0
+            if hasattr(studio, "get_selected_video_format"):
+                fmt = str(studio.get_selected_video_format() or "")
+            if hasattr(studio, "get_selected_platform_key"):
+                platform = str(studio.get_selected_platform_key() or "")
+            if hasattr(studio, "duration_slider"):
+                try:
+                    duration = int(studio.duration_slider.value())
+                except Exception:
+                    duration = 0
+            if "16:9" in fmt or platform == "youtube" or duration >= 180:
+                default = 4
+            if hasattr(studio, "images_per_segment_spin"):
+                try:
+                    spin_val = int(studio.images_per_segment_spin.value() or 1)
+                except Exception:
+                    spin_val = 1
+                if spin_val > 1:
+                    default = spin_val
+        return max(1, min(default, remaining))
 
-        Si hay más de un segmento en el timeline, pregunta al usuario a cuántos
-        segmentos consecutivos (empezando en ``segment_index``) se debe aplicar
-        la imagen. Dejar el valor en 1 mantiene el comportamiento clásico.
-        """
+    def _ask_shared_image_count(self, start_index: int):
+        """Muestra el diálogo con preview de textos. None = cancelado."""
+        remaining = len(self.segments) - start_index
+        if remaining <= 1:
+            return 1
+        dialog = SharedImageRangeDialog(
+            self,
+            self.segments,
+            start_index,
+            default_count=self._default_shared_image_count(start_index),
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return None
+        return max(1, int(dialog.selected_count()))
+
+    def _apply_local_image_with_range(self, segment_index, file_path, auto_save_reason):
+        """Asigna una imagen pidiendo el rango consecutivo cuando hay más de un segmento."""
+        count = self._ask_shared_image_count(segment_index)
+        if count is None:
+            return False
+        if count <= 1:
+            return self._assign_local_image_to_segment(
+                segment_index,
+                file_path,
+                auto_save_reason=auto_save_reason,
+                propagate_ratio=False,
+            )
+        indices = list(range(segment_index, segment_index + count))
+        return self._assign_local_image_to_segments(
+            indices,
+            file_path,
+            auto_save_reason=f"{auto_save_reason} x{count}",
+        )
+
+    def _open_local_image_dialog_for_segment(self, segment_index):
+        """Abre un diálogo para seleccionar una imagen local y su cobertura."""
         if segment_index < 0 or segment_index >= len(self.segments):
             return
 
-        from PyQt6.QtWidgets import QFileDialog, QInputDialog
+        from PyQt6.QtWidgets import QFileDialog
 
         file_path, _ = QFileDialog.getOpenFileName(
             self,
@@ -5305,40 +5269,11 @@ Next segment:
         if not file_path:
             return
 
-        # Preguntar cuántos segmentos consecutivos cubrir (incluyendo el actual).
-        remaining = len(self.segments) - segment_index
-        if remaining > 1:
-            count, ok = QInputDialog.getInt(
-                self,
-                "Imagen compartida",
-                (
-                    f"¿A cuántos segmentos consecutivos aplicar esta imagen?\n"
-                    f"(empezando en el segmento #{segment_index + 1}; "
-                    f"deja 1 para asignarla solo a ese segmento)"
-                ),
-                1,   # valor inicial
-                1,   # mínimo
-                remaining,  # máximo
-                1,   # step
-            )
-            if not ok:
-                return
-        else:
-            count = 1
-
-        if count <= 1:
-            self._assign_local_image_to_segment(
-                segment_index,
-                file_path,
-                auto_save_reason="despues de insertar imagen local"
-            )
-        else:
-            indices = list(range(segment_index, segment_index + count))
-            self._assign_local_image_to_segments(
-                indices,
-                file_path,
-                auto_save_reason=f"despues de insertar imagen local compartida x{count}"
-            )
+        self._apply_local_image_with_range(
+            segment_index,
+            file_path,
+            auto_save_reason="despues de insertar imagen local",
+        )
 
     def _open_local_video_dialog_for_segment(self, segment_index):
         """Abre el diálogo avanzado para seleccionar y recortar un video local"""

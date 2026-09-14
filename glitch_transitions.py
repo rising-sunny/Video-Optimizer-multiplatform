@@ -14,7 +14,7 @@ Implementa transiciones tipo glitch de alta calidad similares a CapCut:
 
 import numpy as np
 import random
-from typing import List, Dict, Tuple, Optional, Union
+from typing import List, Dict, Tuple, Optional
 from enum import Enum
 import math
 
@@ -475,89 +475,10 @@ class GlitchTransitionEngine:
         
         return result.astype(np.uint8)
     
-    def get_random_transition(self) -> GlitchTransitionType:
-        """Devuelve un tipo de transición aleatorio"""
-        return random.choice(list(GlitchTransitionType))
     
-    def get_transition_by_mood(self, mood: str) -> GlitchTransitionType:
-        """
-        Sugiere una transición basada en el estado de ánimo/contexto.
-        
-        Args:
-            mood: Estado de ánimo ('energetic', 'dramatic', 'mysterious', 'chaotic')
-            
-        Returns:
-            Tipo de transición sugerido
-        """
-        mood_transitions = {
-            'energetic': [
-                GlitchTransitionType.DIGITAL_GLITCH,
-                GlitchTransitionType.RGB_SPLIT,
-                GlitchTransitionType.BLOCK_GLITCH
-            ],
-            'dramatic': [
-                GlitchTransitionType.CHROMATIC_ABERRATION,
-                GlitchTransitionType.FREEZE_GLITCH,
-                GlitchTransitionType.WAVE_DISTORTION
-            ],
-            'mysterious': [
-                GlitchTransitionType.DATA_MOSH,
-                GlitchTransitionType.SCAN_LINES,
-                GlitchTransitionType.NOISE_INTERFERENCE
-            ],
-            'chaotic': [
-                GlitchTransitionType.PIXEL_SORT,
-                GlitchTransitionType.DIGITAL_GLITCH,
-                GlitchTransitionType.BLOCK_GLITCH
-            ]
-        }
-        
-        return random.choice(mood_transitions.get(mood.lower(), mood_transitions['energetic']))
 
 
 # Funciones de utilidad para integración con MoviePy
-
-def create_glitch_transition_function(transition_type: GlitchTransitionType, 
-                                    intensity: GlitchIntensity = GlitchIntensity.MODERATE,
-                                    duration: float = 0.5):
-    """
-    Crea una función de transición para usar con MoviePy.
-    
-    Args:
-        transition_type: Tipo de transición glitch
-        intensity: Intensidad del efecto
-        duration: Duración de la transición
-        
-    Returns:
-        Función que puede ser usada con MoviePy's transition
-    """
-    engine = GlitchTransitionEngine()
-    
-    def glitch_transition_func(get_clip, t):
-        """
-        Función de transición para MoviePy.
-        
-        Args:
-            get_clip: Función para obtener el clip
-            t: Tiempo actual
-            
-        Returns:
-            Frame con efecto aplicado
-        """
-        # Calcular progreso (0 a 1)
-        progress = t / duration if duration > 0 else 0
-        progress = min(1.0, max(0.0, progress))
-        
-        # Obtener frame actual
-        frame = get_clip(t)
-        
-        # Aplicar efecto glitch
-        if frame is not None:
-            return engine.apply_glitch_transition(frame, progress, transition_type, intensity)
-        
-        return frame
-    
-    return glitch_transition_func
 
 
 def demo_glitch_effects():

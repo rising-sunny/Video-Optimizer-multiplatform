@@ -265,39 +265,6 @@ class VideoRegistry:
         
         return [dict(row) for row in rows]
     
-    def update_video_stats(self, video_id: str, views: int = None, 
-                          watch_hours: float = None, youtube_url: str = None,
-                          status: str = None):
-        """Actualiza estadísticas de un video (views, watch hours, etc.)"""
-        conn = sqlite3.connect(str(self.db_path))
-        cursor = conn.cursor()
-        
-        updates = []
-        params = []
-        
-        if views is not None:
-            updates.append("views = ?")
-            params.append(views)
-        
-        if watch_hours is not None:
-            updates.append("watch_hours = ?")
-            params.append(watch_hours)
-        
-        if youtube_url is not None:
-            updates.append("youtube_url = ?")
-            params.append(youtube_url)
-        
-        if status is not None:
-            updates.append("status = ?")
-            params.append(status)
-        
-        if updates:
-            params.append(video_id)
-            query = f"UPDATE videos SET {', '.join(updates)} WHERE video_id = ?"
-            cursor.execute(query, params)
-            conn.commit()
-        
-        conn.close()
     
     def get_total_watch_hours(self) -> float:
         """Obtiene el total de horas de visualización acumuladas"""
@@ -361,12 +328,5 @@ class VideoRegistry:
         
         conn.commit()
         conn.close()
-
-
-
-
-
-
-
 
 

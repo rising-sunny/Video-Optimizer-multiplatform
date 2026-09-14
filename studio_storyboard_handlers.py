@@ -128,6 +128,10 @@ class StudioStoryboardHandlers:
 
     def generate_storyboard(self):
         """Genera el storyboard (Paso 1)"""
+        if hasattr(self.studio_tab, 'format_strategy_combo') and self.studio_tab.format_strategy_combo.currentData() == 'micro_documentary':
+            from studio_channel_controls import open_pilot
+            open_pilot(self.studio_tab, generate=True)
+            return
         # Modo normal: generar con Gemini
         # Obtener tema desde la pestaÃ±a de anÃ¡lisis
         topic = self.studio_tab.parent_gui.topic_input.text().strip()
@@ -135,6 +139,9 @@ class StudioStoryboardHandlers:
             QMessageBox.warning(self.studio_tab, "Entrada VacÃ­a",
                               "Ingresa un tema en la pestaÃ±a de AnÃ¡lisis primero")
             return
+
+        if hasattr(self.studio_tab, "project_manager"):
+            self.studio_tab.project_manager.prepare_isolated_project_for_topic(topic)
 
         category = self.studio_tab.parent_gui.category_combo.currentText()
         duration = self.studio_tab.duration_slider.value()
@@ -155,10 +162,10 @@ class StudioStoryboardHandlers:
                 )
             )
         elif platform == 'youtube':
-            min_duration = getattr(self.studio_tab, 'LONG_HORIZONTAL_MIN_DURATION_SECONDS', 1800)
+            min_duration = getattr(self.studio_tab, 'LONG_HORIZONTAL_MIN_DURATION_SECONDS', 120)
             if int(duration) < int(min_duration):
                 self.studio_tab.log(
-                    f"ℹ️ Ajustando duración para YouTube horizontal: {duration}s -> {min_duration}s (mínimo 30 min)."
+                    f"ℹ️ Ajustando duración para YouTube horizontal: {duration}s -> {min_duration}s (mínimo 2 min)."
                 )
                 duration = int(min_duration)
                 if hasattr(self.studio_tab, 'duration_slider'):
@@ -237,6 +244,8 @@ class StudioStoryboardHandlers:
         """
         self.studio_tab.log("\nâœ… PASO 1 COMPLETADO")
         self.studio_tab.last_storyboard_data = result
+        from studio_channel_controls import project_channel_config
+        result.setdefault('channel_profile', project_channel_config(self.studio_tab)['channel_profile'])
 
         # GUARDADO INMEDIATO para prevenir pÃ©rdida de datos en caso de crash
         try:

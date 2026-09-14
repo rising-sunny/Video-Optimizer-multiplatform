@@ -714,61 +714,6 @@ class WikimediaClient:
 
         return self.search_images(search_query, limit)
 
-    def search_by_category(self, category: str, limit: int = 10) -> List[Dict]:
-        """
-        Busca imÃ¡genes dentro de una categorÃ­a especÃ­fica.
-
-        Args:
-            category: Nombre de categorÃ­a (Ej: "World_War_II", "Ancient_Egypt", "Space_exploration")
-            limit: NÃºmero de resultados
-
-        Returns:
-            Lista de imÃ¡genes de la categorÃ­a
-        """
-        try:
-            params = {
-                'action': 'query',
-                'format': 'json',
-                'generator': 'categorymembers',
-                'gcmtitle': f'Category:{category}',
-                'gcmtype': 'file',
-                'gcmlimit': limit,
-                'prop': 'imageinfo',
-                'iiprop': 'url|size|mime|extmetadata',
-                'iiurlwidth': self.thumb_width
-            }
-
-            response = self._request_with_retry(
-                self.base_url,
-                params=params,
-                headers=self.headers,
-                timeout=12,
-                max_attempts=3
-            )
-            response.raise_for_status()
-            data = response.json()
-
-            images = []
-            if 'query' in data and 'pages' in data['query']:
-                for page_id, page_data in data['query']['pages'].items():
-                    if 'imageinfo' not in page_data:
-                        continue
-
-                    img_info = page_data['imageinfo'][0]
-                    images.append({
-                        'title': page_data.get('title', '').replace('File:', ''),
-                        'url': img_info.get('url', ''),
-                        'thumburl': img_info.get('thumburl', img_info.get('url', '')),
-                        'width': img_info.get('width', 0),
-                        'height': img_info.get('height', 0)
-                    })
-
-            print(f"âœ… Wikimedia: {len(images)} imÃ¡genes de categorÃ­a '{category}'")
-            return images
-
-        except Exception as e:
-            print(f"âŒ Error obteniendo categorÃ­a: {e}")
-            return []
 
     def download_video(self, video_info: Dict, output_path: str) -> Optional[str]:
         """
@@ -948,76 +893,6 @@ class WikimediaClient:
         query_lower = query.lower()
         return any(keyword in query_lower for keyword in historical_keywords)
 
-    def search_by_historical_category(self, topic_keywords: List[str], limit: int = 10) -> List[Dict]:
-        """
-        Busca imÃ¡genes usando categorÃ­as histÃ³ricas especÃ­ficas de Wikimedia.
-        Filtra resultados por relevancia basada en palabras clave.
-        
-        Args:
-            topic_keywords: Lista de palabras clave del tema
-            limit: NÃºmero mÃ¡ximo de resultados
-            
-        Returns:
-            Lista de imÃ¡genes encontradas y filtradas por relevancia
-        """
-        # Mapeo de palabras clave a categorÃ­as de Wikimedia
-        category_map = {
-            'mongol': ['Mongol_Empire', 'Genghis_Khan', 'Mongolia', 'Central_Asia'],
-            'minoan': ['Minoan_civilization', 'Crete', 'Knossos', 'Bronze_Age'],
-            'ancient': ['Ancient_history', 'Archaeology', 'Historical_photographs'],
-            'egypt': ['Ancient_Egypt', 'Egyptology', 'Pharaohs'],
-            'greece': ['Ancient_Greece', 'Greek_history', 'Hellenistic_period'],
-            'rome': ['Ancient_Rome', 'Roman_Empire', 'Roman_history'],
-            'bronze': ['Bronze_Age', 'Archaeology', 'Ancient_history'],
-            'medieval': ['Middle_Ages', 'Medieval_history', 'Medieval_architecture'],
-            'war': ['Military_history', 'Battles', 'War_photography'],
-            'civilization': ['Ancient_civilizations', 'Archaeology', 'Historical_photographs'],
-        }
-        
-        # Identificar categorÃ­as relevantes
-        relevant_categories = []
-        topic_lower = ' '.join(topic_keywords).lower()
-        
-        for keyword, categories in category_map.items():
-            if keyword in topic_lower:
-                relevant_categories.extend(categories)
-        
-        # Si no encontramos categorÃ­as especÃ­ficas, usar categorÃ­as generales
-        if not relevant_categories:
-            relevant_categories = ['Ancient_history', 'Archaeology', 'Historical_photographs']
-        
-        # Buscar en cada categorÃ­a y filtrar por relevancia
-        all_images = []
-        for category in relevant_categories[:3]:  # MÃ¡ximo 3 categorÃ­as
-            try:
-                images = self.search_by_category(category, limit=limit*2)  # Obtener mÃ¡s para filtrar
-                all_images.extend(images)
-            except:
-                continue
-        
-        # Filtrar imÃ¡genes por relevancia basada en palabras clave
-        if topic_keywords:
-            filtered_images = []
-            topic_lower_str = ' '.join(topic_keywords).lower()
-            
-            for img in all_images:
-                title_lower = img.get('title', '').lower()
-                desc_lower = img.get('description', '').lower()
-                combined_text = f"{title_lower} {desc_lower}"
-                
-                # Contar coincidencias de palabras clave
-                matches = sum(1 for keyword in topic_keywords if keyword.lower() in combined_text)
-                
-                # Solo incluir si hay al menos una coincidencia relevante
-                if matches > 0:
-                    img['relevance_score'] = matches
-                    filtered_images.append(img)
-            
-            # Ordenar por relevancia y limitar
-            filtered_images.sort(key=lambda x: x.get('relevance_score', 0), reverse=True)
-            return filtered_images[:limit]
-        
-        return all_images[:limit]
     
     def suggest_search_terms_with_ai(self, visual_prompt: str, narration_text: str = "") -> str:
         """

@@ -26,6 +26,10 @@ YOUTUBE_METADATA_FILES = ("youtube_metadata.json", "metadata.json")
 SCOPES = [
     "https://www.googleapis.com/auth/youtube.upload",
     "https://www.googleapis.com/auth/youtube.force-ssl",
+    # Estadisticas avanzadas (retencion, fuentes de trafico, suscriptores por
+    # video). Sin este scope la YouTube Analytics API responde 403
+    # "Request had insufficient authentication scopes".
+    "https://www.googleapis.com/auth/yt-analytics.readonly",
 ]
 
 # YouTube category IDs
@@ -109,17 +113,33 @@ def _infer_is_short(video_path) -> bool:
     return True
 
 
-def _get_credentials(interactive: bool = True) -> Credentials:
+def _get_credentials(interactive: bool = True, channel_profile=None) -> Credentials:
     """Load or refresh OAuth2 credentials."""
     creds = None
+    from channel_profiles import token_path
+    selected_token = token_path(channel_profile)
 
-    if TOKEN_FILE.exists():
-        creds = Credentials.from_authorized_user_file(str(TOKEN_FILE), SCOPES)
+    if selected_token.exists():
+        creds = Credentials.from_authorized_user_file(str(selected_token), SCOPES)
+
+    # `from_authorized_user_file` NO comprueba que el token cubra SCOPES: solo
+    # mira el vencimiento. Si se agrega un scope nuevo (paso lo mismo con
+    # yt-analytics), el token viejo se sigue usando y la API responde 403 sin
+    # que nada avise. Hay que detectarlo y volver a autorizar.
+    if creds:
+        otorgados = set(creds.scopes or [])
+        faltantes = [s for s in SCOPES if s not in otorgados]
+        if faltantes:
+            print("[YouTube] El token guardado no cubre estos permisos:")
+            for s in faltantes:
+                print(f"           - {s}")
+            print("[YouTube] Hay que volver a autorizar en el navegador.")
+            creds = None
 
     if creds and creds.expired and creds.refresh_token:
         try:
             creds.refresh(Request())
-            _save_token(creds)
+            _save_token(creds, selected_token)
         except Exception:
             creds = None
 
@@ -135,20 +155,21 @@ def _get_credentials(interactive: bool = True) -> Credentials:
             str(CLIENT_SECRETS_FILE), SCOPES
         )
         creds = flow.run_local_server(port=0, open_browser=True)
-        _save_token(creds)
+        _save_token(creds, selected_token)
 
     return creds
 
 
-def _save_token(creds: Credentials):
+def _save_token(creds: Credentials, selected_token=None):
     """Save credentials to token.json."""
-    with open(TOKEN_FILE, "w") as f:
+    from channel_profiles import token_path
+    with open(selected_token or token_path(), "w") as f:
         f.write(creds.to_json())
 
 
-def get_youtube_service(interactive: bool = True):
+def get_youtube_service(interactive: bool = True, channel_profile=None):
     """Build and return an authenticated YouTube API service."""
-    creds = _get_credentials(interactive=interactive)
+    creds = _get_credentials(interactive=interactive, channel_profile=channel_profile)
     return build("youtube", "v3", credentials=creds)
 
 
@@ -164,6 +185,7 @@ def upload_video(
     made_for_kids: bool = False,
     is_short: bool = True,
     on_progress=None,
+    channel_profile=None,
 ) -> dict:
     """
     Upload a video to YouTube.
@@ -192,6 +214,12 @@ def upload_video(
     video_path = Path(video_path)
     if not video_path.exists():
         raise FileNotFoundError(f"Video no encontrado: {video_path}")
+
+    from channel_profiles import active_channel, CHANNELS
+    from upload_metadata import metadata_for_channel
+    channel_profile = channel_profile or active_channel()
+    adapted = metadata_for_channel({'title': title, 'description': description, 'tags': tags}, channel_profile)
+    title, description, tags = adapted['title'], adapted['description'], adapted['tags']
 
     # Ensure #Shorts tag for Shorts
     tags = list(tags or [])
@@ -224,7 +252,10 @@ def upload_video(
     if publish_at:
         body["status"]["publishAt"] = publish_at
 
-    youtube = get_youtube_service()
+    youtube = get_youtube_service(channel_profile=channel_profile)
+    identities = youtube.channels().list(part="id", mine=True).execute().get("items", [])
+    if CHANNELS[channel_profile]['channel_id'] not in {item['id'] for item in identities}:
+        raise RuntimeError(f"La cuenta de YouTube autorizada no corresponde a {CHANNELS[channel_profile]['name']}; publicación detenida.")
 
     # Resumable upload
     media = MediaFileUpload(
@@ -255,15 +286,27 @@ def upload_video(
     # Set custom thumbnail
     if thumbnail_path and Path(thumbnail_path).exists():
         try:
+            # La API corta en 2 MB y un PNG vertical de 1080x1920 pesa ~2.7 MB:
+            # sin esto el video quedaba subido pero SIN miniatura, con el error
+            # "Media larger than: 2097152".
+            from thumbnail_compositor import fit_for_youtube_api
+
+            envio_path, envio_mime = fit_for_youtube_api(thumbnail_path, log=print)
             youtube.thumbnails().set(
                 videoId=video_id,
-                media_body=MediaFileUpload(str(thumbnail_path), mimetype="image/png"),
+                media_body=MediaFileUpload(str(envio_path), mimetype=envio_mime),
             ).execute()
             result["thumbnail_set"] = True
-        except HttpError as e:
-            # Thumbnail upload may fail if channel isn't verified
+            result["thumbnail_uploaded_path"] = str(envio_path)
+        except Exception as e:
+            # El video YA esta subido: perder la miniatura no puede tumbar la
+            # publicacion entera. Antes solo se atrapaba HttpError, asi que
+            # cualquier otro fallo de la miniatura propagaba y la GUI reportaba
+            # "Youtube fallo" con el video igual publicado.
             result["thumbnail_set"] = False
-            result["thumbnail_error"] = str(e)
+            result["thumbnail_error"] = f"{type(e).__name__}: {e}"
+            print(f"   [WARN] No se pudo poner la miniatura: {result['thumbnail_error']}")
+            print(f"          El video quedo subido igual: {result['url']}")
 
     return result
 
@@ -317,6 +360,19 @@ def upload_from_metadata(
     output_dir = Path(output_dir)
 
     metadata = _load_upload_metadata(output_dir)
+    from channel_profiles import DEFAULT_CHANNEL
+    config = {}
+    if (output_dir / 'project.json').exists():
+        project_data = json.loads((output_dir / 'project.json').read_text(encoding='utf-8'))
+        config = project_data.get('config') or {}
+    project_channel = (metadata.get('upload_channel') or config.get('upload_channel')
+                       or metadata.get('channel_profile') or config.get('channel_profile'))
+    if not project_channel and (output_dir / 'storyboard.json').exists():
+        project_channel = json.loads((output_dir / 'storyboard.json').read_text(encoding='utf-8')).get('channel_profile')
+    project_channel = project_channel or DEFAULT_CHANNEL
+
+    from upload_metadata import metadata_for_channel
+    metadata = metadata_for_channel(metadata, project_channel)
 
     # Find video file
     video_path = None
@@ -352,7 +408,7 @@ def upload_from_metadata(
 
     result = upload_video(
         video_path=str(video_path),
-        title=metadata.get("title", "Stunning Revelations"),
+        title=metadata.get("title") or "Untitled video",
         description=metadata.get("description", ""),
         tags=metadata.get("tags", []),
         category_id=str(metadata.get("category_id") or "27"),  # Education
@@ -361,6 +417,7 @@ def upload_from_metadata(
         thumbnail_path=str(thumbnail_path) if thumbnail_path else None,
         is_short=bool(is_short),
         on_progress=on_progress,
+        channel_profile=project_channel,
     )
 
     # Save upload result

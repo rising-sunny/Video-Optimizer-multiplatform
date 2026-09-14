@@ -23,7 +23,10 @@ def get_channel_strategy(*, reload: bool = False) -> dict[str, Any]:
     if _cached_strategy is not None and not reload:
         return _cached_strategy
 
-    if _PROFILE_PATH.exists():
+    from channel_profiles import active_channel, DEFAULT_CHANNEL, load_profile
+    if active_channel() != DEFAULT_CHANNEL:
+        _cached_strategy = load_profile()
+    elif _PROFILE_PATH.exists():
         with open(_PROFILE_PATH, "r", encoding="utf-8") as f:
             _cached_strategy = json.load(f)
     else:
@@ -34,8 +37,10 @@ def get_channel_strategy(*, reload: bool = False) -> dict[str, Any]:
 def _fallback_config() -> dict[str, Any]:
     return {
         "channel_identity": {
-            "channel_id": "UC66EnGiys6V3gKe-J0XD-_Q",
-            "channel_handle": "Stunning-Revelations",
+            "channel_id": "",
+            # Fallback si no se puede leer el perfil. Deliberadamente NEUTRO:
+            # un default con el canal viejo es una mina para el proximo cambio.
+            "channel_handle": "this-channel",
             "language": "en",
         },
         "shorts_rules": {
@@ -70,16 +75,43 @@ def get_narrative_structure() -> dict[str, Any]:
     return get_channel_strategy().get("narrative_structure", {})
 
 
+def get_channel_name(default: str = "this channel") -> str:
+    """Nombre visible del canal, para prompts y CTAs.
+
+    Estaba cableado como "Stunning Revelations" en 33 lugares de 3 archivos, asi
+    que al cambiar de canal los guiones seguian invitando a suscribirse al viejo.
+    """
+    try:
+        ident = get_channel_strategy().get("channel_identity", {})
+    except Exception:
+        return default
+    return ident.get("channel_name") or ident.get("channel_handle") or default
+
+
+def get_channel_audience_line(default: str = "general audience") -> str:
+    """Nicho y posicionamiento del canal en una linea, para prompts.
+
+    Los prompts de miniatura tenian cableado "mystery, science, hidden history,
+    conspiracies, documented unexplained events": el publico del canal ANTERIOR.
+    Con el canal nuevo (hechos historicos documentados, explicitamente NO
+    misterios ni conspiraciones) eso empujaba las miniaturas justo hacia lo que
+    el Channel Bible pone fuera de alcance.
+    """
+    try:
+        ident = get_channel_strategy().get("channel_identity", {})
+    except Exception:
+        return default
+    partes = [ident.get("niche"), ident.get("positioning")]
+    linea = ". ".join(str(p).strip() for p in partes if str(p or "").strip())
+    return linea or default
+
+
 def get_cover_frame_config() -> dict[str, Any]:
     return get_channel_strategy().get("cover_frame", {})
 
 
 def get_narration_tone() -> dict[str, Any]:
     return get_channel_strategy().get("narration_tone", {})
-
-
-def get_visual_rules() -> dict[str, Any]:
-    return get_channel_strategy().get("visual_rules", {})
 
 
 def get_categories_by_priority(priority: Optional[str] = None) -> list[dict[str, Any]]:
@@ -96,14 +128,6 @@ def get_all_category_names() -> list[str]:
         names.append(c["name"])
         names.extend(c.get("aliases", []))
     return names
-
-
-def get_series() -> list[str]:
-    return get_channel_strategy().get("series", [])
-
-
-def get_editorial_principles() -> list[str]:
-    return get_channel_strategy().get("editorial_principles", [])
 
 
 # ---------------------------------------------------------------------------

@@ -27,6 +27,105 @@ except ImportError:
 
 RESEARCH_AVAILABLE = WIKIPEDIA_AVAILABLE or DUCKDUCKGO_AVAILABLE
 
+# Extra search titles for obscure names the GUI often receives as
+# "NativeName (Spanish gloss)" — Wikipedia rarely has that exact title.
+TOPIC_QUERY_ALIASES = {
+    "muriq": ["Muriq-Tidnim", "Shu-Sin", "Amorite Wall", "Third Dynasty of Ur"],
+    "tidnim": ["Muriq-Tidnim", "Shu-Sin", "Amorites"],
+    "tidnum": ["Muriq-Tidnim", "Shu-Sin", "Amorites"],
+    "muro amorrita": ["Muriq-Tidnim", "Shu-Sin", "Amorites"],
+    "amorite wall": ["Muriq-Tidnim", "Shu-Sin", "Amorites", "Third Dynasty of Ur"],
+}
+
+
+def topic_search_queries(topic: str) -> List[str]:
+    """Build Wikipedia/search queries from a GUI title.
+
+    "Muriq-Tidnim (Muro amorrita)" must try the Akkadian name first, not the
+    parenthetical gloss — the gloss often matches the wrong article.
+    """
+    raw = (topic or "").strip()
+    if not raw:
+        return []
+
+    queries: List[str] = []
+
+    def _add(value: str) -> None:
+        cleaned = re.sub(r"\s+", " ", (value or "").strip(" \t-–—/"))
+        if not cleaned:
+            return
+        if cleaned.lower() not in {item.lower() for item in queries}:
+            queries.append(cleaned)
+
+    _add(raw)
+    outside = re.sub(r"\([^)]*\)", " ", raw)
+    _add(outside)
+    if outside and "-" in outside:
+        _add(outside.replace("-", " "))
+
+    low = raw.lower()
+    for key, aliases in TOPIC_QUERY_ALIASES.items():
+        if key in low:
+            for alias in aliases:
+                _add(alias)
+
+    for part in re.findall(r"\(([^)]+)\)", raw):
+        _add(part)
+
+    _add(_simplify_query(outside or raw))
+    return queries
+
+
+_RELEVANCE_STOP_WORDS = {
+    # es
+    "el", "la", "los", "las", "un", "una", "unos", "unas", "de", "del", "al",
+    "y", "o", "en", "con", "por", "para", "su", "sus", "que", "es", "se",
+    # en
+    "the", "a", "an", "of", "in", "and", "or", "to", "for", "on", "with",
+    "at", "by", "from", "is", "was", "that", "this",
+}
+
+
+def _relevance_tokens(text: str) -> set:
+    """Tokens significativos, sin acentos ni articulos, para comparar temas."""
+    import unicodedata
+
+    plano = unicodedata.normalize("NFKD", (text or "").lower())
+    plano = "".join(c for c in plano if not unicodedata.combining(c))
+    crudos = re.findall(r"[a-z0-9]+", plano)
+    return {t for t in crudos if len(t) >= 3 and t not in _RELEVANCE_STOP_WORDS}
+
+
+def _match_is_relevant(query: str, title: str, summary: str = "") -> bool:
+    """.El articulo encontrado habla del tema pedido?
+
+    Wikipedia devuelve SIEMPRE algo: buscar "El Nucleo del Demonio" en la
+    Wikipedia inglesa devuelve "2021 in Latin music". Sin este chequeo el
+    pipeline aceptaba esa pagina, y como DuckDuckGo venia rate-limited, el guion
+    entero se escribia sobre musica latina sin que nada fallara.
+
+    Se acepta si el TITULO comparte terminos con el tema, o -- para siglas y
+    nombres de vuelo tipo "MH370" vs "Malaysia Airlines Flight 370" -- si el
+    resumen del articulo menciona esos terminos.
+    """
+    tema = _relevance_tokens(query)
+    if not tema:
+        return True  # sin nada que comparar, no bloqueamos
+
+    del_titulo = _relevance_tokens(title)
+    compartidos = tema & del_titulo
+    if compartidos and len(compartidos) >= max(1, len(tema) // 2):
+        return True
+
+    if summary:
+        del_resumen = _relevance_tokens(summary)
+        if tema <= del_resumen:          # el resumen menciona todos los terminos
+            return True
+        if compartidos and (tema & del_resumen) >= compartidos:
+            return True
+
+    return False
+
 
 def _search_wikipedia_title(query: str, language: str) -> Optional[str]:
     """Busca el titulo mas cercano cuando la consulta no es un titulo exacto."""
@@ -71,47 +170,56 @@ def search_wikipedia(query: str, language: str = 'es', max_sections: int = 5) ->
     results = []
     
     try:
-        wiki = wikipediaapi.Wikipedia(
-            user_agent='VideoOptimizer/1.0 (research)',
-            language=language
-        )
-        
-        page = wiki.page(query)
-        
-        if not page.exists():
-            # Intentar con búsqueda más simple
-            simplified = _simplify_query(query)
-            if simplified != query:
-                page = wiki.page(simplified)
-            
-            # El idioma del guion no siempre coincide con el idioma del tema.
-            if not page.exists():
-                fallback_language = 'en' if language != 'en' else 'es'
-                wiki_fallback = wikipediaapi.Wikipedia(
-                    user_agent='VideoOptimizer/1.0 (research)',
-                    language=fallback_language
-                )
-                page = wiki_fallback.page(query)
-                if not page.exists():
-                    page = wiki_fallback.page(simplified)
+        queries = topic_search_queries(query)
+        languages = list(dict.fromkeys((language, 'en', 'es')))
+        page = None
+        matched_from = None
 
-        if not page.exists():
-            for search_language in dict.fromkeys((language, 'es', 'en')):
-                matched_title = _search_wikipedia_title(simplified, search_language)
+        descartados = []
+        for search_language in languages:
+            wiki = wikipediaapi.Wikipedia(
+                user_agent='VideoOptimizer/1.0 (research)',
+                language=search_language
+            )
+            for candidate_query in queries:
+                candidate = wiki.page(candidate_query)
+                if candidate.exists():
+                    # Titulo exacto: es el propio tema, no hace falta validar.
+                    page = candidate
+                    matched_from = candidate_query
+                    break
+
+                matched_title = _search_wikipedia_title(candidate_query, search_language)
                 if not matched_title:
                     continue
-                matched_wiki = wikipediaapi.Wikipedia(
-                    user_agent='VideoOptimizer/1.0 (research)',
-                    language=search_language
-                )
-                matched_page = matched_wiki.page(matched_title)
-                if matched_page.exists():
-                    page = matched_page
-                    break
-        
-        if not page.exists():
-            print(f"   ️ Wikipedia: No se encontró artículo para '{query}'")
+                matched_page = wiki.page(matched_title)
+                if not matched_page.exists():
+                    continue
+
+                # La busqueda de Wikipedia SIEMPRE devuelve algo, aunque no tenga
+                # nada que ver. Sin este filtro el guion se escribe sobre el
+                # articulo equivocado y ningun paso falla.
+                if not _match_is_relevant(candidate_query, matched_title,
+                                          matched_page.summary or ""):
+                    descartados.append(f"{matched_title} [{search_language}]")
+                    continue
+
+                page = matched_page
+                matched_from = candidate_query
+                break
+            if page is not None:
+                break
+
+        if descartados:
+            print(f"    Wikipedia: descartado(s) por no coincidir con el tema: "
+                  f"{', '.join(descartados[:4])}")
+
+        if page is None or not page.exists():
+            print(f"   ️ Wikipedia: No se encontró artículo relevante para '{query}'")
             return []
+
+        if matched_from and matched_from.lower() != query.lower():
+            print(f"    Wikipedia: '{query}' → '{page.title}' (consulta '{matched_from}')")
         
         # Extraer resumen (summary)
         summary = page.summary
@@ -153,10 +261,19 @@ def search_wikipedia(query: str, language: str = 'es', max_sections: int = 5) ->
         
         if results:
             print(f"    Wikipedia: {len(results)} fragmentos de '{page.title}'")
-        
+
     except Exception as e:
-        print(f"   ️ Error en Wikipedia: {e}")
-    
+        # Cuando Wikipedia limita la tasa responde HTML y el parseo de JSON
+        # revienta con "Expecting value: line 1 column 1", que no dice nada.
+        # Distinguirlo importa: sin investigacion el guion se escribe igual, y
+        # conviene saber si fue por limite temporal o porque no existe el tema.
+        detalle = str(e)
+        if "Expecting value" in detalle or "JSONDecode" in detalle:
+            print("   ️ Wikipedia no respondió JSON (límite de tasa o bloqueo temporal). "
+                  "El guion se escribirá sin ese contexto.")
+        else:
+            print(f"   ️ Error en Wikipedia: {e}")
+
     return results
 
 
@@ -247,6 +364,15 @@ def search_research_context(topic: str, category: str = '',
     if DUCKDUCKGO_AVAILABLE and remaining > 0:
         print("    Buscando en DuckDuckGo...")
         ddg_results = search_duckduckgo(search_query, max_results=min(remaining, 5))
+        if not ddg_results:
+            aliases = topic_search_queries(topic)
+            fallback_query = next((q for q in aliases if q.lower() != topic.lower()), "")
+            if fallback_query:
+                print(f"    Reintentando DuckDuckGo con: '{fallback_query}'")
+                ddg_results = search_duckduckgo(
+                    f"{fallback_query} {category}".strip(),
+                    max_results=min(remaining, 5),
+                )
         all_results.extend(ddg_results)
     
     # Filtrar resultados vacíos o de error
@@ -273,11 +399,11 @@ def _simplify_query(query: str) -> str:
         'history of', 'the', 'a', 'an', 'about', 'of'
     ]
     
-    simplified = query
+    simplified = re.sub(r'\([^)]*\)', ' ', query or '')
     for word in stop_words:
         simplified = re.sub(rf'\b{re.escape(word)}\b', '', simplified, flags=re.IGNORECASE)
     
-    simplified = re.sub(r'\s+', ' ', simplified).strip()
+    simplified = re.sub(r'\s+', ' ', simplified).strip(" \t-–—/")
     return simplified if simplified else query
 
 

@@ -1152,15 +1152,6 @@ class InternetArchiveVideoSearchDialog(QDialog):
         if self.playback_timer:
             self.playback_timer.stop()
 
-    def _cleanup_moviepy(self):
-        """Limpia recursos de moviepy"""
-        self._stop_moviepy_playback()
-        if self.video_clip:
-            try:
-                self.video_clip.close()
-            except:
-                pass
-            self.video_clip = None
 
     def stop_playback(self):
         """Detiene la reproducción del video (mantiene la posición actual)"""
@@ -1489,6 +1480,5 @@ class InternetArchiveVideoSearchDialog(QDialog):
 # Agregar esto al final de timeline_editor_widget.py después de la clase InternetArchiveVideoSearchDialog
 
 # ========== YOUTUBE VIDEO SEARCH CLASSES ==========
-
 
 

@@ -1,6 +1,7 @@
 import json
 import re
 from typing import Any, Dict, List, Optional
+from thumbnail_formats import LANDSCAPE_16_9, resolve_format
 
 
 DEFAULT_VARIANT_RECIPES = [
@@ -230,6 +231,22 @@ PROFILE_PRESETS = {
 }
 
 
+def _audiencia_del_canal() -> str:
+    """Publico del canal, leido del Channel Bible y no cableado aca.
+
+    Ver `channel_strategy.get_channel_audience_line`: esta linea entra en el
+    prompt del LLM que disena la miniatura, asi que tenerla cableada como
+    "mystery, conspiracies, unexplained events" equivalia a pedirle miniaturas
+    del canal ANTERIOR, justo lo que el Bible del canal nuevo pone fuera de
+    alcance.
+    """
+    try:
+        from channel_strategy import get_channel_audience_line
+        return get_channel_audience_line()
+    except Exception:
+        return "general audience"
+
+
 class ThumbnailIntelligence:
     WEAK_SINGLE_WORD_HOOKS = {
         "MYSTERY", "SECRET", "TRUTH", "ANCIENT", "HISTORY", "UNKNOWN", "INVASION", "UNCOVER",
@@ -239,7 +256,8 @@ class ThumbnailIntelligence:
         "TRENDING NOW", "YOUTUBE SHORTS", "GOOGLE TRENDS",
     }
 
-    def __init__(self, llm_client=None, log_callback=None):
+    def __init__(self, llm_client=None, log_callback=None, thumbnail_format=None):
+        self.format = thumbnail_format or LANDSCAPE_16_9
         self.llm_client = llm_client
         self.log = log_callback or (lambda _msg: None)
 
@@ -248,14 +266,29 @@ class ThumbnailIntelligence:
         project_data: Dict[str, Any],
         style_hint: Optional[str] = None,
         enriched_context: Optional[Dict[str, Any]] = None,
+        thumbnail_format=None,
     ) -> Dict[str, Any]:
+        self.format = thumbnail_format or resolve_format(project_data=project_data)
         if not self.llm_client or not hasattr(self.llm_client, "_generate"):
             raise RuntimeError("Groq no está disponible para la estrategia de miniaturas hook.")
         context = self._extract_context(project_data)
         strategy = self._try_llm_strategy(context, style_hint, enriched_context)
-        if not isinstance(strategy, dict):
-            raise RuntimeError("Groq no devolvió una estrategia válida para miniaturas hook.")
-        return self._normalize_llm_strategy(strategy, context, style_hint, enriched_context)
+        if isinstance(strategy, dict):
+            try:
+                return self._normalize_llm_strategy(
+                    strategy, context, style_hint, enriched_context)
+            except Exception as exc:
+                # `_normalize_llm_strategy` exige 3 hooks, 3 recetas,
+                # hero_subject, selected_scene_prompt y base_prompt: cinco
+                # motivos distintos para abortar todo por un campo flojo.
+                self.log(f"[WARN] Estrategia del LLM incompleta ({exc}); "
+                         "se completa con la de respaldo.")
+        else:
+            self.log("[WARN] El LLM no devolvio una estrategia; "
+                     "se usa la de respaldo.")
+        self.log("[FALLBACK] Miniatura con estrategia de respaldo "
+                 "(perfil inferido del tema y del enrichment).")
+        return self._fallback_strategy(context, style_hint, enriched_context)
 
     def _extract_context(self, project_data: Dict[str, Any]) -> Dict[str, Any]:
         config = project_data.get("config", {}) or {}
@@ -306,6 +339,7 @@ class ThumbnailIntelligence:
             return None
 
         language = "English" if context["language"] == "en" else "Spanish"
+        fmt = getattr(self, "format", None) or LANDSCAPE_16_9
         enriched_context = enriched_context or {}
         enrichment_brief = {
             "suggested_niche_profile": enriched_context.get("suggested_niche_profile"),
@@ -336,8 +370,8 @@ Literal storyboard scene candidate:
 {enriched_context.get('selected_scene_prompt') or 'none'}
 
 Rules:
-- The thumbnail itself is horizontal 16:9.
-- Audience: mystery, science, hidden history, conspiracies, documented unexplained events.
+- {fmt.llm_brief}
+- Audience: {_audiencia_del_canal()}.
 - Use only the project topic, script excerpt, and enrichment brief provided here.
 - Do not introduce external trends, web references, or prior project contamination.
 - Hook text must be 1 to 3 words max.
@@ -458,10 +492,6 @@ JSON schema:
                 raise RuntimeError(
                     f"Groq returned an invalid hook thumbnail composition: {raw_composition or 'empty'}."
                 )
-                raise RuntimeError(
-                    f"Groq devolviÃ³ una composiciÃ³n invÃ¡lida para miniaturas hook: {raw_composition or 'vacÃ­a'}."
-                )
-                raise RuntimeError("Groq devolvió una composición inválida para miniaturas hook.")
             normalized_variants.append(
                 {
                     "id": str(recipe.get("id") or "").strip(),
@@ -631,174 +661,6 @@ JSON schema:
             "variant_recipes": self._default_variant_recipes_for_profile(profile_key),
         }
 
-    def _normalize_strategy(
-        self,
-        strategy: Dict[str, Any],
-        context: Dict[str, Any],
-        style_hint: Optional[str],
-        enriched_context: Optional[Dict[str, Any]],
-    ) -> Dict[str, Any]:
-        enriched_context = enriched_context or {}
-        inferred_profile = self._infer_niche_profile(context, enriched_context)
-        requested_profile = str(strategy.get("niche_profile") or "").strip().lower()
-        profile_key = inferred_profile if inferred_profile != "general_mystery" else requested_profile or inferred_profile
-        if profile_key not in PROFILE_PRESETS:
-            profile_key = self._infer_niche_profile(context, enriched_context)
-        profile = self._get_profile_preset(profile_key)
-        force_profile_defaults = bool(requested_profile and requested_profile != profile_key)
-
-        hook_candidates = self._rank_hooks_for_context(
-            self._merge_hook_candidates(
-                strategy.get("hook_candidates"),
-                strategy.get("selected_hook"),
-                enriched_context.get("trend_hooks"),
-                self._fallback_topic_hooks(context, profile_key),
-                profile.get("default_hooks"),
-            ),
-            context=context,
-            profile_key=profile_key,
-        )
-        selected_hook = self._clean_hook_text(strategy.get("selected_hook"))
-        best_hook = hook_candidates[0]
-        if (
-            not selected_hook
-            or self._hook_quality_score(selected_hook) <= 0
-            or self._hook_quality_score(selected_hook) < self._hook_quality_score(best_hook)
-        ):
-            selected_hook = hook_candidates[0]
-        elif selected_hook not in hook_candidates:
-            hook_candidates.insert(0, selected_hook)
-            hook_candidates = self._rank_hooks_for_context(
-                hook_candidates,
-                context=context,
-                profile_key=profile_key,
-            )[:3]
-
-        render_mode = str(strategy.get("render_mode") or "").strip().lower()
-        if render_mode not in {"realistic_image", "digital_illustration"}:
-            render_mode = "digital_illustration" if self._looks_illustrative(style_hint) else "realistic_image"
-
-        variant_recipes = strategy.get("variant_recipes")
-        if not isinstance(variant_recipes, list) or not variant_recipes:
-            variant_recipes = self._default_variant_recipes_for_profile(profile_key)
-
-        normalized_variants: List[Dict[str, str]] = []
-        for index, recipe in enumerate(variant_recipes[:3]):
-            base = DEFAULT_VARIANT_RECIPES[min(index, len(DEFAULT_VARIANT_RECIPES) - 1)].copy()
-            if isinstance(recipe, dict):
-                base.update({
-                    "id": str(recipe.get("id") or base["id"]).strip(),
-                    "label": str(recipe.get("label") or base["label"]).strip(),
-                    "composition": str(recipe.get("composition") or base["composition"]).strip(),
-                    "prompt_suffix": str(recipe.get("prompt_suffix") or base["prompt_suffix"]).strip(),
-                })
-            normalized_variants.append(base)
-
-        while len(normalized_variants) < 3:
-            normalized_variants.append(DEFAULT_VARIANT_RECIPES[len(normalized_variants)].copy())
-
-        hero_subject = str(
-            strategy.get("hero_subject")
-            or strategy.get("impact_subject")
-            or enriched_context.get("hero_subject")
-            or profile.get("subject")
-            or self._subject_from_topic(context["topic"])
-        ).strip()
-        if self._should_use_profile_subject(hero_subject, profile_key):
-            hero_subject = str(profile.get("subject") or hero_subject).strip()
-        selected_scene_prompt = str(
-            strategy.get("selected_scene_prompt")
-            or enriched_context.get("selected_scene_prompt")
-            or ""
-        ).strip()
-        hero_frame = str(
-            strategy.get("hero_frame")
-            or enriched_context.get("hero_frame")
-            or "single dominant hero subject, large in frame, dramatic negative space"
-        ).strip()
-        visual_motifs = self._clean_string_list(
-            strategy.get("visual_motifs")
-            or enriched_context.get("visual_motifs")
-            or profile.get("default_motifs")
-            or []
-        )
-        wow_directives = self._clean_string_list(
-            strategy.get("wow_directives")
-            or enriched_context.get("wow_directives")
-            or [
-                "cinematic scale",
-                "premium movie-poster framing",
-                "hyper-detailed textures",
-                "dramatic rim light",
-            ]
-        )
-        negative_constraints = self._clean_string_list(
-            strategy.get("negative_constraints")
-            or enriched_context.get("negative_constraints")
-            or [
-                "no generic stock look",
-                "no cluttered background",
-                "no weak focal point",
-                "no busy collage",
-            ]
-        )
-        reference_queries = self._sanitize_reference_queries(
-            self._clean_string_list(
-                strategy.get("reference_queries")
-                or enriched_context.get("reference_queries")
-                or [context["topic"]]
-            ),
-            context=context,
-            profile_key=profile_key,
-        )
-        reference_images = self._sanitize_reference_images(
-            list(enriched_context.get("visual_references") or [])[:6],
-            context=context,
-            profile_key=profile_key,
-        )
-
-        fallback_base_prompt = self._fallback_strategy(context, style_hint, enriched_context)["base_prompt"]
-        base_prompt = str(strategy.get("base_prompt") or "").strip()
-        if not base_prompt or self._looks_off_topic_for_profile(base_prompt, profile_key):
-            base_prompt = fallback_base_prompt
-
-        palette = str(strategy.get("palette") or "").strip()
-        if force_profile_defaults or not palette or self._looks_off_topic_for_profile(palette, profile_key):
-            palette = str(profile.get("palette") or "danger_yellow_black").strip()
-
-        return {
-            "topic": context["topic"],
-            "category": context["category"],
-            "language": context["language"],
-            "duration": context["duration"],
-            "niche_profile": profile_key,
-            "niche_label": str(profile.get("label") or profile_key.replace("_", " ").title()),
-            "impact_subject": str(strategy.get("impact_subject") or hero_subject).strip(),
-            "hero_subject": hero_subject,
-            "hero_frame": hero_frame,
-            "selected_scene_prompt": selected_scene_prompt,
-            "mystery_concept": str(
-                strategy.get("mystery_concept")
-                or enriched_context.get("web_summary")
-                or profile.get("concept")
-                or "hidden truth"
-            ).strip(),
-            "hook_candidates": hook_candidates[:3],
-            "selected_hook": selected_hook,
-            "palette": palette,
-            "lighting": str(strategy.get("lighting") or "cinematic glow with hard contrast").strip(),
-            "render_mode": render_mode,
-            "quality_tier": str(strategy.get("quality_tier") or enriched_context.get("quality_tier") or "epic_cinematic").strip(),
-            "visual_motifs": visual_motifs,
-            "wow_directives": wow_directives,
-            "negative_constraints": negative_constraints,
-            "reference_queries": reference_queries,
-            "reference_images": reference_images,
-            "web_summary": str(strategy.get("web_summary") or enriched_context.get("web_summary") or "").strip(),
-            "base_prompt": base_prompt,
-            "variant_recipes": normalized_variants,
-            "preferred_compositions": list(profile.get("preferred_compositions") or []),
-        }
 
     def _extract_json(self, raw_text: str) -> Optional[Dict[str, Any]]:
         if not raw_text:
@@ -894,41 +756,6 @@ JSON schema:
         ]
         return filtered[:6] or [str(context.get("topic") or "Untold mystery").strip()]
 
-    def _sanitize_reference_images(
-        self,
-        reference_images: List[Dict[str, Any]],
-        context: Dict[str, Any],
-        profile_key: str,
-    ) -> List[Dict[str, Any]]:
-        combined = " ".join(str(context.get(key) or "") for key in ("topic", "category", "script"))
-        if profile_key != "natural_disaster" and not self._is_natural_disaster_context(combined):
-            return reference_images[:6]
-
-        blocked_terms = (
-            "classified", "cargo", "uranium", "nuclear", "shipment",
-            "transfer", "weapon", "airport", "rocky flats",
-        )
-        filtered: List[Dict[str, Any]] = []
-        for item in reference_images:
-            descriptor = " ".join(
-                str(item.get(key) or "")
-                for key in ("title", "context", "url")
-            )
-            if any(self._contains_phrase(descriptor, blocked) for blocked in blocked_terms):
-                continue
-            filtered.append(item)
-        return filtered[:6]
-
-    def _looks_off_topic_for_profile(self, text: Any, profile_key: str) -> bool:
-        if profile_key != "natural_disaster":
-            return False
-        return any(
-            self._contains_phrase(text, token)
-            for token in (
-                "classified", "cargo", "uranium", "nuclear", "shipment",
-                "transfer", "weapon", "airport", "rocky flats",
-            )
-        )
 
     def _fallback_topic_hooks(self, context: Dict[str, Any], suggested_profile: str) -> List[str]:
         combined = " ".join(
@@ -963,50 +790,6 @@ JSON schema:
             return False
         return re.search(rf"\b{re.escape(normalized_phrase)}\b", normalized_text) is not None
 
-    def _extract_text_tokens(self, text: Any) -> List[str]:
-        return [token.upper() for token in self._text_normalize(text).split() if token]
-
-    def _rank_hooks_for_context(self, hooks: List[str], context: Dict[str, Any], profile_key: str) -> List[str]:
-        unique_hooks: List[str] = []
-        for hook in hooks:
-            clean = self._clean_hook_text(hook)
-            if clean and clean not in unique_hooks:
-                unique_hooks.append(clean)
-        if not unique_hooks:
-            return ["THE SECRET"]
-        return sorted(
-            unique_hooks,
-            key=lambda hook: self._hook_context_score(hook, context, profile_key),
-            reverse=True,
-        )
-
-    def _hook_context_score(self, hook: str, context: Dict[str, Any], profile_key: str) -> int:
-        score = self._hook_quality_score(hook)
-        hook_tokens = set(self._clean_hook_text(hook).replace("?", "").replace("!", "").split())
-        context_tokens = set(
-            self._extract_text_tokens(
-                " ".join(
-                    str(context.get(key) or "")
-                    for key in ("topic", "category", "script")
-                )
-            )
-        )
-        fallback_tokens = set(
-            self._extract_text_tokens(
-                " ".join(self._fallback_topic_hooks(context, profile_key))
-            )
-        )
-        generic_tokens = {"THE", "WHAT", "WHO", "HOW", "WHY"}
-        meaningful_tokens = hook_tokens - generic_tokens
-
-        overlap = meaningful_tokens & (context_tokens | fallback_tokens)
-        if overlap:
-            score += 5 * len(overlap)
-
-        if meaningful_tokens and not overlap:
-            score -= 10
-
-        return score
 
     def _clean_hook_text(self, text: Optional[str]) -> str:
         clean = re.sub(r"\s+", " ", str(text or "").strip())
@@ -1138,70 +921,4 @@ JSON schema:
                 break
         return clean_hooks[:8]
 
-    def _prioritize_hooks(self, hooks: List[str]) -> List[str]:
-        unique_hooks: List[str] = []
-        for hook in hooks:
-            clean = self._clean_hook_text(hook)
-            if clean and clean not in unique_hooks:
-                unique_hooks.append(clean)
-        if not unique_hooks:
-            return ["THE SECRET"]
-        return sorted(unique_hooks, key=self._hook_quality_score, reverse=True)
 
-    def _hook_quality_score(self, hook: str) -> int:
-        tokens = [token for token in self._clean_hook_text(hook).split() if token]
-        if not tokens:
-            return -100
-
-        score = 0
-        word_count = len(tokens)
-        joined = " ".join(tokens)
-
-        if word_count == 2:
-            score += 12
-        elif word_count == 3:
-            score += 9
-        elif word_count == 1:
-            score += 2
-
-        if 8 <= len(joined.replace(" ", "")) <= 18:
-            score += 3
-
-        for token in tokens:
-            if token in {
-                "WHO", "WHAT", "HIDDEN", "CLASSIFIED", "SEA", "SIGNAL", "CARGO",
-                "SANK", "BRONZE", "INVADERS", "EXPLODED", "BLAST", "COSMIC",
-                "IMPACT", "FIREBALL", "HIT", "TSUNAMI", "QUAKE", "SHOOK",
-                "FAULT", "MEGA", "MINUTES", "VOLCANO", "ERUPTION",
-            }:
-                score += 4
-            if token in {"MYSTERY", "HISTORY", "ANCIENT"}:
-                score -= 2
-            if token in {"GOOGLE", "YOUTUBE", "NEWS", "TRENDING", "VIRAL"}:
-                score -= 12
-
-        if word_count == 1 and tokens[0] in self.WEAK_SINGLE_WORD_HOOKS:
-            score -= 10
-
-        if joined.endswith("?"):
-            score += 2
-
-        return score
-
-    def _should_use_profile_subject(self, hero_subject: str, profile_key: str) -> bool:
-        subject = str(hero_subject or "").strip().lower()
-        if not subject:
-            return True
-        if profile_key == "ancient_collapse":
-            return not any(
-                token in subject
-                for token in ("sea", "bronze", "warship", "invader", "raider", "pharaoh", "egypt", "medinet")
-            )
-        if profile_key == "natural_disaster":
-            return any(
-                token in subject
-                for token in ("sunset", "landscape", "artifact", "document", "cargo", "container", "airport")
-            )
-        if profile_key == "military_coverup":
-            return "sunset" in subject or "landscape" in subject
-        return False

@@ -37,6 +37,7 @@ def _safe_print(*args, sep=' ', end='\n', file=None, flush=False):
 print = _safe_print
 
 from typing import List, Dict, Optional, Tuple
+import audio_mix_utils
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageEnhance
 import base64
@@ -131,7 +132,6 @@ if not WHISPER_AVAILABLE:
 # 4. Pydub y FFmpeg
 try:
     from pydub import AudioSegment
-    from pydub.silence import detect_nonsilent
     
     # Configurar la ruta de FFmpeg para pydub (EspecÃ­fico para Windows)
     import platform
@@ -186,7 +186,7 @@ except ImportError:
     print("[!] gemini_ai_client.py no encontrado. La generacion de guion contextual fallara.")
 
 try:
-    from runwayml import RunwayML, TaskFailedError
+    from runwayml import RunwayML
     RUNWAY_AVAILABLE = True
 except ImportError:
     RUNWAY_AVAILABLE = False
@@ -218,13 +218,6 @@ try:
 except ImportError:
     SFX_AVAILABLE = False
     print("[!] sfx_client.py no encontrado. La busqueda de SFX fallara.")
-
-try:
-    from giphy_client import find_and_download_gif
-    GIPHY_AVAILABLE = True
-except ImportError:
-    GIPHY_AVAILABLE = False
-    print("[!] giphy_client.py no encontrado. Los Overlays fallaran.")
 
 try:
     from cinematic_effects import CinematicEffectsEngine, ContextDetector
@@ -561,7 +554,6 @@ class AutoVideoGenerator:
         
         self.jamendo_client_id = os.getenv("JAMENDO_CLIENT_ID")
         self.freesound_api_key = os.getenv("FREESOUND_API_KEY")
-        self.giphy_api_key = os.getenv("GIPHY_API_KEY")
 
         # --- Downloader de Stock (Pexels) ---
         self.downloader = ResourceDownloader()
@@ -719,23 +711,6 @@ class AutoVideoGenerator:
     # --- MÃ‰TODOS DE GENERACIÃ“N DE VIDEO CON FALLBACK ---
     # Delegados a VideoGenerationManager si estÃ¡ disponible
 
-    def _generate_video_with_leonardo_motion(self, image_path, output_path, duration=4):
-        """Genera video desde imagen usando Leonardo Motion API"""
-        if self.video_gen_manager:
-            return self.video_gen_manager.generate_video_with_leonardo_motion(image_path, output_path, duration)
-        return None
-
-    def _generate_video_with_fal(self, prompt, output_path, is_vertical=False, duration=4):
-        """Genera video desde prompt usando Fal.ai"""
-        if self.video_gen_manager:
-            return self.video_gen_manager.generate_video_with_fal(prompt, output_path, is_vertical, duration)
-        return None
-
-    def _generate_video_with_runway(self, prompt, output_path, is_vertical=False, duration=4):
-        """Genera video desde prompt usando Runway Gen-3"""
-        if self.video_gen_manager:
-            return self.video_gen_manager.generate_video_with_runway(prompt, output_path, is_vertical, duration)
-        return None
 
     def generate_video_with_fallback(self, prompt, output_path, is_vertical=False, duration=4,
                                     preferred_provider='fal', image_path=None,
@@ -1118,21 +1093,7 @@ Reglas:
             )
         return False
     
-    def _check_system_memory(self):
-        """Delega a VideoExportManager si estÃ¡ disponible"""
-        if self.export_manager:
-            return self.export_manager.check_system_memory()
-        return None, None
     
-    def _estimate_memory_required(self, num_segments, video_duration, apply_cinematic=False):
-        """Delega a VideoExportManager si estÃ¡ disponible"""
-        if self.export_manager:
-            return self.export_manager.estimate_memory_required(num_segments, video_duration, apply_cinematic)
-        # Fallback: estimaciÃ³n bÃ¡sica
-        base_memory_per_clip_mb = 50 * (2 if apply_cinematic else 1)
-        clips_memory_gb = (num_segments * base_memory_per_clip_mb) / 1024
-        processing_overhead_gb = 0.5 + ((video_duration / 300) * 0.5 if video_duration > 300 else 0)
-        return (clips_memory_gb + processing_overhead_gb) * 1.3
     
     def _should_disable_cinematic_effects(self, storyboard_data, apply_cinematic,
                                           platform=None, visual_mode=None,
@@ -1266,9 +1227,242 @@ Reglas:
             self.log(f"      [On-Screen] Failed for segment {seg_index + 1}: {exc}")
             return image_path
 
+    # ------------------------------------------------------------------
+    # QA de audio/sync del ensamblaje
+    #
+    # Los tres bugs del 2026-08-18 (auto-ducking invalido, swoosh saltado,
+    # cover frame sin padding) llegaron a produccion porque cada uno degradaba
+    # EN SILENCIO: un [WARN] perdido entre 400 lineas de log. Este bloque deja
+    # el estado real de la cadena de audio a la vista en cada render.
+    # ------------------------------------------------------------------
+    def _reset_audio_qa(self):
+        self._audio_qa = {}
+
+    def _record_audio_qa(self, key, value):
+        if getattr(self, '_audio_qa', None) is None:
+            self._audio_qa = {}
+        self._audio_qa[key] = value
+
+    @staticmethod
+    def _probe_media_duration(path):
+        """Duracion en segundos via ffprobe (0.0 si no se puede medir)."""
+        if not path or not os.path.exists(str(path)):
+            return 0.0
+        ffprobe_exe = shutil.which("ffprobe") or "ffprobe"
+        try:
+            import subprocess as _sp
+            out = _sp.run(
+                [ffprobe_exe, '-v', 'error', '-show_entries', 'format=duration',
+                 '-of', 'default=nw=1:nk=1', str(path)],
+                capture_output=True, timeout=20,
+                creationflags=_sp.CREATE_NO_WINDOW if os.name == 'nt' else 0,
+            )
+            return float((out.stdout or b'').decode('utf-8', 'replace').strip() or 0.0)
+        except Exception:
+            return 0.0
+
+    def log_audio_qa(self, video_path=None, audio_path=None, subtitle_sync=None):
+        """Imprime el resumen de QA de audio/sync y devuelve los problemas."""
+        qa = dict(getattr(self, '_audio_qa', None) or {})
+        problems = []
+        lines = ["", "=" * 60, "QA DE AUDIO / SINCRONIA", "=" * 60]
+
+        # 1. Auto-ducking: si falla, la musica se come la voz.
+        if 'ducking_ok' not in qa:
+            lines.append("  [--] Ducking: sin musica de fondo en este render")
+        elif qa.get('ducking_ok'):
+            lines.append(
+                f"  [OK] Ducking aplicado | voz {qa.get('voice_dbfs', 0):.1f} dBFS "
+                f"({qa.get('voice_gain_db', 0):+.1f} dB), musica {qa.get('music_gain_db', 0):+.1f} dB"
+            )
+            # La atenuacion TOTAL (cama + ducking) es la que decide si la musica
+            # se escucha. Mirando solo la cama la mezcla parece bien y la musica
+            # igual termina inaudible.
+            _under = qa.get('music_under_voice_speech_db')
+            if _under is not None:
+                _verdict = "OK"
+                if _under > 20:
+                    _verdict = "FAIL"
+                    problems.append(f"musica inaudible: {_under:.0f} dB bajo la voz")
+                elif _under < 10:
+                    _verdict = "FAIL"
+                    problems.append(f"musica muy alta: solo {_under:.0f} dB bajo la voz")
+                lines.append(
+                    f"  [{_verdict}] Musica: cama a -{audio_mix_utils.MUSIC_UNDER_VOICE_DB:.0f} dB, "
+                    f"~-{_under:.0f} dB bajo la voz con narracion (banda sana: 10-20)"
+                )
+        else:
+            problems.append("auto-ducking fallo: la musica puede tapar la voz")
+            lines.append(f"  [FAIL] Ducking FALLO -> {qa.get('ducking_error', 'sin detalle')}")
+
+        # 2. SFX de transicion.
+        if not qa.get('sfx_enabled', True):
+            lines.append("  [--] SFX de transicion: desactivado por el usuario")
+        elif qa.get('sfx_injected'):
+            lines.append(f"  [OK] SFX de transicion: {qa['sfx_injected']} swoosh en la mezcla final")
+        else:
+            problems.append("el swoosh de transicion no se mezclo en ningun lado")
+            lines.append(f"  [FAIL] SFX de transicion NO inyectado -> {qa.get('sfx_error', 'ninguna ruta lo mezclo')}")
+
+        # 3. Cover frame: el padding de la voz mantiene todo en la misma linea de tiempo.
+        expected = float(qa.get('cover_offset_expected_s', 0.0) or 0.0)
+        applied = float(qa.get('cover_offset_applied_s', 0.0) or 0.0)
+        if expected <= 0.01:
+            lines.append("  [--] Cover frame: no hay, no hace falta desplazar la voz")
+        elif abs(expected - applied) < 0.01:
+            lines.append(f"  [OK] Cover frame: voz desplazada {applied:.2f}s")
+        else:
+            problems.append(f"el cover frame corre {expected:.2f}s pero la voz no se desplazo")
+            lines.append(f"  [FAIL] Cover frame {expected:.2f}s SIN aplicar a la voz -> video corrido")
+
+        # 4. Duracion video vs audio.
+        v_dur = self._probe_media_duration(video_path)
+        a_dur = self._probe_media_duration(audio_path)
+        if v_dur > 0 and a_dur > 0:
+            delta = abs(v_dur - a_dur)
+            if delta <= 0.35:
+                lines.append(f"  [OK] Duracion: video {v_dur:.2f}s vs audio {a_dur:.2f}s (dif {delta:.2f}s)")
+            else:
+                problems.append(f"video y audio difieren {delta:.2f}s")
+                lines.append(f"  [FAIL] Duracion: video {v_dur:.2f}s vs audio {a_dur:.2f}s (dif {delta:.2f}s)")
+
+        # 5. Subtitulos: modo de sync y cuantas palabras quedaron interpoladas.
+        if subtitle_sync:
+            mode = subtitle_sync.get('mode', 'desconocido')
+            ratio = subtitle_sync.get('match_ratio')
+            if ratio is None:
+                lines.append(f"  [OK] Subtitulos: modo {mode}")
+            elif ratio >= 0.85:
+                lines.append(f"  [OK] Subtitulos: modo {mode}, {ratio:.0%} de palabras ancladas a Whisper")
+            else:
+                problems.append(f"solo {ratio:.0%} de las palabras quedaron ancladas a Whisper")
+                lines.append(f"  [WARN] Subtitulos: modo {mode}, solo {ratio:.0%} ancladas -> riesgo de desfase")
+
+        lines.append("-" * 60)
+        if problems:
+            lines.append(f"  => {len(problems)} PROBLEMA(S): " + "; ".join(problems))
+        else:
+            lines.append("  => Audio y sincronia OK")
+        lines.append("=" * 60)
+        for ln in lines:
+            self.log(ln)
+        return problems
+
+    def _resolve_transition_sfx_path(self, preferred=None):
+        if preferred and os.path.exists(str(preferred)):
+            return str(preferred)
+        base = os.path.dirname(os.path.abspath(__file__))
+        for candidate in (
+            os.path.join(base, "transition_overlays", "swoosh.wav"),
+            os.path.join(base, "swoosh.wav"),
+        ):
+            if os.path.exists(candidate):
+                return candidate
+        return None
+
+    # Zoom suave por defecto cuando los efectos cinematograficos estan apagados:
+    # un still totalmente quieto mata la retencion en un Short.
+    DEFAULT_MOTION_ZOOM = 1.08
+
+    def _prepare_transition_overlay(self, ffmpeg_exe, temp_dir, width, height, fps,
+                                    transition_duration, encoder, probe_duration, sp):
+        """Deja el Film Burn escalado y acelerado a la duracion de transicion.
+
+        Devuelve (ruta, duracion_real) o (None, 0.0) si no hay overlay usable.
+        """
+        base_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "transition_overlays")
+        if not os.path.isdir(base_dir):
+            return None, 0.0
+
+        origen = None
+        for fname in sorted(os.listdir(base_dir)):
+            if fname.lower().endswith((".mp4", ".mov", ".webm")):
+                origen = os.path.join(base_dir, fname)
+                break
+        if not origen:
+            return None, 0.0
+
+        objetivo = max(0.15, min(float(transition_duration or 0.5), 1.5))
+        dur_orig = probe_duration(origen, stream_selector='v:0', timeout=10) or 2.0
+        speed = dur_orig / objetivo
+        destino = os.path.join(temp_dir, "overlay_blend.mp4")
+        cmd = [
+            ffmpeg_exe, '-y', '-i', origen,
+            '-vf', (f'setpts={1.0 / speed:.6f}*PTS,'
+                    f'scale={width}:{height}:force_original_aspect_ratio=increase,'
+                    f'crop={width}:{height},fps={fps}'),
+            '-t', f'{objetivo:.3f}',
+            '-c:v', encoder, '-preset', 'fast', '-pix_fmt', 'yuv420p',
+            '-r', str(fps), '-an', destino,
+        ]
+        try:
+            res = sp.run(cmd, capture_output=True, text=True, timeout=120,
+                         creationflags=sp.CREATE_NO_WINDOW if os.name == 'nt' else 0)
+            if res.returncode != 0 or not os.path.exists(destino):
+                self.log(f"   [WARN] No se pudo preparar el overlay de transicion: "
+                         f"{(res.stderr or '')[-160:]}")
+                return None, 0.0
+        except Exception as exc:
+            self.log(f"   [WARN] No se pudo preparar el overlay de transicion: {exc}")
+            return None, 0.0
+
+        real = probe_duration(destino, stream_selector='v:0', timeout=10) or objetivo
+        self.log(f"   [FX] Film Burn listo: {dur_orig:.2f}s -> {real:.2f}s "
+                 f"(se mezcla sobre el clip, sin sumar duracion)")
+        return destino, real
+
+    def _build_motion_filter(self, clip_data, frames, duration, size,
+                             apply_cinematic, index):
+        """Filtro de movimiento (Ken Burns) para un clip de imagen.
+
+        Con efectos cinematograficos activados usa los MISMOS presets que la
+        ruta MoviePy (`CameraMovement`), elegidos por el texto del segmento, de
+        modo que las dos rutas se vean igual. Sin ellos, un zoom-in suave.
+
+        Antes esto era un zoompan fijo con la progresion escrita en funcion de
+        `in`, que en una imagen fija no avanza nunca: el movimiento no existia.
+        """
+        width, height = int(size[0]), int(size[1])
+        n = max(1, int(frames))
+
+        # El cover frame es una PLACA DE TEXTO de 0.7s. Con zoompan el texto se
+        # desplaza y escala en menos de un segundo: se ve como un salto, no como
+        # un movimiento. Va quieto.
+        if clip_data.get('is_cover'):
+            return f"zoompan=z=1:x=0:y=0:d={n}:s={width}x{height}"
+
+        if apply_cinematic and CINEMATIC_AVAILABLE:
+            try:
+                from cinematic_effects import CameraMovement, ContextDetector
+                texto = str(clip_data.get('segment_text') or '')
+                movimiento = ContextDetector.suggest_movement(texto, float(duration))
+                posiciones = CameraMovement.calculate_positions(
+                    movimiento, (width, height), zoom_factor=1.2
+                )
+                self._record_audio_qa(
+                    'motion_%d' % index, getattr(movimiento, 'value', str(movimiento))
+                )
+                return CameraMovement.build_ffmpeg_motion_filter(
+                    posiciones, n, (width, height)
+                )
+            except Exception as exc:
+                self.log(f"      [WARN] No se pudo armar el movimiento cinematografico: {exc}")
+
+        # Fallback: zoom-in lento y centrado, con la progresion en `on`.
+        z0, z1 = 1.0, self.DEFAULT_MOTION_ZOOM
+        p = "0" if n <= 1 else f"(on/{n - 1})"
+        return (
+            f"zoompan=z='{z0:.4f}+({z1 - z0:.4f})*{p}'"
+            f":x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
+            f":d={n}:s={width}x{height}"
+        )
+
     def _assemble_direct_ffmpeg(self, clips_data, audio_file_path, output_path,
                                 resolution, fps=30, transition_type='None (Direct Cut)',
-                                transition_duration=0.5):
+                                transition_duration=0.5,
+                                enable_transition_sfx=True,
+                                transition_sfx_path=None,
+                                apply_cinematic=False):
         """
         Ensambla video directamente con FFmpeg desde imÃ¡genes y/o videos.
         Mucho mÃ¡s rÃ¡pido y robusto que MoviePy.
@@ -1466,10 +1660,34 @@ Reglas:
 
         # FASE 1: Crear clips individuales desde imÃ¡genes
         total_clips = len(clips_data)
+        # --- Overlay de transicion (Film Burn) preparado ANTES de los clips ---
+        # Se mezcla DENTRO del clip entrante (screen blend sobre sus primeros
+        # cuadros) en vez de insertarse como clip aparte. Insertarlo sumaba su
+        # duracion al video: con 8 cortes de 0.70s el video terminaba 5.6s mas
+        # largo que el audio y todo el visual quedaba corrido.
+        overlay_blend_path = None
+        overlay_blend_dur = 0.0
+        if is_overlay_transition and len(clips_data) > 1:
+            overlay_blend_path, overlay_blend_dur = self._prepare_transition_overlay(
+                ffmpeg_exe, temp_dir, width, height, fps,
+                transition_duration, optimal_encoder, _probe_duration_seconds, sp,
+            )
+
+        # Fuentes visuales por clip, para detectar cambios de escena.
+        _clip_sources = [
+            os.path.normcase(os.path.abspath(str(it.get('filename') or '')))
+            for it in clips_data
+        ]
+
         self.log(f"\n   ðŸ“¹ Fase 1/3: Creando {total_clips} clips ({width}x{height})...")
         start_time = _time.time()
         clips = []
         clip_durations = []
+        overlays_blended = 0
+        # Indices de clip donde arranca una escena nueva. Los usa el SFX de
+        # transicion: antes se deducian de los clips 'overlay_transition'
+        # insertados, que ya no existen desde que el Film Burn se mezcla.
+        escenas_nuevas = []
         supports_minterpolate = _ffmpeg_supports_filter("minterpolate")
         minterpolate_warning_logged = False
 
@@ -1509,14 +1727,19 @@ Reglas:
                 vf = (f'scale={width}:{height}:force_original_aspect_ratio=decrease,'
                       f'pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,fps={fps}')
 
-                # Agregar fade-out de video al Ãºltimo clip para un cierre suave
+                # Fade-out del ultimo clip. Se calcula aca pero se agrega DESPUES
+                # del zoompan: en una imagen fija el input tiene un solo cuadro en
+                # t=0, asi que un fade con `st` de varios segundos nunca dispara si
+                # va antes del zoompan (que es quien genera la linea de tiempo).
+                fade_suffix = ''
                 if i == total_clips - 1 and duration > 2:
                     fade_duration = min(4.0, duration - 0.5)  # Fade de hasta 4s, dejando al menos 0.5s
                     fade_start = max(0, duration - fade_duration)
-                    vf += f',fade=t=out:st={fade_start:.2f}:d={fade_duration:.2f}'
+                    fade_suffix = f',fade=t=out:st={fade_start:.2f}:d={fade_duration:.2f}'
                     self.log(f"      ðŸŽ¬ Fade-out de video: {fade_duration:.1f}s al final del Ãºltimo clip")
 
                 if is_video:
+                    vf += fade_suffix
                     # Si el video es mÃ¡s corto que el segmento, ralentizarlo para cubrirlo completo
                     # (evita repeticiones visibles por loop).
                     original_duration = _probe_duration_seconds(img_path, stream_selector='v:0', timeout=10)
@@ -1558,21 +1781,58 @@ Reglas:
                         clip_out
                     ]
                 else:
-                    # MEJORA: Efecto Ken Burns Orgánico (Easing)
-                    # En lugar de una imagen estática con -loop 1, generamos un paneo suave con ease-out.
-                    frames = int(float(duration) * fps)
-                    # sin((in/frames)*(PI/2)) genera una curva suave de desaceleración (Ease-out)
-                    kb_vf = f"{vf},zoompan=z='1.0+0.05*sin((in/{frames})*(PI/2))':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d={frames}:s={width}x{height}:fps={fps}"
-                    
-                    cmd = [
-                        ffmpeg_exe, '-y',
-                        '-i', img_path,
-                        '-t', str(duration),
-                        '-vf', kb_vf,
-                        '-c:v', optimal_encoder, '-preset', 'fast', '-pix_fmt', 'yuv420p',
-                        '-r', str(fps), '-g', '30',
-                        clip_out
-                    ]
+                    # Ken Burns / efectos cinematograficos resueltos DENTRO de
+                    # FFmpeg (C, multihilo) en vez de cuadro a cuadro en Python.
+                    frames = max(1, int(float(duration) * fps))
+                    motion_vf = self._build_motion_filter(
+                        clip_data=item,
+                        frames=frames,
+                        duration=float(duration),
+                        size=(width, height),
+                        apply_cinematic=apply_cinematic,
+                        index=i,
+                    )
+                    kb_vf = f"{vf},{motion_vf},fps={fps}{fade_suffix}"
+
+                    # El Film Burn va MEZCLADO sobre el arranque del clip cuando
+                    # este inicia una escena nueva. `repeatlast=0` corta el blend
+                    # al terminar el overlay y deja pasar el clip sin tocar; asi
+                    # el efecto no alarga el video ni se queda congelado encima.
+                    inicia_escena = (
+                        overlay_blend_path is not None and i > 0
+                        and _clip_sources[min(i, len(_clip_sources) - 1)]
+                        != _clip_sources[min(i - 1, len(_clip_sources) - 1)]
+                    )
+                    if inicia_escena:
+                        filtro = (
+                            f"[0:v]{kb_vf}[base];"
+                            f"[1:v]scale={width}:{height}:force_original_aspect_ratio=increase,"
+                            f"crop={width}:{height},fps={fps},setpts=PTS-STARTPTS[ovr];"
+                            f"[base][ovr]blend=all_mode=screen:shortest=0:repeatlast=0[v]"
+                        )
+                        cmd = [
+                            ffmpeg_exe, '-y',
+                            '-i', img_path,
+                            '-i', overlay_blend_path,
+                            '-t', str(duration),
+                            '-filter_complex', filtro,
+                            '-map', '[v]',
+                            '-c:v', optimal_encoder, '-preset', 'fast', '-pix_fmt', 'yuv420p',
+                            '-r', str(fps), '-g', '30',
+                            clip_out
+                        ]
+                        overlays_blended += 1
+                        escenas_nuevas.append(i)
+                    else:
+                        cmd = [
+                            ffmpeg_exe, '-y',
+                            '-i', img_path,
+                            '-t', str(duration),
+                            '-vf', kb_vf,
+                            '-c:v', optimal_encoder, '-preset', 'fast', '-pix_fmt', 'yuv420p',
+                            '-r', str(fps), '-g', '30',
+                            clip_out
+                        ]
 
                 tipo = "video" if is_video else "img"
                 self.log(f"      [{i+1}/{total_clips}] Codificando seg {i+1} ({tipo}, {duration:.1f}s)...")
@@ -1631,8 +1891,14 @@ Reglas:
 
         self.log(f"   âœ… {len(clips)}/{total_clips} clips creados")
 
-        # FASE 1.5: Insertar clips de overlay transition (film burn) entre escenas
-        if is_overlay_transition and len(clips) > 1:
+        if overlays_blended:
+            self.log(f"   [OK] Film Burn mezclado en {overlays_blended} cambio(s) de escena "
+                     f"(sin alterar la duracion)")
+
+        # FASE 1.5: Insertar clips de overlay transition (film burn) entre escenas.
+        # Solo como respaldo: si el blend por clip funciono, insertar ademas
+        # duplicaria el efecto y volveria a desincronizar audio y video.
+        if is_overlay_transition and len(clips) > 1 and not overlays_blended:
             overlay_base_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "transition_overlays")
             overlay_src = None
             if os.path.isdir(overlay_base_dir):
@@ -1642,7 +1908,7 @@ Reglas:
                         break
 
             if overlay_src:
-                target_ovr_dur = max(0.15, min(transition_duration, 1.0))
+                target_ovr_dur = max(0.7, min(float(transition_duration or 1.0), 1.5))
                 self.log(f"   [FX] Insertando Film Burn overlay ({target_ovr_dur:.2f}s) entre escenas...")
                 # Crear clip de overlay escalado y acelerado a target_ovr_dur
                 overlay_clip_path = os.path.join(temp_dir, "overlay_transition.mp4")
@@ -1683,7 +1949,9 @@ Reglas:
                             src = os.path.normcase(os.path.abspath(item.get('filename', '')))
                             sources.append(src)
 
-                        # Insertar overlay entre clips con fuente visual diferente
+                        # Insertar overlay entre clips con fuente visual diferente.
+                        # Copiar un archivo ÚNICO por corte: concat demuxer + -c copy
+                        # ignora repeticiones del mismo path y el burn desaparece.
                         merged_clips = [clips[0]]
                         merged_durations = [clip_durations[0]]
                         overlays_inserted = 0
@@ -1691,7 +1959,15 @@ Reglas:
                             src_idx = min(idx, len(sources) - 1)
                             prev_src_idx = min(idx - 1, len(sources) - 1)
                             if sources[prev_src_idx] != sources[src_idx]:
-                                merged_clips.append(overlay_clip_path)
+                                unique_ovr = os.path.join(
+                                    temp_dir, f"overlay_transition_{overlays_inserted:03d}.mp4"
+                                )
+                                try:
+                                    shutil.copy2(overlay_clip_path, unique_ovr)
+                                    ovr_to_use = unique_ovr
+                                except Exception:
+                                    ovr_to_use = overlay_clip_path
+                                merged_clips.append(ovr_to_use)
                                 merged_durations.append(actual_ovr_dur)
                                 overlays_inserted += 1
                             merged_clips.append(clips[idx])
@@ -1821,54 +2097,69 @@ Reglas:
         self.log("   🎵 Fase 3/3: Agregando audio...")
         
         # --- MEJORA SFX: Inyectar Swoosh en transiciones ---
+        # Se mezcla DENTRO del ffmpeg que muxea el audio (abajo), no con pydub:
+        # el `export()` a un mp3 intermedio fallaba con [Errno 22] y el except se
+        # comia el error -> video sin un solo swoosh. Aca solo se calculan las
+        # posiciones y el filtro; si algo falla, el mux sigue sin SFX pero el QA
+        # lo grita.
+        sfx_filter = ""
+        sfx_path_for_mix = None
+        sfx_count = 0
         try:
-            if (use_transitions or is_overlay_transition) and audio_file_path and len(clips) > 1:
+            if enable_transition_sfx and (use_transitions or is_overlay_transition) and audio_file_path and len(clips) > 1:
                 self.log("   🔊 Mezclando SFX de transicion en la pista maestra...")
                 from pydub import AudioSegment
-                master = AudioSegment.from_file(audio_file_path)
-                sfx_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "transition_overlays", "swoosh.wav")
-                
-                # Fallback to general swoosh if overlay specific one doesn't exist
-                if not os.path.exists(sfx_path):
-                    sfx_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "swoosh.wav")
-                    
-                if os.path.exists(sfx_path):
+                sfx_path = self._resolve_transition_sfx_path(transition_sfx_path)
+
+                if sfx_path and os.path.exists(sfx_path):
+                    master = AudioSegment.from_file(audio_file_path)
                     sfx_swoosh = AudioSegment.from_file(sfx_path)
-                    
-                    # Calcular pico del swoosh
+
+                    # Pico del swoosh: se alinea el PICO con el corte, no el
+                    # inicio (el archivo dura ~4s y arranca con build-up).
                     max_rms, peak_idx = 0, 0
                     chunk_size = 10
-                    for i in range(0, len(sfx_swoosh) - chunk_size, chunk_size):
-                        rms = sfx_swoosh[i:i+chunk_size].rms
+                    for i in range(0, max(1, len(sfx_swoosh) - chunk_size), chunk_size):
+                        rms = sfx_swoosh[i:i + chunk_size].rms
                         if rms > max_rms:
                             max_rms = rms
                             peak_idx = i
-                    
-                    # Calcular puntos de inyeccion
-                    accumulated = 0.0
-                    if use_transitions:
-                        for i in range(1, created_count):
-                            accumulated += clip_durations[i-1]
-                            offset = max(0.0, accumulated - (i * safe_transition_duration))
-                            transition_peak_ms = int((offset + safe_transition_duration / 2) * 1000)
-                            position_ms = max(0, transition_peak_ms - peak_idx)
-                            master = master.overlay(sfx_swoosh, position=position_ms)
-                    elif is_overlay_transition:
-                        for i in range(len(clips)):
-                            if "overlay_transition" in clips[i]:
-                                transition_peak_ms = int((accumulated + clip_durations[i] / 2) * 1000)
-                                position_ms = max(0, transition_peak_ms - peak_idx)
-                                master = master.overlay(sfx_swoosh, position=position_ms)
-                            accumulated += clip_durations[i]
-                            
-                    mixed_audio_path = os.path.join(temp_dir, "master_mixed_sfx.mp3")
-                    master.export(mixed_audio_path, format="mp3")
-                    audio_file_path = mixed_audio_path
-                    self.log("   ✅ SFX de transicion mezclados exitosamente.")
+
+                    posiciones = audio_mix_utils.compute_transition_sfx_positions(
+                        clip_durations,
+                        escenas_nuevas=escenas_nuevas,
+                        transition_duration=safe_transition_duration if use_transitions else 0.0,
+                        created_count=created_count if use_transitions else None,
+                        peak_offset_s=peak_idx / 1000.0,
+                        total_duration_s=len(master) / 1000.0,
+                    )
+
+                    if not posiciones:
+                        # Si no se inyecto ninguno, NO decir que salio bien: ese
+                        # mensaje enganoso es lo que oculto que el swoosh no sonaba.
+                        self.log("   [FAIL] SFX de transicion: 0 inyectados "
+                                 "(no se detectaron cambios de escena)")
+                        self._record_audio_qa('sfx_error', 'cero puntos de insercion')
+                    else:
+                        ganancia = audio_mix_utils.compute_sfx_gain_db(
+                            master.max_dBFS, sfx_swoosh.max_dBFS
+                        )
+                        sfx_filter = audio_mix_utils.build_transition_sfx_filter(
+                            posiciones, gain_db=ganancia
+                        )
+                        sfx_path_for_mix = sfx_path
+                        sfx_count = len(posiciones)
+                        self.log(
+                            f"   [FX] Swoosh en {sfx_count} corte(s), "
+                            f"{ganancia:+.1f} dB (pico a "
+                            f"{audio_mix_utils.SFX_PEAK_UNDER_VOICE_DB:.0f} dB bajo la voz)"
+                        )
                 else:
                     self.log(f"   [WARN] No se encontro {sfx_path}, saltando SFX.")
         except Exception as e:
-            self.log(f"   [WARN] Error mezclando SFX de transicion: {e}")
+            self.log(f"   [WARN] Error preparando SFX de transicion: {e}")
+            self._record_audio_qa('sfx_error', str(e))
+            sfx_filter = ""
         # ---------------------------------------------------
 
         video_base_duration = _probe_duration_seconds(video_no_audio, stream_selector='v:0', timeout=20)
@@ -1879,24 +2170,63 @@ Reglas:
                 f"Aplicando -shortest para evitar congelamiento de imagen."
             )
             force_shortest = True
-        audio_cmd = [
-            ffmpeg_exe, '-y',
-            '-i', video_no_audio,
-            '-i', audio_file_path,
-            '-c:v', 'copy',
-            '-c:a', 'aac', '-b:a', '192k',
-            '-ar', '44100', '-ac', '2',
-            '-movflags', '+faststart',
-        ]
-        if audio_duration_sec > 0 and not force_shortest:
-            audio_cmd.extend(['-t', str(audio_duration_sec)])
-        else:
-            audio_cmd.append('-shortest')
-        audio_cmd.append(output_path)
+        elif (
+            audio_duration_sec > 0
+            and video_base_duration > audio_duration_sec + 0.4
+            and PYDUB_AVAILABLE
+        ):
+            # Film Burn inserts extra seconds; pad audio so -t audio does not crop the burns.
+            try:
+                pad_ms = int((video_base_duration - audio_duration_sec) * 1000)
+                self.log(
+                    f"   [FX] Video ({video_base_duration:.1f}s) > audio ({audio_duration_sec:.1f}s); "
+                    f"rellenando audio +{pad_ms/1000:.1f}s para conservar Film Burn"
+                )
+                _aud = AudioSegment.from_file(audio_file_path)
+                _aud = _aud + AudioSegment.silent(duration=pad_ms)
+                padded = os.path.join(temp_dir, "audio_padded_for_overlays.mp3")
+                _aud.export(padded, format="mp3")
+                audio_file_path = padded
+                audio_duration_sec = video_base_duration
+            except Exception as pad_exc:
+                self.log(f"   [WARN] No se pudo rellenar audio: {pad_exc}")
+        def _build_audio_cmd(con_sfx):
+            cmd = [ffmpeg_exe, '-y', '-i', video_no_audio, '-i', audio_file_path]
+            if con_sfx:
+                cmd += ['-i', sfx_path_for_mix,
+                        '-filter_complex', sfx_filter,
+                        '-map', '0:v', '-map', '[aout]']
+            cmd += [
+                '-c:v', 'copy',
+                '-c:a', 'aac', '-b:a', '192k',
+                '-ar', '44100', '-ac', '2',
+                '-movflags', '+faststart',
+            ]
+            if audio_duration_sec > 0 and not force_shortest:
+                cmd.extend(['-t', str(max(audio_duration_sec, video_base_duration or 0))])
+            else:
+                cmd.append('-shortest')
+            cmd.append(output_path)
+            return cmd
 
+        def _run_audio_cmd(cmd):
+            return sp.run(cmd, capture_output=True, text=True, timeout=1800,
+                          creationflags=sp.CREATE_NO_WINDOW if os.name == 'nt' else 0)
+
+        con_sfx = bool(sfx_filter and sfx_path_for_mix)
         try:
-            result = sp.run(audio_cmd, capture_output=True, text=True, timeout=1800,
-                            creationflags=sp.CREATE_NO_WINDOW if os.name == 'nt' else 0)
+            result = _run_audio_cmd(_build_audio_cmd(con_sfx))
+            if result.returncode != 0 and con_sfx:
+                # Un swoosh no vale perder el render: se reintenta sin SFX y el
+                # QA reporta que el video salio sin transiciones sonoras.
+                self.log("   [WARN] Mux con SFX fallo, reintentando sin SFX: "
+                         f"{(result.stderr or '')[:200]}")
+                self._record_audio_qa('sfx_error', 'filtergraph de SFX rechazado por FFmpeg')
+                con_sfx = False
+                result = _run_audio_cmd(_build_audio_cmd(False))
+            if con_sfx and result.returncode == 0:
+                self._record_audio_qa('sfx_injected', sfx_count)
+                self.log(f"   [OK] SFX de transicion mezclados en {sfx_count} cortes.")
             if result.returncode != 0:
                 self.log(f"   âŒ Error agregando audio: {(result.stderr or '')[:200]}")
                 return False
@@ -1981,7 +2311,10 @@ Reglas:
                                        use_google_images=True, enable_real_images_mix=False, test_mode=False,
                                        image_provider='auto',
                                        video_provider='none', fal_video_model=None,
-                                       allow_visual_regeneration=True, **_extra_kwargs):
+                                       allow_visual_regeneration=True,
+                                       enable_transition_sfx=None,
+                                       transition_sfx_path=None,
+                                       **_extra_kwargs):
         """
         Ensambla el video desde el storyboard.
         
@@ -1992,6 +2325,20 @@ Reglas:
         
         self.log(f"\nðŸš€ ENSAMBLANDO VIDEO (Modo: {assembly_mode} / {visual_mode})...")
         self.log(f"   Transicion seleccionada: {transition_type} ({transition_duration}s)")
+        if enable_transition_sfx is None:
+            enable_transition_sfx = storyboard_data.get('_enable_transition_sfx')
+        if enable_transition_sfx is None:
+            enable_transition_sfx = True
+        enable_transition_sfx = bool(enable_transition_sfx)
+        transition_sfx_path = (
+            transition_sfx_path
+            or storyboard_data.get('_transition_sfx_path')
+            or _extra_kwargs.get('transition_sfx_path')
+        )
+        if enable_transition_sfx:
+            self.log(f"   SFX transicion: {os.path.basename(str(transition_sfx_path or 'swoosh.wav'))}")
+        else:
+            self.log("   SFX transicion: OFF")
         if not allow_visual_regeneration:
             self.log("ðŸ§± Modo estricto de ensamblaje: NO se generarÃ¡n nuevas imÃ¡genes/videos IA.")
 
@@ -2120,7 +2467,8 @@ Reglas:
         if project_hint:
             try:
                 project_hint_path = Path(str(project_hint))
-                project_base_dir = project_hint_path.parent if project_hint_path.suffix.lower() == '.json' else project_hint_path
+                from project_media_paths import project_directory
+                project_base_dir = project_directory(project_hint_path)
             except Exception:
                 project_base_dir = None
 
@@ -2173,6 +2521,10 @@ Reglas:
                         image_provider=image_provider,
                         cover_text_override=cover_text,
                         log_callback=self.log,
+                        # Sin esto, las rutas relativas del storyboard
+                        # ("project_media/segment_001.png") no resuelven y el
+                        # cover cae a un gradiente oscuro aunque haya imagenes.
+                        media_base_dir=str(project_base_dir) if project_base_dir else None,
                     )
                     if cf_result and cf_result.get('image_path') and os.path.exists(cf_result['image_path']):
                         media_path = cf_result['image_path']
@@ -2202,6 +2554,8 @@ Reglas:
                         'duration': max(0.3, cf_duration),
                         'overlay_filename': None,
                         'sfx_path': None,
+                        'segment_text': '',
+                        'is_cover': True,
                     })
                 continue
 
@@ -2342,9 +2696,9 @@ Reglas:
             sfx_path = None
             if SFX_AVAILABLE and seg.get('sfx_tag') != 'none':
                 sfx_path = find_and_download_sfx(seg['sfx_tag'], self.generated_media_dir)
+            # Overlays GIF retirados (nunca hubo API key). 'overlay_tag' sigue en
+            # el esquema del storyboard pero no se descarga nada.
             ov_path = None
-            if add_overlays and GIPHY_AVAILABLE and seg.get('overlay_tag') and seg.get('overlay_tag') != 'none':
-                ov_path = find_and_download_gif(seg.get('overlay_tag'), self.generated_media_dir)
 
             if media_path:
                 # Usar os.path.abspath para la ruta definitiva
@@ -2371,7 +2725,10 @@ Reglas:
                     'timestamp_start': seg_start,
                     'duration': seg_duration,
                     'overlay_filename': os.path.basename(ov_path) if ov_path else None,
-                    'sfx_path': sfx_path
+                    'sfx_path': sfx_path,
+                    # Lo usa la ruta FFmpeg para elegir el movimiento de camara
+                    # segun el contexto, igual que hace la ruta MoviePy.
+                    'segment_text': (seg.get('narration_text') or seg.get('text') or ''),
                 })
             else:
                 self.log(f"      âš ï¸ No se generÃ³ visual para: {fname}")
@@ -2447,31 +2804,100 @@ Reglas:
         OUTRO_FADE_SECONDS = 4  # Segundos extra despuÃ©s de la narraciÃ³n
         final_audio_path = audio_path
         
-        # --- MEJORA SFX: Inyectar Swoosh en transiciones directamente en la pista de voz ---
-        _no_trans = ("none", "corte directo", "direct cut")
-        _use_trans = transition_type and not any(t in str(transition_type).lower() for t in _no_trans)
-        if PYDUB_AVAILABLE and _use_trans and len(generated_clips) > 1:
+        # --- Alineacion del cover frame -----------------------------------
+        # El storyboard desplaza los timestamps de TODOS los segmentos cuando
+        # inserta el cover frame, pero la narracion sigue empezando en 0.0s.
+        # Sin este padding la voz (y los subtitulos que salen de ella) van
+        # adelantados respecto de las imagenes durante todo el video.
+        cover_offset_s = audio_mix_utils.compute_cover_offset_seconds(
+            storyboard_data.get('segments')
+        )
+        self._reset_audio_qa()
+        self._record_audio_qa('cover_offset_expected_s', cover_offset_s)
+
+        # Pista de voz que alimenta la mezcla y (limpia) los subtitulos.
+        voice_path = audio_path
+        if PYDUB_AVAILABLE and cover_offset_s > 0.01:
+            try:
+                _v_aligned = (
+                    AudioSegment.silent(duration=int(round(cover_offset_s * 1000)))
+                    + AudioSegment.from_file(audio_path)
+                )
+                voice_path = str(self.generated_media_dir / "voice_aligned.wav")
+                _v_aligned.export(voice_path, format="wav")
+                self._record_audio_qa('cover_offset_applied_s', cover_offset_s)
+                self.log(f"   Cover frame: narracion desplazada {cover_offset_s:.2f}s para alinear con los visuales")
+            except Exception as e:
+                self.log(f"   [WARN] No se pudo alinear la narracion con el cover frame: {e}")
+                voice_path = audio_path
+
+        # Referencia limpia (voz sola, misma linea de tiempo) para Whisper.
+        subtitle_reference_audio = voice_path
+
+        _is_overlay_trans = audio_mix_utils.is_overlay_transition(transition_type)
+        _use_trans = audio_mix_utils.uses_transition(transition_type)
+        # --- Swoosh solo en CAMBIO de still (no en cada parrafo del mismo visual_key) ---
+        # La ruta FFmpeg ahora resuelve los efectos cinematograficos con zoompan,
+        # asi que `apply_cinematic` ya no obliga a pasar por MoviePy (que iba a
+        # ~1.6 fps contra ~120 fps de FFmpeg).
+        _will_use_direct_ffmpeg = bool(all_supported_media and generated_clips)
+        self._record_audio_qa('sfx_enabled', bool(enable_transition_sfx))
+        self._record_audio_qa('sfx_handled_by_direct_ffmpeg', _will_use_direct_ffmpeg)
+        if audio_mix_utils.should_inject_transition_sfx(
+            enable_transition_sfx, PYDUB_AVAILABLE, transition_type,
+            len(generated_clips), _will_use_direct_ffmpeg,
+        ):
             try:
                 self.log("   🔊 Inyectando SFX de transicion en la pista de voz...")
-                from pydub import AudioSegment
-                v_sfx = AudioSegment.from_file(audio_path)
-                sfx_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "transition_overlays", "swoosh.wav")
-                if not os.path.exists(sfx_path):
-                    sfx_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "swoosh.wav")
-                
-                if os.path.exists(sfx_path):
-                    sfx_swoosh = AudioSegment.from_file(sfx_path) - 2 # Bajar 2 dB para no saturar
-                    sfx_added = False
+                # 32 bits: el swoosh se suma a la voz y a 16 bits los picos
+                # coincidentes clipearian. El limiter final ajusta el nivel.
+                v_sfx = AudioSegment.from_file(voice_path).set_sample_width(4)
+                sfx_path = self._resolve_transition_sfx_path(transition_sfx_path)
+
+                if sfx_path and os.path.exists(sfx_path):
+                    sfx_swoosh = AudioSegment.from_file(sfx_path)
+                    # Nivelar el swoosh por PICO contra la voz: el archivo tiene
+                    # media muy baja (-27 dBFS) y quedaba inaudible bajo la
+                    # musica. Por pico se lo escucha sin clipear la mezcla.
+                    try:
+                        if sfx_swoosh.max_dBFS > -90 and v_sfx.max_dBFS > -90:
+                            sfx_swoosh = sfx_swoosh.apply_gain(
+                                (v_sfx.max_dBFS - audio_mix_utils.SFX_PEAK_UNDER_VOICE_DB)
+                                - sfx_swoosh.max_dBFS
+                            )
+                    except Exception:
+                        pass
+                    # Alinear el PICO del swoosh con el corte (no su inicio):
+                    # el archivo dura varios segundos y arranca con un build-up.
+                    peak_idx, max_rms, chunk_size = 0, 0, 10
+                    for _i in range(0, max(1, len(sfx_swoosh) - chunk_size), chunk_size):
+                        _rms = sfx_swoosh[_i:_i + chunk_size].rms
+                        if _rms > max_rms:
+                            max_rms, peak_idx = _rms, _i
+                    sfx_added = 0
+                    prev_src = os.path.normcase(os.path.abspath(str(generated_clips[0].get('filename') or '')))
                     for i in range(1, len(generated_clips)):
+                        cur_src = os.path.normcase(os.path.abspath(str(generated_clips[i].get('filename') or '')))
+                        if cur_src == prev_src:
+                            continue
+                        prev_src = cur_src
                         t_start_ms = int(generated_clips[i].get('timestamp_start', 0) * 1000)
                         if t_start_ms > 0:
-                            v_sfx = v_sfx.overlay(sfx_swoosh, position=max(0, t_start_ms - 500))
-                            sfx_added = True
-                    
+                            v_sfx = v_sfx.overlay(sfx_swoosh, position=max(0, t_start_ms - peak_idx))
+                            sfx_added += 1
+
                     if sfx_added:
-                        v_sfx.export(audio_path, format="wav")
-                        self.log("   ✅ SFX de transicion mezclados exitosamente.")
+                        # OJO: no pisar audio_path (es la narracion del proyecto);
+                        # se escribe una pista aparte para la mezcla.
+                        voice_path = str(self.generated_media_dir / "voice_sfx.wav")
+                        v_sfx.export(voice_path, format="wav")
+                        self._record_audio_qa('sfx_injected', sfx_added)
+                        self.log(f"   ✅ SFX de transicion mezclados en {sfx_added} cambios de escena.")
+                else:
+                    self._record_audio_qa('sfx_error', f"SFX no encontrado: {sfx_path}")
+                    self.log(f"   [WARN] No se encontro el archivo de SFX de transicion ({sfx_path}).")
             except Exception as e:
+                self._record_audio_qa('sfx_error', str(e))
                 self.log(f"   ⚠️ Error inyectando SFX de transicion: {e}")
 
         audio_has_outro = False  # Flag para indicar que el audio ya tiene el outro integrado
@@ -2500,7 +2926,7 @@ Reglas:
                 if PYDUB_AVAILABLE:
                     outro_ms = OUTRO_FADE_SECONDS * 1000
                     self.log(f"   ðŸŽµ Preparando audio con mÃºsica (fade out {OUTRO_FADE_SECONDS}s despuÃ©s de narraciÃ³n)...")
-                    v = AudioSegment.from_file(audio_path)
+                    v = AudioSegment.from_file(voice_path)
 
                     # Cargar y encadenar pistas de música con crossfade entre ellas
                     bgm_playlist = _bgm_paths if _bgm_paths else [bgm]
@@ -2534,6 +2960,35 @@ Reglas:
                     music_segment = m[:total_duration]
                     music_with_fadeout = music_segment.fade_out(outro_ms)
 
+                    # Calcular niveles ANTES de mezclar: la voz manda y la musica
+                    # queda por debajo. Sin esto la musica (masterizada, ~-18 dBFS)
+                    # tapa al TTS (~-21 dBFS). Las ganancias se APLICAN en FFmpeg
+                    # (float + limiter) para no clipear los picos de la voz.
+                    # Niveles medidos como se PERCIBEN: la voz en sus tramos
+                    # hablados y la musica en su nivel tipico. Usar dBFS global
+                    # para ambos metia 5.6 dB de error y la musica terminaba
+                    # 25.8 dB bajo la voz en vez de los ~14 buscados.
+                    _voz_nivel = audio_mix_utils.speech_level_dbfs(v)
+                    _mus_nivel = audio_mix_utils.music_level_dbfs(music_with_fadeout)
+                    _voice_gain_db, _music_gain_db = audio_mix_utils.compute_mix_gains(
+                        _voz_nivel, _mus_nivel
+                    )
+                    self._record_audio_qa('voice_dbfs', _voz_nivel)
+                    self._record_audio_qa('music_dbfs', _mus_nivel)
+                    self._record_audio_qa('voice_gain_db', _voice_gain_db)
+                    self._record_audio_qa('music_gain_db', _music_gain_db)
+                    _under_speech = audio_mix_utils.estimate_ducked_music_under_voice_db()
+                    self._record_audio_qa('music_under_voice_speech_db', _under_speech)
+                    self.log(
+                        f"   Niveles (hablando/tipico): voz {_voz_nivel:.1f} dBFS "
+                        f"({_voice_gain_db:+.1f} dB) / musica {_mus_nivel:.1f} dBFS "
+                        f"({_music_gain_db:+.1f} dB)"
+                    )
+                    self.log(
+                        f"   Musica: cama a -{audio_mix_utils.MUSIC_UNDER_VOICE_DB:.0f} dB de la voz, "
+                        f"~-{_under_speech:.0f} dB mientras hay narracion (ducking incluido)"
+                    )
+
                     # Mezclar: narraciÃ³n (con silencio al final) + mÃºsica (con fade-out al final)
                     # El resultado tendrÃ¡: narraciÃ³n+mÃºsica durante la narraciÃ³n, luego solo mÃºsica con fade-out
                     # MEJORA: Auto-Ducking Inteligente con FFmpeg sidechaincompress
@@ -2546,21 +3001,47 @@ Reglas:
                     music_with_fadeout.export(temp_music, format="wav")
                     
                     mp = str(self.generated_media_dir / "mix.mp3")
-                    # Usamos sidechaincompress: music (0) comprimido por voice (1)
+                    # sidechaincompress: musica (entrada 0) comprimida por la voz
+                    # (entrada 1). El detalle del filtergraph vive en
+                    # audio_mix_utils.build_duck_filter (tiene test de regresion).
+                    duck_filter = audio_mix_utils.build_duck_filter(
+                        _voice_gain_db, _music_gain_db
+                    )
                     duck_cmd = [
                         ffmpeg_exe, '-y',
                         '-i', temp_music,
                         '-i', temp_voice,
-                        '-filter_complex', '[0:a]volume=0.8[m];[1:a]volume=1.0[v];[m][v]sidechaincompress=threshold=0.03:ratio=5:attack=20:release=1000[ducked];[ducked][v]amix=inputs=2:duration=first:dropout_transition=2',
+                        '-filter_complex', duck_filter,
+                        '-map', '[out]',
                         '-c:a', 'libmp3lame', '-q:a', '2',
                         mp
                     ]
                     try:
-                        sp.run(duck_cmd, stdout=sp.DEVNULL, stderr=sp.DEVNULL, creationflags=sp.CREATE_NO_WINDOW if os.name == 'nt' else 0, check=True)
+                        _duck = sp.run(
+                            duck_cmd, stdout=sp.DEVNULL, stderr=sp.PIPE,
+                            creationflags=sp.CREATE_NO_WINDOW if os.name == 'nt' else 0,
+                            check=True,
+                        )
+                        self._record_audio_qa('ducking_ok', True)
+                        self.log("   Auto-ducking aplicado (sidechain OK)")
                     except Exception as e:
+                        _err = getattr(e, 'stderr', b'') or b''
+                        if isinstance(_err, bytes):
+                            _err = _err.decode('utf-8', errors='replace')
+                        _err_tail = ' | '.join([ln for ln in _err.strip().splitlines() if ln.strip()][-3:])
+                        self._record_audio_qa('ducking_ok', False)
+                        self._record_audio_qa('ducking_error', _err_tail or str(e))
                         self.log(f"   [WARN] Error en FFmpeg Sidechain, usando mezcla normal: {e}")
-                        # Subir un poco el volumen de la musica en el fallback (antes era -7)
-                        final_mix = v_extended.overlay(music_with_fadeout - 3)
+                        if _err_tail:
+                            self.log(f"   [WARN] ffmpeg: {_err_tail}")
+                        # Fallback en pydub: aplicar aca las ganancias calculadas.
+                        # 32 bits antes de subir la voz para no clipear los picos.
+                        try:
+                            _vf = v_extended.set_sample_width(4).apply_gain(_voice_gain_db)
+                            _mf = music_with_fadeout.set_sample_width(4).apply_gain(_music_gain_db)
+                            final_mix = _vf.overlay(_mf).set_sample_width(2)
+                        except Exception:
+                            final_mix = v_extended.overlay(music_with_fadeout - 10)
                         final_mix.export(mp, format="mp3")
                         
                     if os.path.exists(temp_voice): os.remove(temp_voice)
@@ -2589,7 +3070,7 @@ Reglas:
         if not audio_has_outro and PYDUB_AVAILABLE:
             try:
                 outro_ms = OUTRO_FADE_SECONDS * 1000
-                v = AudioSegment.from_file(audio_path)
+                v = AudioSegment.from_file(voice_path)
                 # Agregar silencio para que el video tenga tiempo de hacer fade to black
                 v_extended = v + AudioSegment.silent(duration=outro_ms)
                 mp = str(self.generated_media_dir / "mix.mp3")
@@ -2608,12 +3089,16 @@ Reglas:
             except Exception as e:
                 self.log(f"   âš ï¸ Error extendiendo audio: {e}")
 
-        if all_supported_media and not apply_cinematic and generated_clips:
+        if all_supported_media and generated_clips:
             has_videos = any(c.get('filename', '').lower().endswith(('.gif', '.mp4', '.mov', '.avi', '.webm', '.mkv')) for c in generated_clips)
             mode_desc = "imÃ¡genes + videos" if has_videos else "imÃ¡genes"
             self.log(f"\nðŸš€ Modo rÃ¡pido: ensamblaje directo con FFmpeg ({mode_desc}, sin MoviePy)...")
 
-            requested_out = VideoConfig.OUTPUT_DIR / f"{platform}_{int(time.time())}.mp4"
+            # El nombre lleva el tema: un timestamp Unix suelto no permite
+            # reconocer un video sin abrirlo.
+            from output_naming import build_video_filename
+            requested_out = VideoConfig.OUTPUT_DIR / build_video_filename(
+                platform, storyboard_data.get("topic", ""))
             out, using_local_safe_output = _resolve_safe_video_output_path(requested_out)
             if using_local_safe_output:
                 self.log("âš ï¸ Unidad remota/WebDAV detectada para exportaciÃ³n de video.")
@@ -2623,7 +3108,10 @@ Reglas:
             direct_ok = self._assemble_direct_ffmpeg(
                 generated_clips, final_audio_path, str(out), res,
                 transition_type=transition_type,
-                transition_duration=transition_duration
+                transition_duration=transition_duration,
+                enable_transition_sfx=enable_transition_sfx,
+                transition_sfx_path=transition_sfx_path,
+                apply_cinematic=apply_cinematic,
             )
 
             if direct_ok:
@@ -2638,19 +3126,26 @@ Reglas:
                     'music_attribution': None,
                     'segments': storyboard_data.get('segments', []),
                     'audio_path': storyboard_data.get('audio_path'),
-                    'final_audio_path': final_audio_path
+                    'final_audio_path': final_audio_path,
+                    'subtitle_audio_path': subtitle_reference_audio
                 }
 
                 # Aplicar subtÃ­tulos dinÃ¡micos si estÃ¡n activos
                 if add_subtitles and hasattr(self, '_dynamic_subtitle_wrapper'):
                     self.log("ðŸŽ¬ Aplicando subtÃ­tulos dinÃ¡micos al video final...")
                     subs_applied = False
+                    _subtitle_sync = None
                     try:
                         segs = storyboard_data.get('segments', [])
                         if segs:
                             from dynamic_subtitle_wrapper import DynamicSubtitleWrapper
                             wrapper = DynamicSubtitleWrapper(style=subtitle_style)
-                            subtitle_audio_path = final_audio_path or storyboard_data.get('audio_path')
+                            # Whisper alinea mucho mejor sobre la voz sola que
+                            # sobre la mezcla con musica (misma linea de tiempo).
+                            subtitle_audio_path = (
+                                subtitle_reference_audio or final_audio_path
+                                or storyboard_data.get('audio_path')
+                            )
                             if subtitle_audio_path and not os.path.exists(str(subtitle_audio_path)):
                                 subtitle_audio_path = None
 
@@ -2663,6 +3158,7 @@ Reglas:
                                 audio_path=subtitle_audio_path,
                                 language=subtitle_language
                             )
+                            _subtitle_sync = dict(getattr(wrapper.engine, 'last_sync_details', None) or {})
 
                             # Verificar que el ASS se generÃ³ con contenido
                             if not os.path.exists(ass_path) or os.path.getsize(ass_path) < 50:
@@ -2697,6 +3193,16 @@ Reglas:
                     if not subs_applied:
                         self.log(f"ðŸ”´ ATENCIÃ“N: El video final NO contiene subtÃ­tulos. "
                                  f"PodÃ©s aplicarlos manualmente con: python simple_subs.py")
+
+                    result['audio_qa_problems'] = self.log_audio_qa(
+                        video_path=result.get('video_path') or str(out),
+                        audio_path=final_audio_path,
+                        subtitle_sync=_subtitle_sync,
+                    )
+                else:
+                    result['audio_qa_problems'] = self.log_audio_qa(
+                        video_path=str(out), audio_path=final_audio_path
+                    )
 
                 # Esperar teaser si estÃ¡ en proceso
                 if generate_short_teaser and platform == 'youtube' and teaser_thread:
@@ -2811,7 +3317,9 @@ Reglas:
             return None
         
         # 5. Exportar
-        requested_out = VideoConfig.OUTPUT_DIR / f"{platform}_{int(time.time())}.mp4"
+        from output_naming import build_video_filename
+        requested_out = VideoConfig.OUTPUT_DIR / build_video_filename(
+            platform, storyboard_data.get("topic", ""))
         out, using_local_safe_output = _resolve_safe_video_output_path(requested_out)
         if using_local_safe_output:
             self.log("âš ï¸ Unidad remota/WebDAV detectada para exportaciÃ³n de video.")
@@ -2969,18 +3477,25 @@ Reglas:
             'music_attribution': None,
             'segments': storyboard_data.get('segments', []),  # Incluir segmentos para el preview
             'audio_path': storyboard_data.get('audio_path'),  # Incluir audio_path para el preview
-            'final_audio_path': final_audio_path
+            'final_audio_path': final_audio_path,
+            'subtitle_audio_path': subtitle_reference_audio
         }
         
         # 6. Aplicar subtÃ­tulos dinÃ¡micos si estÃ¡n activos y el patch estÃ¡ aplicado
         if add_subtitles and hasattr(self, '_dynamic_subtitle_wrapper'):
             self.log("ðŸŽ¬ Aplicando subtÃ­tulos dinÃ¡micos al video final...")
             subs_applied = False
+            _subtitle_sync = None
             try:
                 segments = storyboard_data.get('segments', [])
                 if segments:
                     wrapper = self._dynamic_subtitle_wrapper
-                    subtitle_audio_path = final_audio_path or storyboard_data.get('audio_path')
+                    # Whisper alinea mucho mejor sobre la voz sola que sobre la
+                    # mezcla con musica (misma linea de tiempo).
+                    subtitle_audio_path = (
+                        subtitle_reference_audio or final_audio_path
+                        or storyboard_data.get('audio_path')
+                    )
                     if subtitle_audio_path and not os.path.exists(str(subtitle_audio_path)):
                         subtitle_audio_path = None
 
@@ -2992,6 +3507,7 @@ Reglas:
                         audio_path=subtitle_audio_path,
                         language=subtitle_language
                     )
+                    _subtitle_sync = dict(getattr(wrapper.engine, 'last_sync_details', None) or {})
 
                     if not os.path.exists(ass_path) or os.path.getsize(ass_path) < 50:
                         self.log(f"âš ï¸ Archivo ASS no generado o vacÃ­o: {ass_path}")
@@ -3026,7 +3542,18 @@ Reglas:
             if not subs_applied:
                 self.log(f"ðŸ”´ ATENCIÃ“N: El video final NO contiene subtÃ­tulos. "
                          f"PodÃ©s aplicarlos manualmente con: python simple_subs.py")
-        
+
+            result['audio_qa_problems'] = self.log_audio_qa(
+                video_path=result.get('video_path') or str(out),
+                audio_path=final_audio_path,
+                subtitle_sync=_subtitle_sync,
+            )
+        else:
+            result['audio_qa_problems'] = self.log_audio_qa(
+                video_path=result.get('video_path') or str(out),
+                audio_path=final_audio_path,
+            )
+
         # Esperar a que termine la generaciÃ³n del teaser si estÃ¡ en proceso
         if generate_short_teaser and platform == 'youtube' and teaser_thread:
             self.log("â³ Esperando a que termine la generaciÃ³n del Short Teaser...")

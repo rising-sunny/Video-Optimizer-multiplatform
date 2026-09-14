@@ -403,7 +403,6 @@ except ImportError as e:
 
 try:
     from google_search_api import (
-        search_youtube_trends,
         search_google_trends,
         GOOGLE_API_KEY,
         GOOGLE_SEARCH_ENGINE_ID
@@ -423,12 +422,10 @@ except ImportError as e:
 
 
 # ========== WORKER THREADS ==========
-from ui_workers import AnalysisWorker, ResearchWorker, TrendsWorker, SearchWorker
 
 # ========== ESTILOS CSS ==========
-from analysis_mixin import AnalysisMixin
 from thumbnails_mixin import ThumbnailsMixin
-from ui_themes import STYLESHEET, THEMES, generate_stylesheet, load_theme_preference, save_theme_preference
+from ui_themes import THEMES, generate_stylesheet, load_theme_preference, save_theme_preference
 
 # ========== LAZY TAB WRAPPER ==========
 class LazyTabWrapper(QWidget):
@@ -535,14 +532,6 @@ class LazyTabWrapper(QWidget):
             # Guardar None como referencia
             if self._attr_name and self._parent_gui:
                 setattr(self._parent_gui, self._attr_name, None)
-
-    @property
-    def is_loaded(self):
-        return self._initialized and self._real_widget is not None
-
-    @property
-    def real_widget(self):
-        return self._real_widget
 
 
 # ========== CLASE PRINCIPAL GUI ==========
@@ -662,24 +651,34 @@ class VideoOptimizerGUI(QMainWindow, ThumbnailsMixin):
         if not project_path:
             return None
         try:
-            return os.path.normcase(os.path.abspath(str(project_path)))
+            return os.path.normcase(os.path.realpath(str(project_path)))
         except Exception:
             return str(project_path)
 
     def _load_last_project_once(self, widget=None):
-        """Carga el último proyecto solo una vez, aunque existan múltiples triggers."""
+        """Abre el proyecto con el que se estaba trabajando, una sola vez.
+
+        Que abrir (puntero valido / "__NUEVO__" / puntero perdido -> proyecto
+        mas reciente) lo decide project_autoload.decide_project_to_load. Aca
+        solo se evita cargarlo dos veces y se deja rastro en el log: antes, un
+        puntero roto devolvia en silencio y parecia que el proyecto se habia
+        perdido (2026-09-04).
+        """
         try:
             target_widget = widget or getattr(self, 'auto_video_tab', None)
             if not target_widget or not hasattr(target_widget, 'project_manager'):
                 return False
 
-            from pathlib import Path
-            last_project_file = Path("last_project_path.txt")
-            if not last_project_file.exists():
-                return False
+            from project_autoload import decide_project_to_load, list_recent_projects
 
-            project_path = last_project_file.read_text(encoding='utf-8').strip()
-            if not project_path or not os.path.exists(project_path):
+            puntero = ""
+            last_project_file = Path("last_project_path.txt")
+            if last_project_file.exists():
+                puntero = last_project_file.read_text(encoding='utf-8').strip()
+
+            project_path, motivo = decide_project_to_load(puntero, list_recent_projects())
+            if not project_path:
+                self.log(f" Sin proyecto para abrir: {motivo}")
                 return False
 
             normalized_path = self._normalize_project_path(project_path)
@@ -695,7 +694,7 @@ class VideoOptimizerGUI(QMainWindow, ThumbnailsMixin):
                 self._last_project_autoload_path = normalized_path
                 return False
 
-            self.log(f" Cargando último proyecto: {os.path.basename(project_path)}")
+            self.log(f" Abriendo proyecto ({motivo}): {os.path.basename(os.path.dirname(project_path))}")
             target_widget.project_manager.load_project_from_path(project_path)
             self._last_project_autoload_done = True
             self._last_project_autoload_path = normalized_path
@@ -717,9 +716,6 @@ class VideoOptimizerGUI(QMainWindow, ThumbnailsMixin):
         except Exception as e:
             print(f"Error cargando último proyecto: {e}")
 
-    def sync_subtitle_styles(self, source_tab='studio'):
-        """Compatibilidad legacy: no hay sincronización adicional de estilos."""
-        return
 
     def closeEvent(self, event):
         """Manejador de cierre de la aplicación"""
@@ -988,187 +984,14 @@ class VideoOptimizerGUI(QMainWindow, ThumbnailsMixin):
     
     
     
-    def on_trends_finished(self, ideas_data):
-        """Callback cuando terminan las tendencias"""
-        if not hasattr(self, 'btn_refresh_trends'):
-            return
-        self.btn_refresh_trends.setEnabled(True)
-        self.btn_refresh_trends.setText(" Refrescar Tendencias")
-        
-        self.clear_trends_container()
-        
-        if "error" in ideas_data:
-            self.log(" Error al analizar tendencias")
-            error_label = QLabel(f"Error: {ideas_data['error']}")
-            error_label.setObjectName("subtitle")
-            self.trends_layout.addWidget(error_label)
-            return
-        
-        if "ideas" in ideas_data and ideas_data["ideas"]:
-            self.log(f" {len(ideas_data['ideas'])} ideas de tendencias generadas")
-            
-            self.trend_ideas_widgets.clear()
-            
-            for idea in ideas_data["ideas"]:
-                checkbox = QCheckBox()
-                checkbox.setChecked(True)
-                checkbox.setObjectName("trendIdea")
-                
-                text = f"[{idea['category']}] {idea['title']}\\n(Razón: {idea['justification']})"
-                checkbox.setText(text)
-                
-                self.trends_layout.addWidget(checkbox)
-                self.trend_ideas_widgets.append((checkbox, idea))
-        else:
-            self.log(" No se generaron ideas esta vez")
-            no_ideas_label = QLabel("No se generaron ideas. Intenta refrescar.")
-            no_ideas_label.setObjectName("subtitle")
-            no_ideas_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            self.trends_layout.addWidget(no_ideas_label)
     
-    def on_trends_error(self, error_msg):
-        """Callback cuando hay error en tendencias (método obsoleto - mantenido por compatibilidad)"""
-        # Este método ya no se usa, pero se mantiene por si hay referencias
-        if hasattr(self, 'btn_refresh_trends'):
-            self.btn_refresh_trends.setEnabled(True)
-            self.btn_refresh_trends.setText(" Refrescar Tendencias")
-        
-        self.log(f" Error obteniendo tendencias: {error_msg}")
-        QMessageBox.critical(self, "Error", f"Error: {error_msg}")
     
-    def clear_trends_container(self):
-        """Limpia el contenedor de tendencias"""
-        if not hasattr(self, 'trends_layout'):
-            return
-        while self.trends_layout.count():
-            item = self.trends_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
     
-    def start_batch(self):
-        """
-        Inicia generación por lotes de videos.
-        
-        FUNCIONALIDAD:
-        Permite generar múltiples videos automáticamente basados en las ideas seleccionadas
-        (ya sea de recomendaciones o de tendencias). Cada video se genera con las mismas
-        configuraciones pero con diferentes temas.
-        
-        ESTADO ACTUAL:
-        Esta función está en desarrollo y aún no está completamente implementada.
-        Por ahora muestra un mensaje informativo.
-        """
-        selected_ideas = []
-        
-        # Buscar ideas seleccionadas de widgets de tendencias
-        if hasattr(self, 'trend_ideas_widgets'):
-            for checkbox, idea_data in self.trend_ideas_widgets:
-                if checkbox.isChecked():
-                    selected_ideas.append(idea_data)
-        
-        if not selected_ideas:
-            QMessageBox.warning(
-                self, 
-                "Sin Selección", 
-                "No has seleccionado ninguna idea para generar.\\n\\n"
-                "Primero usa 'Recomendar videos' y selecciona las recomendaciones que deseas generar,\\n"
-                "o marca las ideas de tendencias que quieres procesar."
-            )
-            return
-        
-        msg = f"Vas a generar {len(selected_ideas)} videos en lote.\\n\\n"
-        msg += "Se usarán las configuraciones de Auto Video Studio.\\n\\n"
-        msg += "️ Este proceso puede tardar MUCHO tiempo y consumir muchos créditos de APIs.\\n\\n"
-        msg += "¿Deseas continuar?"
-        
-        reply = QMessageBox.question(self, "Confirmar Generación en Lote", msg,
-                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-        
-        if reply == QMessageBox.StandardButton.Yes:
-            self.log(f"️ Iniciando generación de {len(selected_ideas)} videos...")
-            QMessageBox.information(
-                self, 
-                "En Desarrollo", 
-                "La generación por lotes está en desarrollo.\\n\\n"
-                "Por ahora, puedes generar videos individualmente desde 'Auto Video Studio'.\\n\\n"
-                "Esta función permitirá generar múltiples videos automáticamente basados en las ideas seleccionadas."
-            )
     
     # ========== MÉTODOS DE THUMBNAILS ==========
     
-    def on_thumb_provider_changed(self, provider_text):
-        """Actualiza los estilos disponibles según el proveedor seleccionado"""
-        # Guardar el estilo actual si existe
-        current_style = self.thumb_style_combo.currentText() if self.thumb_style_combo.count() > 0 else None
-        
-        # Limpiar estilos actuales
-        self.thumb_style_combo.clear()
-        
-        # Cargar estilos según el proveedor
-        self.thumb_style_combo.addItems(self.recraft_styles)
-        self.thumb_style_combo.setEnabled(True)
-        
-        # Restaurar estilo anterior si está disponible en la nueva lista
-        if current_style and current_style in [self.thumb_style_combo.itemText(i) for i in range(self.thumb_style_combo.count())]:
-            self.thumb_style_combo.setCurrentText(current_style)
-        
-        # Ocultar botón de búsqueda de imágenes reales (ya no hay proveedores de imágenes reales)
-        if hasattr(self, 'btn_search_real_images'):
-            self.btn_search_real_images.setVisible(False)
     
-    def open_real_image_search(self):
-        """Abre la ventana de búsqueda de imágenes reales según el proveedor seleccionado"""
-        provider_text = self.thumb_provider_combo.currentText()
-        topic = self.topic_input.text().strip()
-        
-        if not topic:
-            QMessageBox.warning(self, "Entrada Vacía", "Ingresa un tema primero para sugerir términos de búsqueda")
-            # Aún así permitir búsqueda manual
-        
-        # Crear un segmento ficticio para usar con los diálogos
-        segment_data = {
-            'text': topic if topic else '',
-            'visual_prompt': topic if topic else ''
-        }
-        
-        try:
-            if 'Openverse' in provider_text or 'Bing' in provider_text or 'Google' in provider_text:
-                from timeline_editor_widget import BingImagesSearchDialog
-                
-                # Verificar disponibilidad de Openverse (Gratis)
-                try:
-                    from bing_images_client import BingImagesClient
-                    bing_client = BingImagesClient(self.gemini_client)
-                    if not bing_client:
-                        QMessageBox.warning(self, "Openverse (Gratis) no disponible",
-                            "No se pudo inicializar el cliente de imágenes.")
-                        return
-                except ImportError:
-                    QMessageBox.warning(self, "Openverse (Gratis) no disponible",
-                        "El módulo bing_images_client no está disponible.")
-                    return
-                
-                dialog = BingImagesSearchDialog(self, segment_data)
-                if dialog.exec() == QDialog.DialogCode.Accepted:
-                    selected_image_path = dialog.selected_image_path
-                    if selected_image_path:
-                        self._load_real_image_as_thumbnail(selected_image_path, 'bing_images')
-            elif 'Wikimedia' in provider_text:
-                from timeline_editor_widget import WikimediaSearchDialog
-                
-                dialog = WikimediaSearchDialog(self, segment_data)
-                if dialog.exec() == QDialog.DialogCode.Accepted:
-                    selected_image_path = dialog.selected_image_path
-                    if selected_image_path:
-                        self._load_real_image_as_thumbnail(selected_image_path, 'wikimedia')
-        except ImportError as e:
-            QMessageBox.critical(self, "Error", f"No se pudo importar el diálogo de búsqueda: {e}")
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Error al abrir búsqueda de imágenes: {e}")
 
-    def _execute_leonardo_generation_thread(self, topic, category, style, fallback_providers=[]):
-        self.log("Leonardo AI fue retirado; redirigiendo a Recraft AI.")
-        self._execute_recraft_generation_thread(topic, category, style, fallback_providers)
 
     def _execute_fal_generation_thread(self, topic, category, style, fallback_providers=[]):
         """Hilo para generar thumbnail con Fal.ai FLUX.1 schnell (con fallbacks automáticos)"""
@@ -1394,9 +1217,6 @@ class VideoOptimizerGUI(QMainWindow, ThumbnailsMixin):
         # Guardar referencia al worker
         self.current_thumbnail_worker = worker
 
-    def _execute_eden_ai_generation_thread(self, topic, category, style, fallback_providers=[]):
-        self.log("Eden AI fue retirado; redirigiendo a Recraft AI.")
-        self._execute_recraft_generation_thread(topic, category, style, fallback_providers)
 
     def _trigger_next_fallback(self, remaining_fallbacks, topic, category, style):
         """Activa el siguiente proveedor en la lista de fallbacks"""
@@ -1415,234 +1235,7 @@ class VideoOptimizerGUI(QMainWindow, ThumbnailsMixin):
 
         # Si hay error pero hay fallback, el fallback ya fue activado en el worker
     
-    def _execute_google_images_generation_thread(self, topic, category, style):
-        """Hilo para generar thumbnail usando Openverse (Gratis) (compat legacy)."""
-        from PyQt6.QtCore import QThread, pyqtSignal
-        import time
-        from PIL import Image
-        import requests
-        from io import BytesIO
-
-        class GoogleImagesWorker(QThread):
-            status_update = pyqtSignal(str)
-            log_message = pyqtSignal(str)
-
-            def __init__(self, parent, topic, category, style):
-                super().__init__()
-                self.parent = parent
-                self.topic = topic
-                self.category = category
-                self.style = style
-                self.error = None
-                self.final_path = None
-
-            def run(self):
-                try:
-                    from bing_images_client import BingImagesClient
-                    
-                    # Crear cliente
-                    bing_client = BingImagesClient(self.parent.gemini_client)
-                    
-                    if not bing_client:
-                        raise Exception("No se pudo inicializar cliente de imágenes")
-                    
-                    # Paso 1: Generar términos de búsqueda con Gemini
-                    self.status_update.emit(" Groq mejorando términos de búsqueda...")
-                    search_query = self.topic
-                    if self.parent.gemini_client:
-                        # Usar Gemini para mejorar los términos de búsqueda
-                        prompt = f"Convierte este tema en términos de búsqueda efectivos para Openverse (Gratis) (máximo 5 palabras clave): {self.topic}"
-                        try:
-                            search_query = self.parent.gemini_client._generate(prompt)
-                            search_query = search_query.strip().replace('"', '').replace("'", "")
-                            # Limitar a 5 palabras
-                            words = search_query.split()[:5]
-                            search_query = ' '.join(words)
-                        except:
-                            pass  # Usar el tema original si falla
-                    
-                    self.log_message.emit(f"    Buscando: '{search_query}'")
-                    
-                    # Paso 2: Buscar imágenes
-                    self.status_update.emit(f" Buscando en Openverse (Gratis)...")
-                    images = bing_client.search_images(search_query, limit=5)
-                    
-                    if not images:
-                        raise Exception("No se encontraron imágenes en Openverse (Gratis)")
-                    
-                    # Seleccionar la primera (ya está ordenada por relevancia)
-                    selected_image = images[0]
-                    self.log_message.emit(f"    Imagen seleccionada: {selected_image.get('title', 'Sin título')[:50]}")
-                    
-                    # Paso 3: Descargar imagen
-                    self.status_update.emit("⬇️ Descargando imagen...")
-                    response = requests.get(selected_image['url'], timeout=15, stream=True)
-                    response.raise_for_status()
-                    
-                    # Cargar imagen con PIL
-                    img_data = BytesIO(response.content)
-                    img = Image.open(img_data)
-                    
-                    # Paso 4: Redimensionar a 1920x1080 (tamaño del thumbnail)
-                    self.status_update.emit(" Redimensionando a 1920x1080...")
-                    thumbnail_size = (1920, 1080)
-                    # Usar LANCZOS para mejor calidad
-                    img_resized = img.resize(thumbnail_size, Image.Resampling.LANCZOS)
-                    
-                    # Paso 5: Guardar RAW
-                    thumb_dir = Path("thumbnails_bing")
-                    thumb_dir.mkdir(exist_ok=True)
-                    safe_topic = "".join(c for c in self.topic[:30] if c.isalnum() or c in (' ', '-', '_')).replace(' ', '_')
-                    
-                    raw_path = thumb_dir / f"thumb_bing_{safe_topic}_{int(time.time())}_raw.jpg"
-                    img_resized.save(raw_path, 'JPEG', quality=95)
-                    
-                    self.parent.last_raw_image_path = str(raw_path)
-                    self.parent.last_title_used = self.topic
-                    self.log_message.emit(f" Thumbnail Openverse (Gratis) guardado: {raw_path}")
-                    
-                    # Paso 6: Aplicar texto si está activado
-                    final_path = raw_path
-                    if self.parent.add_text_overlay_check.isChecked():
-                        self.status_update.emit("️ Añadiendo texto...")
-                        final_path_str = str(thumb_dir / f"thumb_bing_{safe_topic}_{int(time.time())}_final.jpg")
-                        style = self.parent.text_style_combo.currentText()
-                        language = self.parent.text_lang_combo.currentText()
-                        
-                        if self.parent._add_text_to_image(str(raw_path), final_path_str, self.topic, style, language):
-                            final_path = Path(final_path_str)
-                            self.log_message.emit(f" Texto aplicado con estilo: {style} ({language})")
-                    
-                    self.final_path = str(final_path)
-
-                except Exception as e:
-                    self.error = str(e)
-                    import traceback
-                    self.log_message.emit(f" Error: {traceback.format_exc()}")
-
-        worker = GoogleImagesWorker(self, topic, category, style)
-        worker.status_update.connect(self.thumb_preview.setText)
-        worker.log_message.connect(self.log)
-        worker.finished.connect(lambda: self._on_thumbnail_generated(worker, 'google', False))
-        worker.start()
-        
-        # Guardar referencia al worker
-        self.current_thumbnail_worker = worker
     
-    def _execute_wikimedia_generation_thread(self, topic, category, style):
-        """Hilo para generar thumbnail usando Wikimedia Commons"""
-        from PyQt6.QtCore import QThread, pyqtSignal
-        import time
-        from PIL import Image
-        import requests
-        from io import BytesIO
-
-        class WikimediaWorker(QThread):
-            status_update = pyqtSignal(str)
-            log_message = pyqtSignal(str)
-
-            def __init__(self, parent, topic, category, style):
-                super().__init__()
-                self.parent = parent
-                self.topic = topic
-                self.category = category
-                self.style = style
-                self.error = None
-                self.final_path = None
-
-            def run(self):
-                try:
-                    from wikimedia_client import WikimediaClient
-                    
-                    # Crear cliente
-                    wikimedia_client = WikimediaClient(gemini_client=self.parent.gemini_client)
-                    
-                    # Paso 1: Generar términos de búsqueda con Gemini
-                    self.status_update.emit(" Groq mejorando términos de búsqueda...")
-                    search_query = self.topic
-                    if self.parent.gemini_client:
-                        # Usar el método de sugerencia de términos de Wikimedia
-                        try:
-                            search_query = wikimedia_client.suggest_search_terms_with_ai(self.topic, "")
-                        except:
-                            pass  # Usar el tema original si falla
-                    
-                    self.log_message.emit(f"    Buscando: '{search_query}'")
-                    
-                    # Paso 2: Buscar imágenes
-                    self.status_update.emit(f" Buscando en Wikimedia Commons...")
-                    images = wikimedia_client.search_images(search_query, limit=5)
-                    
-                    if not images:
-                        raise Exception("No se encontraron imágenes en Wikimedia Commons")
-                    
-                    # Seleccionar la primera (ya está ordenada por relevancia)
-                    selected_image = images[0]
-                    self.log_message.emit(f"    Imagen seleccionada: {selected_image.get('title', 'Sin título')[:50]}")
-                    
-                    # Paso 3: Descargar imagen
-                    self.status_update.emit("⬇️ Descargando imagen...")
-                    download_url = selected_image.get('thumburl') or selected_image.get('url')
-                    response = requests.get(download_url, timeout=15, stream=True, headers=wikimedia_client.headers)
-                    response.raise_for_status()
-                    
-                    # Cargar imagen con PIL
-                    img_data = BytesIO(response.content)
-                    img = Image.open(img_data)
-                    
-                    # Convertir a RGB si es necesario (para JPEG)
-                    if img.mode in ('RGBA', 'LA', 'P'):
-                        background = Image.new('RGB', img.size, (255, 255, 255))
-                        if img.mode == 'P':
-                            img = img.convert('RGBA')
-                        background.paste(img, mask=img.split()[-1] if img.mode == 'RGBA' else None)
-                        img = background
-                    
-                    # Paso 4: Redimensionar a 1920x1080 (tamaño del thumbnail)
-                    self.status_update.emit(" Redimensionando a 1920x1080...")
-                    thumbnail_size = (1920, 1080)
-                    # Usar LANCZOS para mejor calidad
-                    img_resized = img.resize(thumbnail_size, Image.Resampling.LANCZOS)
-                    
-                    # Paso 5: Guardar RAW
-                    thumb_dir = Path("thumbnails_wikimedia")
-                    thumb_dir.mkdir(exist_ok=True)
-                    safe_topic = "".join(c for c in self.topic[:30] if c.isalnum() or c in (' ', '-', '_')).replace(' ', '_')
-                    
-                    raw_path = thumb_dir / f"thumb_wiki_{safe_topic}_{int(time.time())}_raw.jpg"
-                    img_resized.save(raw_path, 'JPEG', quality=95)
-                    
-                    self.parent.last_raw_image_path = str(raw_path)
-                    self.parent.last_title_used = self.topic
-                    self.log_message.emit(f" Thumbnail Wikimedia guardado: {raw_path}")
-                    
-                    # Paso 6: Aplicar texto si está activado
-                    final_path = raw_path
-                    if self.parent.add_text_overlay_check.isChecked():
-                        self.status_update.emit("️ Añadiendo texto...")
-                        final_path_str = str(thumb_dir / f"thumb_wiki_{safe_topic}_{int(time.time())}_final.jpg")
-                        style = self.parent.text_style_combo.currentText()
-                        language = self.parent.text_lang_combo.currentText()
-                        
-                        if self.parent._add_text_to_image(str(raw_path), final_path_str, self.topic, style, language):
-                            final_path = Path(final_path_str)
-                            self.log_message.emit(f" Texto aplicado con estilo: {style} ({language})")
-                    
-                    self.final_path = str(final_path)
-
-                except Exception as e:
-                    self.error = str(e)
-                    import traceback
-                    self.log_message.emit(f" Error: {traceback.format_exc()}")
-
-        worker = WikimediaWorker(self, topic, category, style)
-        worker.status_update.connect(self.thumb_preview.setText)
-        worker.log_message.connect(self.log)
-        worker.finished.connect(lambda: self._on_thumbnail_generated(worker, 'wikimedia', False))
-        worker.start()
-        
-        # Guardar referencia al worker
-        self.current_thumbnail_worker = worker
 
 
     def _looks_like_svg(self, image_path):
@@ -1931,33 +1524,6 @@ class VideoOptimizerGUI(QMainWindow, ThumbnailsMixin):
         except Exception as e:
             QMessageBox.warning(self, "Error", f"Error al mostrar estado de APIs: {e}")
     
-    def show_help(self):
-        """Muestra la ayuda"""
-        help_text = """
-VIDEO OPTIMIZER STUDIO - AYUDA RÁPIDA
-
-ANÁLISIS:
-• Define un tema y categoría para generar título, descripción y tags.
-• Usa "Recomendar videos" para obtener ideas de contenido.
-• "Generación por lotes" permite preparar múltiples ideas (en desarrollo).
-
-MINIATURAS:
-• Crea miniaturas con Recraft y ajusta estilo visual.
-• Agrega texto sobre la imagen y edita resultado desde el editor interactivo.
-
-AUTO VIDEO STUDIO:
-• Centraliza guion, montaje y exportación de proyectos de video.
-
-CONFIGURACIÓN:
-• Selecciona tema visual.
-• Gestiona credenciales en `.env` y `client_secrets.json`.
-"""
-        
-        msg = QMessageBox(self)
-        msg.setWindowTitle("Ayuda")
-        msg.setText(help_text)
-        msg.setIcon(QMessageBox.Icon.Information)
-        msg.exec()
     
     def apply_theme(self, theme_key):
         """Aplica un tema a la interfaz"""
@@ -1966,41 +1532,8 @@ CONFIGURACIÓN:
         self.current_theme = theme_key
         save_theme_preference(theme_key)
     
-    def _save_project_wrapper(self):
-        """Wrapper para guardar proyecto desde la primera pestaña"""
-        if self.auto_video_tab:
-            self.auto_video_tab.save_project()
-        else:
-            QMessageBox.warning(
-                self,
-                "Auto Video Studio no disponible",
-                "El módulo Auto Video Studio no está disponible.\\n"
-                "Los proyectos solo se pueden guardar desde Auto Video Studio."
-            )
     
-    def _load_project_wrapper(self):
-        """Wrapper para cargar proyecto desde la primera pestaña"""
-        if self.auto_video_tab:
-            self.auto_video_tab.load_project()
-        else:
-            QMessageBox.warning(
-                self,
-                "Auto Video Studio no disponible",
-                "El módulo Auto Video Studio no está disponible.\\n"
-                "Los proyectos solo se pueden cargar desde Auto Video Studio."
-            )
     
-    def _manage_projects_wrapper(self):
-        """Wrapper para gestionar proyectos desde la primera pestaña"""
-        if self.auto_video_tab:
-            self.auto_video_tab.manage_projects()
-        else:
-            QMessageBox.warning(
-                self,
-                "Auto Video Studio no disponible",
-                "El módulo Auto Video Studio no está disponible.\\n"
-                "Los proyectos solo se pueden gestionar desde Auto Video Studio."
-            )
     
     def _sync_auto_save_state(self):
         """Sincroniza el estado del checkbox con el Auto Video Studio Tab"""
@@ -2025,81 +1558,6 @@ CONFIGURACIÓN:
                 "El auto-guardado solo está disponible en Auto Video Studio."
             )
     
-    def show_settings(self):
-        """Muestra configuración con selector de temas"""
-        from PyQt6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QPushButton, QGroupBox
-        
-        settings_dialog = QDialog(self)
-        settings_dialog.setWindowTitle("Configuración")
-        settings_dialog.setMinimumWidth(500)
-        settings_dialog.setMinimumHeight(400)
-        
-        layout = QVBoxLayout(settings_dialog)
-        layout.setSpacing(20)
-        layout.setContentsMargins(20, 20, 20, 20)
-        
-        # Título
-        title = QLabel("Configuración de la aplicación")
-        title.setObjectName("title")
-        layout.addWidget(title)
-        
-        # Sección de temas
-        theme_group = QGroupBox("Tema visual")
-        theme_layout = QVBoxLayout(theme_group)
-        theme_layout.setSpacing(15)
-        
-        theme_label = QLabel("Selecciona el aspecto de la interfaz:")
-        theme_layout.addWidget(theme_label)
-        
-        # Selector de temas
-        theme_combo = QComboBox()
-        for key, theme_data in THEMES.items():
-            theme_combo.addItem(theme_data['name'], key)
-        
-        # Seleccionar el tema actual
-        current_index = theme_combo.findData(self.current_theme)
-        if current_index >= 0:
-            theme_combo.setCurrentIndex(current_index)
-        
-        theme_layout.addWidget(theme_combo)
-        
-        # Botón para aplicar tema
-        def apply_selected_theme():
-            selected_key = theme_combo.currentData()
-            if selected_key:
-                self.apply_theme(selected_key)
-                self.log(f"Tema aplicado: {THEMES[selected_key]['name']}")
-                settings_dialog.accept()
-        
-        apply_btn = QPushButton("Aplicar tema")
-        apply_btn.setObjectName("accent")
-        apply_btn.clicked.connect(apply_selected_theme)
-        theme_layout.addWidget(apply_btn)
-        
-        layout.addWidget(theme_group)
-        
-        # Sección de API Keys
-        api_group = QGroupBox("API keys")
-        api_layout = QVBoxLayout(api_group)
-        api_info = QLabel(
-            "Todas las API Keys se gestionan en el archivo .env\\n\\n"
-            "Archivos de credenciales requeridos:\\n"
-            "• .env (para todas las API keys)\\n"
-            "• client_secrets.json (para YouTube OAuth)\\n"
-            "• tu-archivo-json.json (para Google Natural Language)"
-        )
-        api_info.setWordWrap(True)
-        api_layout.addWidget(api_info)
-        layout.addWidget(api_group)
-        
-        layout.addStretch()
-        
-        # Botón de cerrar
-        close_btn = QPushButton("Cerrar")
-        close_btn.clicked.connect(settings_dialog.accept)
-        layout.addWidget(close_btn)
-        
-        settings_dialog.exec()
     
     def new_project(self):
         """Crea un nuevo proyecto, guardando el actual primero si existe"""
@@ -2107,8 +1565,7 @@ CONFIGURACIÓN:
             # Verificar si hay un proyecto actual con datos
             if self.auto_video_tab:
                 # Guardar el proyecto actual si tiene datos
-                if (hasattr(self.auto_video_tab, 'current_project_path') and 
-                    self.auto_video_tab.current_project_path):
+                if hasattr(self.auto_video_tab, 'project_manager'):
                     # Auto-guardar el proyecto actual
                     if hasattr(self.auto_video_tab, 'project_manager'):
                         self.auto_video_tab.project_manager.auto_save_project("antes de crear nuevo proyecto")
@@ -2242,7 +1699,7 @@ CONFIGURACIÓN:
             
             # Guardar proyecto del Auto Video Studio si hay uno cargado
             if hasattr(self, 'auto_video_tab') and self.auto_video_tab:
-                if hasattr(self.auto_video_tab, 'current_project_path') and self.auto_video_tab.current_project_path:
+                if hasattr(self.auto_video_tab, 'project_manager'):
                     try:
                         print("[VideoOptimizerGUI] Guardando proyecto del Auto Video Studio...")
                         if hasattr(self.auto_video_tab, 'project_manager'):
@@ -2411,6 +1868,5 @@ def main():
 
 if __name__ == "__main__":
     main()
-
 
 

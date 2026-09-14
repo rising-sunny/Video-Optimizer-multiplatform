@@ -22,7 +22,7 @@ for /d %%D in ("%VENV_BASE%\video_optimizer_*") do (
 if "%VENV_PYTHON%"=="" (
     echo.
     echo ERROR: No se encontro el entorno virtual.
-    echo Ejecuta START_VISIBLE.bat primero para crear el venv.
+    echo Ejecuta INSTALL_DEPS.bat primero para crear el venv.
     echo.
     pause
     exit /b 1

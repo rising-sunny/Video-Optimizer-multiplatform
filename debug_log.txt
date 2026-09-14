@@ -1,3 +1,0 @@
-=== DEBUG START === 
-Fecha: 08-04-2026  9:46:06,92 
-[1] Buscando Python... 

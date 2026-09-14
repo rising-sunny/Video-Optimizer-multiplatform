@@ -113,11 +113,18 @@ class EmojiMapper:
 
     @classmethod
     def normalize_word(cls, word: str) -> str:
-        """Normaliza palabras para matching robusto (lower + sin acentos + sin puntuación)."""
+        """Normaliza palabras para matching robusto (lower + sin acentos + sin puntuación).
+
+        La puntuación INTERNA también se descarta: el guion tipográfico de los
+        nombres propios del guion ('Shu‑Sin', 'Muriq‑Tidnim') no existe en la
+        transcripción de Whisper ('Shusin'), y cada nombre no anclado obliga a
+        interpolar el timing de las palabras que lo rodean.
+        """
         cleaned = cls._repair_mojibake(str(word or ""))
         cleaned = cleaned.lower().strip('.,!?;:¡¿"\'()[]{}')
         normalized = unicodedata.normalize("NFKD", cleaned)
-        return ''.join(ch for ch in normalized if not unicodedata.combining(ch))
+        without_accents = ''.join(ch for ch in normalized if not unicodedata.combining(ch))
+        return ''.join(ch for ch in without_accents if ch.isalnum())
 
     @classmethod
     def normalize_text_token(cls, token: str) -> str:
@@ -679,10 +686,6 @@ class SubtitleStyle:
         """Obtiene un estilo por nombre"""
         return cls.STYLES.get(style_name.lower(), cls.STYLES['hormozi'])
     
-    @classmethod
-    def list_styles(cls) -> List[str]:
-        """Lista todos los estilos disponibles"""
-        return list(cls.STYLES.keys())
 
 
 class ASSSubtitleGenerator:
@@ -987,53 +990,6 @@ class WhisperTimestampParser:
     Parser de timestamps de Whisper para extraer timing palabra por palabra.
     """
     
-    @staticmethod
-    def parse_whisper_json(json_path: str) -> List[Dict]:
-        """
-        Parsea el JSON de Whisper y extrae palabras con timestamps.
-        
-        Returns:
-            Lista de segmentos con palabras y sus tiempos
-        """
-        with open(json_path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-        
-        segments = []
-        
-        for segment in data.get('segments', []):
-            segment_data = {
-                'start': segment.get('start', 0),
-                'end': segment.get('end', 0),
-                'text': segment.get('text', ''),
-                'words': []
-            }
-            
-            # Extraer palabras individuales si estÃ¡n disponibles
-            if 'words' in segment:
-                for word_data in segment['words']:
-                    segment_data['words'].append({
-                        'word': word_data.get('word', '').strip(),
-                        'start': word_data.get('start', segment['start']),
-                        'end': word_data.get('end', segment['end'])
-                    })
-            else:
-                # Si no hay word timestamps, dividir por palabras y estimar
-                words = segment['text'].split()
-                duration = segment['end'] - segment['start']
-                time_per_word = duration / len(words) if words else 0
-                
-                for i, word in enumerate(words):
-                    word_start = segment['start'] + (i * time_per_word)
-                    word_end = word_start + time_per_word
-                    segment_data['words'].append({
-                        'word': word,
-                        'start': word_start,
-                        'end': word_end
-                    })
-            
-            segments.append(segment_data)
-        
-        return segments
     
     @staticmethod
     def _estimate_word_weight(word: str) -> float:
@@ -1070,6 +1026,17 @@ class WhisperTimestampParser:
             weight += 0.6  # Pausa al final de oracion
         elif word and word[-1] in ',;:':
             weight += 0.3  # Pausa menor en comas
+
+        # Parentesis: el TTS los lee como un inciso y frena antes y despues.
+        # MEDIDO con Edge-TTS (2026-09-10): la misma frase de diez palabras
+        # dura 3.48s sin parentesis y 4.18s con ellos -- 0.7s de pausa pura,
+        # mas que un punto final. Sin este peso, el reparto proporcional
+        # (el que usan los videos largos, sin Whisper) corria adelantado
+        # desde cada parentesis hasta el fin del segmento.
+        if word and word[0] in '([':
+            weight += 2.5   # freno antes del inciso
+        if word and word[-1] in ')]' or (len(word) > 1 and word[-2] in ')]' and word[-1] in '.,;:!?'):
+            weight += 2.5   # freno al salir del inciso
 
         return weight
 
@@ -1754,50 +1721,6 @@ class DynamicSubtitleEngine:
             self._set_sync_details('storyboard_estimate', reason=f'whisper_exception:{type(e).__name__}')
             return self.generate_from_segments(segments, output_path, video_width, video_height)
 
-    def generate_from_whisper_json(self, 
-                                   whisper_json_path: str,
-                                   output_ass_path: str,
-                                   video_width: int = 1920,
-                                   video_height: int = 1080) -> str:
-        """
-        Genera subtÃ­tulos ASS desde un archivo JSON de Whisper.
-        
-        Args:
-            whisper_json_path: Path al JSON de Whisper
-            output_ass_path: Path donde guardar el ASS
-            video_width: Ancho del video
-            video_height: Alto del video
-        
-        Returns:
-            Path al archivo ASS generado
-        """
-        
-        print(f"ðŸŽ¬ Generando subtÃ­tulos dinÃ¡micos estilo '{self.style_name}'...")
-        self.ass_generator.events = []
-        self.ass_generator.set_video_context(video_width, video_height)
-        
-        # Parsear Whisper JSON
-        segments = WhisperTimestampParser.parse_whisper_json(whisper_json_path)
-        
-        # Generar lÃ­neas ASS
-        for segment in segments:
-            if segment['words']:
-                self.ass_generator.add_subtitle_line(
-                    segment['start'],
-                    segment['end'],
-                    segment['words']
-                )
-        
-        self._set_sync_details(
-            'whisper_json',
-            segment_count=len(segments),
-        )
-        # Generar archivo
-        return self.ass_generator.generate_ass_file(
-            output_ass_path,
-            video_width,
-            video_height
-        )
     
     def generate_from_segments(self,
                                segments: List[Dict],

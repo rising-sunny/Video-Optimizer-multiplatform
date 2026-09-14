@@ -18,6 +18,153 @@ from pathlib import Path
 from typing import Dict, List, Optional, Callable
 
 
+VALID_IMAGE_ASPECT_RATIOS = ("16:9", "9:16", "1:1")
+
+_VERTICAL_PLATFORMS = {
+    "youtube_short", "youtube_vertical", "tiktok", "reels", "instagram", "9:16",
+}
+_SQUARE_PLATFORMS = {"square", "x", "x_square", "1:1"}
+
+_CONFLICTING_ASPECT_PATTERNS = {
+    "16:9": (
+        r",?\s*vertical\s+9:16\s+portrait\s+composition\s+(?:for\s+youtube\s+shorts\s+)?",
+        r",?\s*vertical\s+9:16\b",
+        r",?\s*vertical\s+portrait\s+composition(?:\s+optimized\s+for\s+mobile[^,]*)?",
+        r",?\s*portrait\s+orientation",
+        r",?\s*mobile[- ]safe\s+viewing",
+        r",?\s*lower[- ]third\s+negative\s+space(?:\s+for\s+subtitles)?",
+        r",?\s*subject\s+centered\s+in\s+the\s+middle\s+safe\s+area",
+        r",?\s*no\s+important\s+details\s+at\s+the\s+edges",
+        r"\bvertical\s+portrait\b",
+        r"\b9:16\b",
+        r",?\s*square\s+1:1\s+composition",
+        r",?\s*square\s+composition",
+        r"\b1:1\b",
+    ),
+    "9:16": (
+        r",?\s*cinematic\s+16:9\s+horizontal\s+(?:framing|composition)"
+        r"(?:\s*,\s*wide\s+establishing\s+(?:composition|framing))?",
+        r",?\s*cinematic\s+16:9\b",
+        r",?\s*horizontal\s+composition",
+        r",?\s*landscape\s+framing",
+        r"\b16:9\b",
+        r",?\s*square\s+1:1\s+composition",
+        r",?\s*square\s+composition",
+        r"\b1:1\b",
+    ),
+    "1:1": (
+        r",?\s*vertical\s+9:16\s+portrait\s+composition\s+(?:for\s+youtube\s+shorts\s+)?",
+        r",?\s*vertical\s+9:16\b",
+        r",?\s*vertical\s+portrait\s+composition(?:\s+optimized\s+for\s+mobile[^,]*)?",
+        r"\bvertical\s+portrait\b",
+        r"\b9:16\b",
+        r",?\s*cinematic\s+16:9\s+horizontal\s+(?:framing|composition)"
+        r"(?:\s*,\s*wide\s+establishing\s+(?:composition|framing))?",
+        r",?\s*cinematic\s+16:9\b",
+        r",?\s*horizontal\s+composition",
+        r",?\s*landscape\s+framing",
+        r"\b16:9\b",
+    ),
+}
+
+_ASPECT_LEAD = {
+    "16:9": "cinematic 16:9",
+    "9:16": "vertical 9:16",
+    "1:1": "square 1:1",
+}
+
+_ASPECT_EXTRA = {
+    "16:9": (
+        "horizontal composition",
+        ("horizontal composition", "horizontal framing", "landscape framing"),
+    ),
+    "9:16": (
+        "portrait composition optimized for mobile-safe viewing, "
+        "subject centered in the middle safe area, "
+        "leave clean lower-third negative space for subtitles, "
+        "strong focal subject, no important details at the edges",
+        (
+            "vertical portrait composition",
+            "portrait composition",
+            "mobile-safe viewing",
+            "lower-third negative space",
+            "middle safe area",
+        ),
+    ),
+    "1:1": (
+        "centered framing, balanced negative space",
+        ("square composition", "centered framing"),
+    ),
+}
+
+
+def primary_aspect_ratio_from_format(video_format=None, platform=None) -> str:
+    """Aspect ratio primario de imagen: '16:9', '9:16' o '1:1'.
+
+    Valores duales/triples de la GUI (`16:9+1:1+9:16`) usan el primer
+    componente, que coincide con el perfil de generación de assets.
+    """
+    fmt = str(video_format or "").strip()
+    if fmt:
+        first = fmt.split("+")[0].strip().lower()
+        if "9:16" in first:
+            return "9:16"
+        if first.startswith("1:1") or first in {"square", "1:1"}:
+            return "1:1"
+        if "16:9" in first:
+            return "16:9"
+    plat = str(platform or "").strip().lower()
+    if plat in _VERTICAL_PLATFORMS:
+        return "9:16"
+    if plat in _SQUARE_PLATFORMS:
+        return "1:1"
+    return "16:9"
+
+
+def aspect_ratio_from_flags(is_vertical: bool = False, is_square: bool = False) -> str:
+    if is_square:
+        return "1:1"
+    if is_vertical:
+        return "9:16"
+    return "16:9"
+
+
+def apply_aspect_ratio_to_visual_prompt(visual_prompt, aspect_ratio="16:9") -> str:
+    """Deja el ratio de imagen explícito en el visual prompt y quita el contrario.
+
+    El token (`16:9` / `9:16` / `1:1`) va al inicio para que el modelo de imagen
+    (y el texto copiado al portapapeles) no lo pierda al recortar el prompt.
+    """
+    prompt = str(visual_prompt or "").strip()
+    if not prompt:
+        return prompt
+
+    ratio = str(aspect_ratio or "16:9").strip()
+    if ratio not in VALID_IMAGE_ASPECT_RATIOS:
+        ratio = primary_aspect_ratio_from_format(ratio)
+
+    for pat in _CONFLICTING_ASPECT_PATTERNS.get(ratio, ()):
+        prompt = re.sub(pat, "", prompt, flags=re.IGNORECASE)
+
+    prompt = re.sub(r",\s*,+", ", ", prompt)
+    prompt = re.sub(r"^\s*,\s*", "", prompt)
+    prompt = re.sub(r"\s+,", ",", prompt)
+    prompt = re.sub(r"\s{2,}", " ", prompt).strip(" ,")
+
+    if ratio not in prompt:
+        lead = _ASPECT_LEAD[ratio]
+        prompt = f"{lead}, {prompt}" if prompt else lead
+
+    extra, markers = _ASPECT_EXTRA[ratio]
+    prompt_lower = prompt.lower()
+    if extra and not any(marker in prompt_lower for marker in markers):
+        prompt = f"{prompt}, {extra}" if prompt else extra
+
+    prompt = re.sub(r",\s*,+", ", ", prompt)
+    prompt = re.sub(r"\s{2,}", " ", prompt).strip(" ,")
+    return prompt
+
+
 class ImageGenerationManager:
     """
     Gestor de generación de imágenes para storyboards.
@@ -513,87 +660,11 @@ class ImageGenerationManager:
 
     def _apply_aspect_guidance_to_prompt(self, visual_prompt, is_vertical: bool = False,
                                          is_square: bool = False) -> str:
-        """Añade guía de composición según el formato final del video."""
-        prompt = str(visual_prompt or '').strip()
-        if not prompt:
-            return prompt
-
-        if is_vertical:
-            guidance = (
-                "vertical portrait composition optimized for mobile-safe viewing, "
-                "subject centered in the middle safe area, leave clean lower-third negative space for subtitles, "
-                "strong focal subject, no embedded text, no captions, no UI, no cropped face, no important details at the edges"
-            )
-            prompt_lower = prompt.lower()
-            guidance_markers = (
-                'vertical portrait composition',
-                'mobile-safe viewing',
-                'lower-third negative space',
-                'no embedded text',
-                'middle safe area',
-            )
-            if not any(marker in prompt_lower for marker in guidance_markers):
-                return f"{prompt}, {guidance}"
-            return prompt
-
-        if is_square:
-            guidance = (
-                "square composition, centered framing, balanced negative space, "
-                "no embedded text, no captions"
-            )
-            prompt_lower = prompt.lower()
-            if 'square composition' not in prompt_lower and 'centered framing' not in prompt_lower:
-                return f"{prompt}, {guidance}"
-
-        return prompt
-
-    def _sanitize_visual_prompt(self, visual_prompt: str) -> str:
-        prompt = str(visual_prompt or '').strip()
-        if not prompt:
-            return prompt
-
-        substitutions = (
-            (r"\bvertical\s+9:16\s+portrait\s+composition\s+for\s+youtube\s+shorts\b", "vertical portrait composition"),
-            (r"\b9:16\b", "vertical portrait"),
-            (r"\b1:1\b", "square composition"),
-            (r"\byoutube shorts\b", "vertical short-form video"),
-            (r"\bvertical portrait composition optimized for mobile-safe viewing\b", "vertical portrait mobile-safe composition"),
-            (r"\bsubject centered in the middle safe area\b", "centered subject in safe area"),
-            (r"\bleave clean lower-third negative space for subtitles\b", "clean lower-third space"),
-            (r"\bno important details at the edges\b", "no edge-cropped details"),
-            (r"\bdifferent camera angle\b", "alternate viewpoint"),
-            (r"\bcamera angle\b", "viewpoint"),
-            (r"\bframe\s+\d+\b", "still image composition"),
-            (r"\bvariation\s+\d+\b", "distinct arrangement"),
-            (r"\bperspective\s+\d+\b", "alternate viewpoint"),
-            (r"\bunique scene\s+\d+\b", "distinct scene arrangement"),
-            (r"\bscene\s+\d+\b", "alternate composition"),
+        """Añade el ratio de imagen (16:9 / 9:16 / 1:1) y guía de composición."""
+        return apply_aspect_ratio_to_visual_prompt(
+            visual_prompt,
+            aspect_ratio_from_flags(is_vertical=is_vertical, is_square=is_square),
         )
-        for pattern, replacement in substitutions:
-            prompt = re.sub(pattern, replacement, prompt, flags=re.IGNORECASE)
-
-        prompt = re.sub(r",?\s*the sound of [^,.]+(?:fills the air)?", "", prompt, flags=re.IGNORECASE)
-        prompt = re.sub(r",?\s*and the sound of [^,.]+(?:fills the air)?", "", prompt, flags=re.IGNORECASE)
-        prompt = re.sub(r",?\s*audio cue:[^,.]+", "", prompt, flags=re.IGNORECASE)
-        prompt = re.sub(r"\bvertical\s+vertical\b", "vertical", prompt, flags=re.IGNORECASE)
-        prompt = re.sub(r"\bportrait\s+portrait\b", "portrait", prompt, flags=re.IGNORECASE)
-        prompt = re.sub(r"\band\s*\.", ".", prompt, flags=re.IGNORECASE)
-        prompt = re.sub(r",\s*\.", ".", prompt)
-        prompt = re.sub(r"\s+,", ",", prompt)
-        prompt = re.sub(r",\s*,+", ", ", prompt)
-        prompt = re.sub(r"\s{2,}", " ", prompt)
-
-        prompt_parts = []
-        seen_parts = set()
-        for part in prompt.split(','):
-            clean_part = part.strip()
-            normalized_part = clean_part.lower()
-            if clean_part and normalized_part not in seen_parts:
-                prompt_parts.append(clean_part)
-                seen_parts.add(normalized_part)
-
-        prompt = ', '.join(prompt_parts)
-        return prompt.strip(" ,")
 
     def _build_prompt_variation_suffix(self, segment_number: int, duplicated: bool = False) -> str:
         base_modifiers = [
@@ -936,6 +1007,24 @@ class ImageGenerationManager:
         )
         return self._trim_prompt_for_provider(enhanced, provider_key=normalized_provider, max_chars=720)
 
+    @staticmethod
+    def _trim_negative_terms(negative: str, max_chars: int) -> str:
+        """Recorta la lista de negativos por termino completo.
+
+        El recorte por caracteres dejaba fragmentos como "modern" (de "modern
+        clothing"), que ademas de no servir pueden confundir al modelo.
+        """
+        terminos = [t.strip() for t in (negative or "").split(",") if t.strip()]
+        salida: list[str] = []
+        largo = 0
+        for t in terminos:
+            extra = len(t) + (2 if salida else 0)
+            if largo + extra > max_chars:
+                break
+            salida.append(t)
+            largo += extra
+        return ", ".join(salida)
+
     def _build_negative_prompt(self, visual_prompt: str) -> str:
         """Build the negative prompt with prioritized buckets.
 
@@ -951,16 +1040,21 @@ class ImageGenerationManager:
           5. Era-specific terms (from LLM analysis)
           6. General quality / composition — lowest priority, trimmed first
         """
-        # 1. Text / UI / branding — absolutely critical, small bucket.
+        # 1. Text / UI / branding — absolutamente critico, y AHORA SI pequeno.
+        # Tenia 25 terminos y se comia el presupuesto entero: medido, sobrevivian
+        # 25 de 63 negativos y los 19 primeros eran sinonimos de "sin texto",
+        # mientras se perdian los anti-anacronismo y los anti-deformidad. Un
+        # modelo de imagen no necesita 19 sinonimos para entender "sin texto".
+        # Los anacronismos que estaban aca (skyscrapers, modern city, cars...)
+        # se sacaron por duplicados: ya viven en el bucket historico.
         text_branding_terms = [
-            "text", "captions", "subtitles", "letters", "numbers", "timestamp",
-            "watermark", "logo", "signature", "ui", "hud", "app interface",
-            "split screen", "collage", "poster layout", "infographic",
-            "shutterstock", "getty images", "stock photo logo",
-            # Modern anachronisms — default exclusion (LLM era_terms override if needed)
-            "skyscrapers", "modern city", "neon lights", "electricity poles",
-            "cars", "modern architecture",
+            "text", "captions", "watermark", "logo", "signature", "ui",
         ]
+
+        # 1b. Anatomia esencial. Va ARRIBA a proposito: con el presupuesto real
+        # (~290 chars) los buckets de mas abajo no llegaban nunca, y en escenas
+        # con personas las manos deformes son el fallo mas visible de la IA.
+        anatomy_essentials = ["extra fingers", "deformed hands", "bad anatomy"]
 
         # 3. Tone-contextual exclusions
         contextual_terms: list[str] = []
@@ -988,11 +1082,12 @@ class ImageGenerationManager:
 
         if is_historical:
             # Anti-anachronism (always for historical content)
+            # Compactado: "modern clothing/vehicles/buildings/weapons/street" +
+            # "contemporary architecture" eran seis maneras de decir lo mismo y
+            # consumian el presupuesto que necesitaban anatomia y anti-fantasia.
             contextual_terms.extend([
-                "modern clothing", "modern vehicles", "modern buildings",
-                "power lines", "plastic objects", "modern weapons", "anachronism",
-                "contemporary architecture", "asphalt", "glass windows",
-                "metal frames", "modern street",
+                "modern clothing", "modern vehicles", "anachronism",
+                "contemporary architecture", "power lines", "asphalt",
             ])
             # Anti-supernatural ONLY when historical AND not explicitly a mystery/paranormal prompt.
             # This is the key fix for documentary content (e.g. Punic Wars) that should NOT
@@ -1000,16 +1095,9 @@ class ImageGenerationManager:
             if not (is_ufo or is_paranormal or is_conspiracy or is_mystery):
                 contextual_terms.extend([
                     # No supernatural elements
-                    "supernatural glow", "magical aura", "ghostly figure",
-                    "spectral entity", "magical particles", "mystical halo",
-                    "ethereal mist", "glowing eyes", "deity manifestation",
-                    "demonic figure", "angel visible", "magic spell",
-                    # No fantasy creatures or beings
-                    "fantasy creature", "dragon", "monster", "imaginary beast",
-                    # No fantasy art styles bleeding into documentary
-                    "fantasy illustration", "comic book art", "anime style",
-                    "video game art", "concept art exaggerated", "CGI cartoon",
-                    "3d render videogame",
+                    # Compactado de 20 a 6: la lista larga no llegaba a la API.
+                    "supernatural glow", "ghostly figure", "glowing eyes",
+                    "fantasy creature", "anime style", "video game art",
                 ])
 
         # 4. POV / camera-crew exclusions (when prompt mentions cameras/POV)
@@ -1048,16 +1136,20 @@ class ImageGenerationManager:
         compact_negative = ", ".join(
             self._dedupe_comma_parts(
                 text_branding_terms       # 1. critical, small
+                + anatomy_essentials      # 1b. siempre presente
                 + contextual_terms        # 2. topic-specific, highest signal
                 + ai_artifact_terms       # 3. universal anatomy/face fixes
                 + era_terms               # 4. LLM-derived per-script
                 + quality_terms           # 5. general quality (first to be trimmed)
             )
         )
-        # 900 chars: enough to fit text+contextual+AI+era+quality for typical cases.
-        # Still under Recraft's ~1000-char API ceiling. The trimmer drops from the end,
-        # so quality terms get cut first if the budget is exceeded.
-        return self._trim_prompt_for_provider(compact_negative, provider_key="recraft", max_chars=900)
+        # OJO CON ESTE NUMERO. El negative prompt NO tiene 1000 caracteres propios:
+        # Recraft no expone un parametro negativo, asi que el cliente lo PEGA al
+        # final del prompt ("Avoid: ...") dentro del mismo techo de ~1000. El
+        # prompt visual se lleva ~700, asi que aca entran ~290. El tope anterior
+        # de 900 partia de suponer un presupuesto propio que no existe, y el
+        # resultado era que el 60% de los negativos se descartaba en silencio.
+        return self._trim_negative_terms(compact_negative, max_chars=300)
     
     def regenerate_visual_prompts_with_style(self, storyboard_data, style):
         """Delega a PromptProcessor si está disponible"""
@@ -1895,7 +1987,7 @@ class ImageGenerationManager:
                 is_vertical=is_vertical,
                 is_square=is_square,
             )
-            if aspect_adjusted_prompt != visual_prompt and (is_vertical or is_square):
+            if aspect_adjusted_prompt != visual_prompt:
                 self.log("       Prompt ajustado al encuadre del formato final")
                 visual_prompt = aspect_adjusted_prompt
             visual_prompt = self._sanitize_visual_prompt(visual_prompt)
@@ -2085,7 +2177,7 @@ class ImageGenerationManager:
                         is_vertical=is_vertical,
                         is_square=is_square,
                     )
-                    if aspect_adjusted_prompt != visual_prompt and (is_vertical or is_square):
+                    if aspect_adjusted_prompt != visual_prompt:
                         self.log("       Prompt ajustado al encuadre del formato final")
                         visual_prompt = aspect_adjusted_prompt
                     visual_prompt = self._sanitize_visual_prompt(visual_prompt)

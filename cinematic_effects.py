@@ -10,9 +10,25 @@ Implementa:
 """
 
 import random
-from typing import List, Dict, Tuple, Optional, Literal
+from typing import List, Dict, Tuple, Optional
 from enum import Enum
 import re
+
+# Todo lo de este modulo es resize sobre clips de moviepy, y moviepy 1.0.3 usa
+# Image.ANTIALIAS, que Pillow >= 10 elimino. Sin este shim cada efecto levanta
+# AttributeError y los stills quedan congelados. Se importa aca ademas de en
+# video_assembler para que el modulo funcione sea cual sea el orden de imports.
+import moviepy_pillow_compat  # noqa: F401
+
+
+# Colchon de zoom minimo para cualquier movimiento. Un paneo sobre una imagen
+# a escala 1.0 no tiene pixeles de sobra: o no se mueve, o muestra negro.
+PAN_HEADROOM_SCALE = 1.15
+
+# Cuanto se agranda el input antes del zoompan de FFmpeg. x/y se cuantizan a
+# pixeles enteros del input: sin supersampling un paneo lento avanza a saltos
+# visibles. 2 alcanza para que el salto quede en ~medio pixel de salida.
+FFMPEG_MOTION_SUPERSAMPLE = 2
 
 
 class MovementType(Enum):
@@ -45,16 +61,12 @@ class FilterType(Enum):
     VIGNETTE = "vignette"         # Viñeta (bordes oscuros)
 
 
-class TransitionType(Enum):
-    """Tipos de transiciones"""
-    CUT = "cut"                   # Corte directo
-    FADE = "fade"                 # Fundido
-    CROSSFADE = "crossfade"       # Fundido cruzado
-    DISSOLVE = "dissolve"         # Disolución
-    WIPE_LEFT = "wipe_left"       # Barrido izquierda
-    WIPE_RIGHT = "wipe_right"     # Barrido derecha
-    SLIDE = "slide"               # Deslizamiento
-    ZOOM = "zoom"                 # Zoom transición
+def filter_for_preset(preset):
+    """Translate Studio labels into an explicit filter; auto retains detection."""
+    key = str(preset or 'auto').strip().lower().split(' ', 1)[0]
+    return {'noir': FilterType.NOIR, 'vintage': FilterType.SEPIA,
+            'minimal': FilterType.NONE, 'documentary': FilterType.CINEMATIC,
+            'action': FilterType.DRAMATIC}.get(key)
 
 
 class ContextDetector:
@@ -191,47 +203,6 @@ class ContextDetector:
                 MovementType.PAN_ZOOM_IN
             ])
     
-    @classmethod
-    def suggest_transition(cls, from_text: str, to_text: str, 
-                          from_duration: float, to_duration: float) -> Tuple[TransitionType, float]:
-        """
-        Sugiere una transición entre dos clips basada en su contexto.
-        
-        Returns:
-            (tipo_transicion, duracion_en_segundos)
-        """
-        from_scores = cls.detect_context(from_text)
-        to_scores = cls.detect_context(to_text)
-        
-        # Calcular cambio de contexto
-        context_change = sum(abs(from_scores.get(k, 0) - to_scores.get(k, 0)) 
-                            for k in from_scores.keys())
-        
-        # Duración promedio de clips
-        avg_duration = (from_duration + to_duration) / 2
-        
-        # Clips muy cortos  corte directo
-        if avg_duration < 3:
-            return TransitionType.CUT, 0.0
-        
-        # Cambio drástico de contexto  transición más marcada
-        if context_change > 0.6:
-            return random.choice([
-                (TransitionType.FADE, 0.5),
-                (TransitionType.DISSOLVE, 0.4),
-                (TransitionType.WIPE_RIGHT, 0.3)
-            ])
-        
-        # Cambio moderado  fundido suave
-        elif context_change > 0.3:
-            return TransitionType.CROSSFADE, 0.3
-        
-        # Sin cambio  corte o fundido rápido
-        else:
-            return random.choice([
-                (TransitionType.CUT, 0.0),
-                (TransitionType.FADE, 0.2)
-            ])
 
 
 class CameraMovement:
@@ -320,9 +291,126 @@ class CameraMovement:
                 'end': {'scale': zoom_factor, 'x': int(w * 0.6), 'y': int(h * 0.6)}
             }
         }
-        
-        return movements.get(movement_type, movements[MovementType.STATIC])
-    
+
+        positions = movements.get(movement_type, movements[MovementType.STATIC])
+
+        # Colchon de zoom para los paneos. Un paneo con scale=1.0 no tiene de
+        # donde sacar pixeles: o no se mueve (era el caso) o deja bordes negros.
+        # Se le suma a AMBOS extremos para no alterar el recorrido del zoom.
+        if movement_type != MovementType.STATIC:
+            min_scale = min(positions['start']['scale'], positions['end']['scale'])
+            deficit = PAN_HEADROOM_SCALE - min_scale
+            if deficit > 0:
+                positions = {
+                    'start': dict(positions['start']),
+                    'end': dict(positions['end']),
+                }
+                positions['start']['scale'] += deficit
+                positions['end']['scale'] += deficit
+
+        return positions
+
+    @staticmethod
+    def build_ffmpeg_motion_filter(positions: Dict, frames: int,
+                                   video_size: Tuple[int, int],
+                                   supersample: int = FFMPEG_MOTION_SUPERSAMPLE) -> str:
+        """Traduce un recorrido de camara a un filtro `zoompan` de FFmpeg.
+
+        Misma matematica que `apply_movement` (el punto (x, y) del recorrido
+        termina en el centro del cuadro, con clamp para no mostrar negro), pero
+        resuelta en C dentro de FFmpeg en vez de cuadro a cuadro en Python.
+
+        Semantica de zoompan (verificada empiricamente, es facil de confundir):
+        `zoom` multiplica el input igual que nuestra `scale`, y `x`/`y` son la
+        esquina superior izquierda de la ventana visible EN COORDENADAS DEL
+        INPUT (no del input ya zoomeado); esa ventana mide iw/zoom x ih/zoom y
+        despues se escala a `s`.
+
+        `supersample` agranda el input antes del zoompan: x/y se cuantizan a
+        pixeles enteros del input, asi que sin esto un paneo lento avanza a
+        saltos de un pixel de salida. Con SS el salto pasa a ser zoom/SS.
+
+        IMPORTANTE: la progresion usa `on` (cuadro de SALIDA). Con `in` -- que
+        es lo que habia -- una imagen fija nunca avanza y el efecto no se ve.
+        """
+        w, h = int(video_size[0]), int(video_size[1])
+        ss = max(1, int(supersample))
+        n = max(1, int(frames))
+
+        s0 = float(positions['start']['scale'])
+        s1 = float(positions['end']['scale'])
+        x0, x1 = float(positions['start']['x']), float(positions['end']['x'])
+        y0, y1 = float(positions['start']['y']), float(positions['end']['y'])
+
+        # Progreso 0..1 a lo largo del clip.
+        p = "0" if n <= 1 else f"(on/{n - 1})"
+
+        z_expr = f"{s0:.5f}+({s1 - s0:.5f})*{p}"
+        # Centro del recorrido en coordenadas del input supersampleado.
+        cx = f"{x0 * ss:.3f}+({(x1 - x0) * ss:.3f})*{p}"
+        cy = f"{y0 * ss:.3f}+({(y1 - y0) * ss:.3f})*{p}"
+        # Esquina de la ventana, recortada al area valida (sin franjas negras).
+        x_expr = f"clip({cx}-iw/(2*zoom),0,iw-iw/zoom)"
+        y_expr = f"clip({cy}-ih/(2*zoom),0,ih-ih/zoom)"
+
+        chain = ""
+        if ss > 1:
+            chain += f"scale={w * ss}:{h * ss}:flags=bicubic,"
+        chain += (
+            f"zoompan=z='{z_expr}':x='{x_expr}':y='{y_expr}'"
+            f":d={n}:s={w}x{h}"
+        )
+        return chain
+
+    @staticmethod
+    def apply_movement(clip, positions: Dict, duration: float,
+                       video_size: Tuple[int, int]):
+        """Ken Burns real: zoom Y paneo, con el lienzo fijo en video_size.
+
+        El camino viejo hacia `clip.resize(func)` con una lambda que devolvia
+        SOLO la escala: los paneos (scale 1.0 -> 1.0) no hacian nada, y los
+        zooms devolvian un clip cada vez mas grande que el lienzo, que la
+        composicion recortaba desde la esquina en vez del centro.
+
+        Aca el clip ampliado se reposiciona cuadro a cuadro para que el punto
+        (x, y) del recorrido caiga en el centro del frame, y el resultado se
+        compone sobre un lienzo del tamano exacto del video.
+        """
+        from moviepy.editor import CompositeVideoClip
+
+        w, h = video_size
+        s0, s1 = positions['start']['scale'], positions['end']['scale']
+        x0, x1 = float(positions['start']['x']), float(positions['end']['x'])
+        y0, y1 = float(positions['start']['y']), float(positions['end']['y'])
+
+        def _progress(t):
+            if not duration or duration <= 0:
+                return 0.0
+            return min(1.0, max(0.0, float(t) / duration))
+
+        def scale_at(t):
+            return s0 + (s1 - s0) * _progress(t)
+
+        def position_at(t):
+            p = _progress(t)
+            s = scale_at(t)
+            cx = x0 + (x1 - x0) * p
+            cy = y0 + (y1 - y0) * p
+            # Llevar el punto (cx, cy) del original al centro del lienzo.
+            px = w / 2.0 - cx * s
+            py = h / 2.0 - cy * s
+            # Clamp: la imagen ampliada nunca puede despegarse de los bordes,
+            # asi no aparecen franjas negras aunque el recorrido sea agresivo.
+            px = min(0.0, max(w - w * s, px))
+            py = min(0.0, max(h - h * s, py))
+            return (px, py)
+
+        moving = clip.resize(scale_at).set_position(position_at)
+        composed = CompositeVideoClip([moving], size=(w, h))
+        if clip.duration:
+            composed = composed.set_duration(clip.duration)
+        return composed
+
     @staticmethod
     def generate_moviepy_resize_lambda(positions: Dict, duration: float):
         """
@@ -508,13 +596,12 @@ class CinematicEffectsEngine:
                 zoom_factor=1.2
             )
             
-            # Aplicar resize animado
-            resize_func = CameraMovement.generate_moviepy_resize_lambda(
+            clip = CameraMovement.apply_movement(
+                clip,
                 positions,
-                duration
+                duration,
+                self.video_size
             )
-            
-            clip = clip.resize(resize_func)
         
         # 3. Determinar filtro
         if force_filter:
@@ -530,63 +617,6 @@ class CinematicEffectsEngine:
         
         return clip
     
-    def get_transition_between_clips(self,
-                                     from_clip,
-                                     to_clip,
-                                     from_text: str,
-                                     to_text: str,
-                                     from_duration: float,
-                                     to_duration: float,
-                                     auto_detect: bool = True) -> Tuple[object, object, Optional[object]]:
-        """
-        Genera transición inteligente entre dos clips.
-        
-        Args:
-            from_clip: Clip saliente
-            to_clip: Clip entrante
-            from_text: Texto del clip saliente
-            to_text: Texto del clip entrante
-            from_duration: Duración del clip saliente
-            to_duration: Duración del clip entrante
-            auto_detect: Si True, detecta transición automáticamente
-        
-        Returns:
-            (clip1_modified, clip2_modified, transition_clip)
-        """
-        
-        if auto_detect:
-            transition_type, transition_duration = self.context_detector.suggest_transition(
-                from_text, to_text, from_duration, to_duration
-            )
-        else:
-            transition_type = TransitionType.FADE
-            transition_duration = 0.3
-        
-        # Aplicar transición según tipo
-        if transition_type == TransitionType.CUT:
-            # Sin transición
-            return from_clip, to_clip, None
-        
-        elif transition_type == TransitionType.FADE:
-            # Fadeout en from_clip, fadein en to_clip
-            from moviepy.editor import concatenate_videoclips
-            from_clip = from_clip.fadeout(transition_duration)
-            to_clip = to_clip.fadein(transition_duration)
-            return from_clip, to_clip, None
-        
-        elif transition_type == TransitionType.CROSSFADE:
-            # Fundido cruzado
-            from moviepy.editor import CompositeVideoClip
-            # Overlap de transition_duration segundos
-            to_clip = to_clip.set_start(from_duration - transition_duration)
-            to_clip = to_clip.fadein(transition_duration)
-            from_clip = from_clip.fadeout(transition_duration)
-            return from_clip, to_clip, None
-        
-        # Por defecto, fade simple
-        from_clip = from_clip.fadeout(transition_duration)
-        to_clip = to_clip.fadein(transition_duration)
-        return from_clip, to_clip, None
 
 
 # ========== FUNCIONES DE UTILIDAD ==========

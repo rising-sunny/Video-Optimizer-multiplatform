@@ -848,13 +848,6 @@ class StudioImageHandlers:
         # Bing funciona mejor con prompts más directos
         aspect = self._get_manual_prompt_aspect_settings()
         return f"{base_prompt}, cinematic, professional, high quality, {aspect['prompt_tail']}"
-    def _optimize_prompt_for_leonardo(self, base_prompt, narrative, category):
-        """Optimiza prompt para Leonardo.ai"""
-        aspect = self._get_manual_prompt_aspect_settings()
-        return (
-            f"{base_prompt}, cinematic lighting, professional photography, 8K, ultra detailed, "
-            f"award winning cinematography, {aspect['prompt_tail']}"
-        )
     def _optimize_prompt_for_recraft(self, base_prompt, narrative, category):
         """Optimiza prompt específicamente para Recraft AI"""
         # Recraft funciona bien con prompts descriptivos y estilos explícitos.
@@ -880,7 +873,7 @@ class StudioImageHandlers:
         """Muestra diálogo con prompts y códigos para copiar"""
         from PyQt6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTableWidget, QTableWidgetItem, QTextEdit, QTabWidget, QWidget, QMessageBox, QFileDialog
         from PyQt6.QtCore import Qt
-        from PyQt6.QtGui import QFont, QColor, QClipboard
+        from PyQt6.QtGui import QFont, QColor
         import json
 
         dialog = QDialog(self)
@@ -1383,8 +1376,5 @@ class StudioImageHandlers:
     self.studio_tab.last_storyboard_data,
      auto_search_images=True)
         self.studio_tab.log(f"\n {assigned_count} imágenes asignadas a segmentos")
-
-
-
 
 

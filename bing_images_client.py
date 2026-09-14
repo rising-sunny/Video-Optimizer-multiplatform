@@ -265,30 +265,3 @@ Narracion: "{narration_text}"
             print(f"    Error inesperado en busqueda: {self.last_error}")
             return []
 
-    def search_and_download_image(
-        self,
-        visual_prompt: str,
-        narration_text: str = "",
-        output_dir: Optional[str] = None,
-        filename: Optional[str] = None
-    ) -> Optional[Dict]:
-        images = self.search_images(visual_prompt, limit=5, narration_text=narration_text)
-        if not images:
-            return None
-
-        selected_image = images[0]
-        if output_dir and filename:
-            try:
-                output_path = Path(output_dir) / f"{filename}.jpg"
-                output_path.parent.mkdir(parents=True, exist_ok=True)
-                response = requests.get(selected_image["url"], timeout=20, stream=True, headers={"User-Agent": "VideoOptimizerPro/1.0"})
-                response.raise_for_status()
-                with open(output_path, "wb") as f:
-                    for chunk in response.iter_content(chunk_size=8192):
-                        if chunk:
-                            f.write(chunk)
-                selected_image["path"] = str(output_path)
-                print(f"          Imagen descargada: {selected_image.get('title', '')[:50]}")
-            except Exception as e:
-                print(f"         ️ Error descargando imagen: {e}")
-        return selected_image

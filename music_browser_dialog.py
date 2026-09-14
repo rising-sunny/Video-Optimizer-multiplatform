@@ -336,6 +336,13 @@ class MusicBrowserDialog(QDialog):
         self.music_waveform.crop_range_changed.connect(self.on_waveform_crop_changed)
         self.music_waveform.position_clicked.connect(self.on_waveform_position_clicked)
         layout.addWidget(self.music_waveform)
+
+        # Resumen del recorte en texto: la onda lo dibuja, pero leer los
+        # numeros exactos ahi es incomodo cuando se ajusta fino.
+        self.crop_summary_label = QLabel("Arrastra las barras amarillas para elegir el tramo")
+        self.crop_summary_label.setStyleSheet(
+            "color: #ffd633; font-size: 12px; padding: 4px 2px;")
+        layout.addWidget(self.crop_summary_label)
         
         # Controles de recorte
         crop_group = QGroupBox("âœ‚ï¸ Recortar Pista")
@@ -1736,7 +1743,29 @@ class MusicBrowserDialog(QDialog):
                 self.music_waveform.crop_range_changed.disconnect()
                 self.music_waveform.set_crop_range(start, end)
                 self.music_waveform.crop_range_changed.connect(self.on_waveform_crop_changed)
+
+            self._refresh_crop_summary()
     
+    def _refresh_crop_summary(self):
+        """Escribe inicio / fin / duracion del recorte en la etiqueta."""
+        if not hasattr(self, 'crop_summary_label'):
+            return
+        try:
+            from waveform_geometry import describe_selection
+            inicio = self.music_crop_start.value()
+            fin = self.music_crop_end.value()
+            if fin <= inicio:
+                self.crop_summary_label.setText(
+                    "Rango invalido: el fin tiene que ser mayor que el inicio")
+                self.crop_summary_label.setStyleSheet(
+                    "color: #ff6b6b; font-size: 12px; padding: 4px 2px;")
+                return
+            self.crop_summary_label.setText(describe_selection(inicio, fin))
+            self.crop_summary_label.setStyleSheet(
+                "color: #ffd633; font-size: 12px; padding: 4px 2px;")
+        except Exception:
+            pass
+
     def on_waveform_crop_changed(self, start_time, end_time):
         """Callback cuando se arrastra una lÃ­nea en la forma de onda"""
         if hasattr(self, 'music_crop_start') and hasattr(self, 'music_crop_end'):
@@ -1750,6 +1779,8 @@ class MusicBrowserDialog(QDialog):
             
             self.music_crop_start.valueChanged.connect(self.on_crop_changed)
             self.music_crop_end.valueChanged.connect(self.on_crop_changed)
+
+        self._refresh_crop_summary()
     
     def on_waveform_position_clicked(self, position_sec):
         """Callback cuando se hace clic en la forma de onda para cambiar posiciÃ³n de reproducciÃ³n"""
@@ -2044,6 +2075,35 @@ class MusicBrowserDialog(QDialog):
                 self.music_play_crop_btn.setText("â–¶ï¸ Play Recorte")
                 self.music_play_crop_btn.setEnabled(True)
 
+    def toggle_crop_playback(self):
+        """Pausa o reanuda la reproduccion del recorte."""
+        try:
+            if getattr(self, '_crop_is_playing', False):
+                self.pause_music_preview()
+                self._crop_is_playing = False
+                if hasattr(self, 'music_play_crop_btn'):
+                    self.music_play_crop_btn.setText("▶ Reanudar recorte")
+            else:
+                self.resume_music_preview()
+                self._crop_is_playing = True
+                if hasattr(self, 'music_play_crop_btn'):
+                    self.music_play_crop_btn.setText("⏸ Pausar recorte")
+        except Exception as exc:
+            self.log(f"No se pudo alternar la reproduccion del recorte: {exc}")
+
+    def _reset_crop_playback_button(self):
+        """Devuelve el boton a 'Play Recorte' cuando el recorte termina."""
+        self._crop_is_playing = False
+        if not hasattr(self, 'music_play_crop_btn'):
+            return
+        self.music_play_crop_btn.setText("▶ Play Recorte")
+        self.music_play_crop_btn.setEnabled(True)
+        try:
+            self.music_play_crop_btn.clicked.disconnect()
+        except Exception:
+            pass
+        self.music_play_crop_btn.clicked.connect(self.play_music_crop)
+
     def _setup_crop_playback_ui(self, crop_end):
         """Configura la UI para reproducciÃ³n de recorte"""
         if hasattr(self, 'music_play_btn'):
@@ -2056,9 +2116,18 @@ class MusicBrowserDialog(QDialog):
             self.music_play_btn.clicked.connect(self.pause_music_preview)
         
         if hasattr(self, 'music_play_crop_btn'):
-            self.music_play_crop_btn.setText("â–¶ï¸ Play Recorte")
-            self.music_play_crop_btn.setEnabled(False)
-        
+            # Mientras suena el recorte, este boton pasa a ser Pausa/Reanudar
+            # en vez de quedar deshabilitado: antes, para pausar habia que ir
+            # al boton Play de al lado, que es poco intuitivo.
+            self.music_play_crop_btn.setText("⏸ Pausar recorte")
+            self.music_play_crop_btn.setEnabled(True)
+            try:
+                self.music_play_crop_btn.clicked.disconnect()
+            except Exception:
+                pass
+            self.music_play_crop_btn.clicked.connect(self.toggle_crop_playback)
+            self._crop_is_playing = True
+
         self.music_crop_end_time = crop_end
         try:
             self.music_timer.timeout.disconnect()
@@ -2071,8 +2140,7 @@ class MusicBrowserDialog(QDialog):
                 current_pos = (time.time() - self.music_start_time) if hasattr(self, 'music_start_time') else 0
                 if current_pos >= self.music_crop_end_time:
                     self.stop_music_preview()
-                    if hasattr(self, 'music_play_crop_btn'):
-                        self.music_play_crop_btn.setEnabled(True)
+                    self._reset_crop_playback_button()
         
         self.music_timer.timeout.connect(update_and_check_crop_end)
         self.music_timer.start(100)
@@ -2441,9 +2509,6 @@ class MusicBrowserDialog(QDialog):
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error seleccionando música:\n{e}")
     
-    def get_selected_music(self):
-        """Devuelve la música seleccionada (path y metadata)"""
-        return self.selected_music_path, self.selected_music_metadata
 
 
 class WaveformWorker(QThread):

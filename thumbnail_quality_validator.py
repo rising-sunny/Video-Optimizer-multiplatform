@@ -1,26 +1,35 @@
 """
 thumbnail_quality_validator.py
 
-Valida cuantitativamente si un thumbnail 16:9 cumple los targets de
-alto CTR para YouTube long-form. Basado en analisis empirico de canales
-con CTR >5% vs canales estancados:
+Valida cuantitativamente si un thumbnail cumple los targets de alto CTR.
+Basado en analisis empirico de canales con CTR >5% vs canales estancados.
+
+Sirve para los dos formatos. Las metricas de ZONA (brillo y densidad de
+detalle) se miden sobre el eje que corresponde, no siempre sobre el
+horizontal: en 16:9 el sujeto vive en el tercio IZQUIERDO y el aire queda
+a la derecha; en 9:16 vive en el tercio SUPERIOR y el aire queda abajo,
+donde YouTube encima el titulo del Short. Medir un vertical con la regla
+del apaisado castigaba miniaturas correctas:
 
 Umbrales objetivo (derivados de mediciones reales, no intuicion):
     1. Brillo medio (luminancia) entre 95 y 160 (/255). Debajo de 95 el
        thumb desaparece en el feed; arriba de 160 se ve desteñido.
-    2. El tercio izquierdo debe ser al menos 20 puntos mas brillante que
-       el tercio derecho (foco + key light calido a la izquierda, fondo
-       oscuro/frio a la derecha).
+    2. El tercio del SUJETO debe ser al menos 20 puntos mas brillante que
+       el tercio CALMO (key light calido sobre el sujeto, fondo oscuro y
+       frio en la zona de respiro).
     3. Al menos 55% de los bordes de alta frecuencia deben caer en el
-       tercio izquierdo (el sujeto vive ahi; el tercio derecho queda libre
-       para que el ojo lea el titulo del video).
+       tercio del sujeto (el calmo queda libre para el titulo).
     4. Temperatura calida dominante: canal R > canal B + 15.
     5. Histograma de luminancia disperso: ningun bin (10 slices) con mas
        del 30% de los pixels. Fuerza rango tonal real (no imagen plana).
 
 API publica:
-    validate_thumbnail(image_path) -> dict con metricas + score 0-100 + passes.
-    score_thumbnail(image_path) -> float 0-100 (shortcut).
+    validate_thumbnail(image_path, thumbnail_format=None) -> dict con
+        metricas + score 0-100 + passes.
+    score_thumbnail(image_path, thumbnail_format=None) -> float 0-100.
+
+Sin formato explicito el eje se deduce del aspect ratio de la imagen:
+mas alta que ancha se mide en vertical.
 
 El validador NO rechaza imagenes; solo las puntua. El pipeline decide
 que hacer con el score (ordenar variantes, loggear warnings, etc.).
@@ -42,23 +51,27 @@ except ImportError:
 # mediciones de canales historicos con CTR >5%).
 TARGET_BRIGHTNESS_MIN = 95
 TARGET_BRIGHTNESS_MAX = 160
-TARGET_LEFT_RIGHT_LUM_DELTA = 20      # L debe ser >= R + 20
-TARGET_LEFT_EDGE_RATIO = 0.55         # >= 55% de los bordes en tercio izq
+TARGET_SUBJECT_CALM_LUM_DELTA = 20    # sujeto >= calmo + 20
+TARGET_SUBJECT_EDGE_RATIO = 0.55      # >= 55% de bordes en el tercio del sujeto
+
+# Alias historicos (nombres pensados para 16:9) para quien los importe.
+TARGET_LEFT_RIGHT_LUM_DELTA = TARGET_SUBJECT_CALM_LUM_DELTA
+TARGET_LEFT_EDGE_RATIO = TARGET_SUBJECT_EDGE_RATIO
 TARGET_WARM_DELTA = 15                # R debe ser >= B + 15
 TARGET_MAX_HIST_BIN_SHARE = 0.30      # ningun bin con mas del 30%
 
 # Peso de cada metrica en el score final (suma = 100).
 _SCORE_WEIGHTS = {
     "brightness": 25,
-    "left_right_delta": 25,
-    "left_edges": 20,
+    "subject_calm_delta": 25,
+    "subject_edges": 20,
     "warmth": 15,
     "histogram_spread": 15,
 }
 
 
 def _downscale_for_analysis(img: "Image.Image", target_w: int = 320) -> "Image.Image":
-    """Downscale para velocidad; mantener 16:9."""
+    """Downscale para velocidad, respetando el aspect ratio real."""
     w, h = img.size
     if w <= target_w:
         return img
@@ -67,21 +80,27 @@ def _downscale_for_analysis(img: "Image.Image", target_w: int = 320) -> "Image.I
     return img.resize((target_w, new_h), Image.Resampling.BILINEAR)
 
 
-def _analyze_pixels(img: "Image.Image") -> Dict:
-    """Analiza pixels (downsampled) y devuelve metricas crudas."""
+def _analyze_pixels(img: "Image.Image", axis: str = "x") -> Dict:
+    """Analiza pixels (downsampled) y devuelve metricas crudas.
+
+    `axis` dice sobre que eje se parten los tercios: "x" para 16:9 (sujeto
+    a la izquierda) e "y" para 9:16 (sujeto arriba). En los dos casos el
+    sujeto va en el PRIMER tercio y el aire en el ULTIMO.
+    """
     work = _downscale_for_analysis(img.convert("RGB"))
     W, H = work.size
     pixels = work.load()
+    vertical = str(axis or "x").lower() == "y"
 
     total = 0
     rs = gs = bs = ls = 0.0
     thirds = {
-        "L": {"lum": 0.0, "n": 0, "edges": 0},
-        "M": {"lum": 0.0, "n": 0, "edges": 0},
-        "R": {"lum": 0.0, "n": 0, "edges": 0},
+        "subject": {"lum": 0.0, "n": 0, "edges": 0},
+        "mid": {"lum": 0.0, "n": 0, "edges": 0},
+        "calm": {"lum": 0.0, "n": 0, "edges": 0},
     }
     hist = [0] * 10  # 10 bins de luminancia
-    third_w = W / 3
+    corte = (H if vertical else W) / 3.0
 
     for y in range(H):
         for x in range(W):
@@ -91,7 +110,8 @@ def _analyze_pixels(img: "Image.Image") -> Dict:
             total += 1
             bin_idx = min(9, int(lum / 25.6))
             hist[bin_idx] += 1
-            region = "L" if x < third_w else ("M" if x < 2 * third_w else "R")
+            pos = y if vertical else x
+            region = "subject" if pos < corte else ("mid" if pos < 2 * corte else "calm")
             thirds[region]["lum"] += lum
             thirds[region]["n"] += 1
             if x < W - 1:
@@ -108,11 +128,11 @@ def _analyze_pixels(img: "Image.Image") -> Dict:
     avg_b = bs / total
     avg_lum = ls / total
 
-    lum_L = thirds["L"]["lum"] / max(1, thirds["L"]["n"])
-    lum_M = thirds["M"]["lum"] / max(1, thirds["M"]["n"])
-    lum_R = thirds["R"]["lum"] / max(1, thirds["R"]["n"])
-    total_edges = thirds["L"]["edges"] + thirds["M"]["edges"] + thirds["R"]["edges"]
-    left_edge_ratio = thirds["L"]["edges"] / max(1, total_edges)
+    lum_S = thirds["subject"]["lum"] / max(1, thirds["subject"]["n"])
+    lum_M = thirds["mid"]["lum"] / max(1, thirds["mid"]["n"])
+    lum_C = thirds["calm"]["lum"] / max(1, thirds["calm"]["n"])
+    total_edges = sum(z["edges"] for z in thirds.values())
+    subject_edge_ratio = thirds["subject"]["edges"] / max(1, total_edges)
 
     max_hist_share = max(hist) / total if total else 0.0
 
@@ -120,20 +140,21 @@ def _analyze_pixels(img: "Image.Image") -> Dict:
         "avg_rgb": (round(avg_r), round(avg_g), round(avg_b)),
         "avg_hex": "#{:02x}{:02x}{:02x}".format(round(avg_r), round(avg_g), round(avg_b)),
         "brightness": round(avg_lum, 1),
-        "lum_by_third": {
-            "left": round(lum_L, 1),
+        "axis": "y" if vertical else "x",
+        "lum_by_zone": {
+            "subject": round(lum_S, 1),
             "mid": round(lum_M, 1),
-            "right": round(lum_R, 1),
+            "calm": round(lum_C, 1),
         },
-        "left_right_delta": round(lum_L - lum_R, 1),
-        "left_edge_ratio": round(left_edge_ratio, 3),
+        "subject_calm_delta": round(lum_S - lum_C, 1),
+        "subject_edge_ratio": round(subject_edge_ratio, 3),
         "warmth_delta": round(avg_r - avg_b, 1),
         "max_hist_bin_share": round(max_hist_share, 3),
         "histogram": hist,
-        "edges_by_third": {
-            "L": thirds["L"]["edges"],
-            "M": thirds["M"]["edges"],
-            "R": thirds["R"]["edges"],
+        "edges_by_zone": {
+            "subject": thirds["subject"]["edges"],
+            "mid": thirds["mid"]["edges"],
+            "calm": thirds["calm"]["edges"],
         },
     }
 
@@ -150,19 +171,19 @@ def _score_from_metrics(m: Dict) -> Dict:
             diff = brightness - TARGET_BRIGHTNESS_MAX
         s_bright = max(0.0, 100.0 - diff * 2.0)
 
-    delta = m["left_right_delta"]
-    if delta >= TARGET_LEFT_RIGHT_LUM_DELTA:
+    delta = m["subject_calm_delta"]
+    if delta >= TARGET_SUBJECT_CALM_LUM_DELTA:
         s_delta = 100.0
     elif delta >= 0:
-        s_delta = (delta / TARGET_LEFT_RIGHT_LUM_DELTA) * 100.0
+        s_delta = (delta / TARGET_SUBJECT_CALM_LUM_DELTA) * 100.0
     else:
-        s_delta = max(0.0, 50.0 + delta * 2.0)  # penaliza fuerte si R > L
+        s_delta = max(0.0, 50.0 + delta * 2.0)  # penaliza fuerte si gana el calmo
 
-    edge_ratio = m["left_edge_ratio"]
-    if edge_ratio >= TARGET_LEFT_EDGE_RATIO:
+    edge_ratio = m["subject_edge_ratio"]
+    if edge_ratio >= TARGET_SUBJECT_EDGE_RATIO:
         s_edges = 100.0
     else:
-        s_edges = max(0.0, (edge_ratio / TARGET_LEFT_EDGE_RATIO) * 100.0)
+        s_edges = max(0.0, (edge_ratio / TARGET_SUBJECT_EDGE_RATIO) * 100.0)
 
     warmth = m["warmth_delta"]
     if warmth >= TARGET_WARM_DELTA:
@@ -181,8 +202,8 @@ def _score_from_metrics(m: Dict) -> Dict:
 
     sub_scores = {
         "brightness": round(s_bright, 1),
-        "left_right_delta": round(s_delta, 1),
-        "left_edges": round(s_edges, 1),
+        "subject_calm_delta": round(s_delta, 1),
+        "subject_edges": round(s_edges, 1),
         "warmth": round(s_warmth, 1),
         "histogram_spread": round(s_hist, 1),
     }
@@ -191,8 +212,8 @@ def _score_from_metrics(m: Dict) -> Dict:
 
     passes = {
         "brightness_in_range": TARGET_BRIGHTNESS_MIN <= brightness <= TARGET_BRIGHTNESS_MAX,
-        "left_brighter_than_right": delta >= TARGET_LEFT_RIGHT_LUM_DELTA,
-        "left_third_has_focus": edge_ratio >= TARGET_LEFT_EDGE_RATIO,
+        "subject_zone_brighter": delta >= TARGET_SUBJECT_CALM_LUM_DELTA,
+        "subject_zone_has_focus": edge_ratio >= TARGET_SUBJECT_EDGE_RATIO,
         "warm_palette": warmth >= TARGET_WARM_DELTA,
         "histogram_has_range": hist_share <= TARGET_MAX_HIST_BIN_SHARE,
     }
@@ -206,11 +227,29 @@ def _score_from_metrics(m: Dict) -> Dict:
     }
 
 
-def validate_thumbnail(image_path: str) -> Dict:
+def _axis_for(thumbnail_format, img) -> str:
+    """Eje de analisis: el del formato si viene, si no el de la imagen.
+
+    Deducirlo de la imagen importa porque `validate_thumbnail` tambien se
+    llama a mano desde la linea de comandos, sin formato.
+    """
+    eje = getattr(thumbnail_format, "subject_axis", None)
+    if eje in ("x", "y"):
+        return eje
+    try:
+        return "y" if img.size[1] > img.size[0] else "x"
+    except Exception:
+        return "x"
+
+
+def validate_thumbnail(image_path: str, thumbnail_format=None) -> Dict:
     """Valida un thumbnail y devuelve metricas + score + pass/fail.
 
     Args:
         image_path: ruta a la imagen (PNG/JPG).
+        thumbnail_format: `ThumbnailFormat` de `thumbnail_formats`. Define
+            sobre que eje se miden las zonas. Si no se pasa, se deduce del
+            aspect ratio de la imagen.
 
     Returns:
         dict con 'metrics', 'sub_scores', 'total_score', 'passes' (por metrica),
@@ -229,7 +268,11 @@ def validate_thumbnail(image_path: str) -> Dict:
 
     with Image.open(p) as img:
         img.load()
-        metrics = _analyze_pixels(img)
+        metrics = _analyze_pixels(img, axis=_axis_for(thumbnail_format, img))
+
+    vertical = metrics.get("axis") == "y"
+    zona_sujeto = "superior" if vertical else "izquierdo"
+    zona_calma = "inferior" if vertical else "derecho"
 
     scoring = _score_from_metrics(metrics)
     total = scoring["total_score"]
@@ -247,19 +290,23 @@ def validate_thumbnail(image_path: str) -> Dict:
     if not scoring["passes"]["brightness_in_range"]:
         if metrics["brightness"] < TARGET_BRIGHTNESS_MIN:
             suggestions.append(
-                f"Brillo {metrics['brightness']} < {TARGET_BRIGHTNESS_MIN}: agrega luz calida (sol, fuego, lampara) al tercio izquierdo"
+                f"Brillo {metrics['brightness']} < {TARGET_BRIGHTNESS_MIN}: agrega luz calida (sol, fuego, lampara) al tercio {zona_sujeto}"
             )
         else:
             suggestions.append(
                 f"Brillo {metrics['brightness']} > {TARGET_BRIGHTNESS_MAX}: baja exposicion global o agrega sombra al fondo"
             )
-    if not scoring["passes"]["left_brighter_than_right"]:
+    if not scoring["passes"]["subject_zone_brighter"]:
         suggestions.append(
-            f"Delta L-R = {metrics['left_right_delta']} (objetivo >= {TARGET_LEFT_RIGHT_LUM_DELTA}): mueve el sujeto/foco al tercio izquierdo con key light calido"
+            f"Delta {zona_sujeto}-{zona_calma} = {metrics['subject_calm_delta']} "
+            f"(objetivo >= {TARGET_SUBJECT_CALM_LUM_DELTA}): mueve el sujeto/foco al "
+            f"tercio {zona_sujeto} con key light calido"
         )
-    if not scoring["passes"]["left_third_has_focus"]:
+    if not scoring["passes"]["subject_zone_has_focus"]:
         suggestions.append(
-            f"Solo {int(metrics['left_edge_ratio']*100)}% de detalle en tercio izq (objetivo {int(TARGET_LEFT_EDGE_RATIO*100)}%): encuadra la cara/accion en la izquierda"
+            f"Solo {int(metrics['subject_edge_ratio']*100)}% de detalle en el tercio "
+            f"{zona_sujeto} (objetivo {int(TARGET_SUBJECT_EDGE_RATIO*100)}%): "
+            f"encuadra la cara/accion ahi y deja el tercio {zona_calma} en calma"
         )
     if not scoring["passes"]["warm_palette"]:
         suggestions.append(
@@ -283,10 +330,10 @@ def validate_thumbnail(image_path: str) -> Dict:
     }
 
 
-def score_thumbnail(image_path: str) -> float:
+def score_thumbnail(image_path: str, thumbnail_format=None) -> float:
     """Shortcut: devuelve solo el score total 0-100."""
     try:
-        return float(validate_thumbnail(image_path)["total_score"])
+        return float(validate_thumbnail(image_path, thumbnail_format)["total_score"])
     except Exception:
         return 0.0
 

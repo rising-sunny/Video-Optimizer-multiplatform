@@ -44,8 +44,7 @@ El runtime se rehízo hace poco. **Esto es el estado actual:**
    Hay un `requirements_local.txt` liviano para esto.
 3. Se sacó casi todo de Google Drive. Solo `projects/`, `daily_shorts/` y
    `auto_videos/` siguen como **junctions** a Drive (por su peso).
-4. Mejoras de código recientes ya en el repo: manejo de formatos de storyboard en
-   `advanced_sfx_mixer.py`, dedup de títulos YouTube en `daily_short_pipeline.py`,
+4. Mejoras de código recientes ya en el repo: dedup de títulos YouTube en `daily_short_pipeline.py`,
    `gc.collect()` en `video_export_manager.py` (evita MemoryError), logging en
    `auto_video_generator_v2.py`.
 

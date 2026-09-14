@@ -59,13 +59,6 @@ def platform_requires_precise_subtitles(platform: Optional[str]) -> bool:
     return str(platform or "").strip().lower() in SHORT_FORM_SUBTITLE_PLATFORMS
 
 
-def targets_require_precise_subtitles(platforms) -> bool:
-    """Evalua listas de plataformas o un solo valor."""
-    if isinstance(platforms, (list, tuple, set)):
-        return any(platform_requires_precise_subtitles(platform) for platform in platforms)
-    return platform_requires_precise_subtitles(platforms)
-
-
 def is_precise_subtitle_sync_mode(mode: Optional[str]) -> bool:
     """True solo para modos basados en timestamps reales de Whisper."""
     return str(mode or "").strip().lower() in PRECISE_SUBTITLE_SYNC_MODES
@@ -444,123 +437,6 @@ class DynamicSubtitleWrapper:
         self.temp_ass_file = ass_path
         return ass_path
     
-    def apply_subtitles_to_video(self,
-                                video_path: str,
-                                ass_path: str,
-                                output_path: str) -> bool:
-        """
-        Aplica subtÃ­tulos ASS al video usando FFmpeg.
-        
-        Args:
-            video_path: Path al video sin subtÃ­tulos
-            ass_path: Path al archivo ASS
-            output_path: Path donde guardar el video con subtÃ­tulos
-        
-        Returns:
-            True si Ã©xito, False si error
-        """
-        
-        print(f"ðŸ”¥ Quemando subtÃ­tulos dinÃ¡micos en el video...")
-        print(f"   Estilo: {self.style}")
-        
-        # Paths absolutos
-        video_abs = os.path.abspath(video_path)
-        ass_abs = os.path.abspath(ass_path)
-        output_abs = os.path.abspath(output_path)
-        
-        # En Windows, copiar ASS a temp sin espacios
-        import tempfile
-        import shutil
-        
-        temp_dir = tempfile.gettempdir()
-        temp_ass = os.path.join(temp_dir, 'temp_subs.ass')
-        shutil.copy2(ass_abs, temp_ass)
-        
-        # Verificar si el video tiene audio antes de mapearlo
-        has_audio = False
-        try:
-            probe_cmd = [
-                'ffprobe',
-                '-v', 'error',
-                '-select_streams', 'a:0',
-                '-show_entries', 'stream=codec_type',
-                '-of', 'default=noprint_wrappers=1:nokey=1',
-                video_abs
-            ]
-            probe_result = subprocess.run(
-                probe_cmd,
-                capture_output=True,
-                text=True,
-                timeout=10
-            )
-            has_audio = probe_result.returncode == 0 and probe_result.stdout.strip() == 'audio'
-        except:
-            # Si ffprobe falla, asumir que hay audio (mejor intentar que fallar)
-            has_audio = True
-        
-        # Comando FFmpeg con path temporal sin espacios
-        # IMPORTANTE: Mapear explÃ­citamente video y audio para preservar ambos
-        cmd = [
-            'ffmpeg',
-            '-i', video_abs,
-            '-vf', f"subtitles={temp_ass}",
-            '-map', '0:v:0',  # Mapear stream de video del input 0
-        ]
-        
-        # Solo mapear audio si existe
-        if has_audio:
-            cmd.extend([
-                '-map', '0:a:0',  # Mapear stream de audio del input 0
-                '-c:a', 'copy',
-            ])
-        
-        cmd.extend([
-            '-y',
-            output_abs
-        ])
-        
-        if has_audio:
-            print(f"   ðŸ”Š Audio detectado - serÃ¡ preservado")
-        else:
-            print(f"   âš ï¸ No se detectÃ³ audio en el video")
-        
-        try:
-            result = subprocess.run(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                check=True,
-                text=True
-            )
-            print(f"âœ… SubtÃ­tulos dinÃ¡micos aplicados exitosamente")
-            
-            # Limpiar archivo temporal
-            try:
-                if os.path.exists(temp_ass):
-                    os.remove(temp_ass)
-            except:
-                pass
-            
-            return True
-            
-        except subprocess.CalledProcessError as e:
-            print(f"âŒ Error en FFmpeg: {e.stderr}")
-            # Limpiar archivo temporal
-            try:
-                if os.path.exists(temp_ass):
-                    os.remove(temp_ass)
-            except:
-                pass
-            return False
-        except Exception as e:
-            print(f"âŒ Error aplicando subtÃ­tulos: {e}")
-            # Limpiar archivo temporal
-            try:
-                if os.path.exists(temp_ass):
-                    os.remove(temp_ass)
-            except:
-                pass
-            return False
     
     def cleanup(self):
         """Limpia archivos temporales"""
@@ -708,6 +584,9 @@ def patch_subtitle_generation(generator, subtitle_style='hormozi'):
         subtitle_audio_path = None
         if isinstance(base_result, dict):
             candidate_paths = [
+                # Voz sola alineada al render: Whisper acierta muchas mas
+                # palabras que sobre la mezcla con musica (mismo timeline).
+                base_result.get('subtitle_audio_path'),
                 base_result.get('final_audio_path'),
                 base_result.get('audio_path'),
                 storyboard_data.get('audio_path'),
@@ -879,25 +758,6 @@ def patch_subtitle_generation(generator, subtitle_style='hormozi'):
     
     print(f"âœ… SubtÃ­tulos dinÃ¡micos activados (estilo: {subtitle_style})")        
 
-def get_subtitle_style_from_ui_selection(selection_index: int) -> str:
-    """
-    Mapea la selecciÃ³n de la UI al nombre del estilo.
-    
-    Args:
-        selection_index: Ãndice del combo box (0-4)
-    
-    Returns:
-        Nombre del estilo para DynamicSubtitleEngine
-    """
-    style_map = {
-        0: 'hormozi',      # ðŸ”¥ Hormozi
-        1: 'mrbeast',      # ðŸ’° MrBeast
-        2: 'tiktok',       # ðŸ“± TikTok
-        3: 'minimalist',   # ðŸŽ¨ Minimalista
-        4: 'documentary'   # ðŸ“º Documental
-    }
-    return style_map.get(selection_index, 'hormozi')
-
 
 if __name__ == "__main__":
     print("ðŸŽ¬ Dynamic Subtitle Wrapper")
@@ -905,6 +765,5 @@ if __name__ == "__main__":
     print("\nUso:")
     print("  from dynamic_subtitle_wrapper import patch_subtitle_generation")
     print("  patch_subtitle_generation(generator, 'hormozi')")
-
 
 

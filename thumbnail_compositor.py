@@ -3,8 +3,96 @@ from typing import Optional, Tuple
 
 from PIL import Image, ImageColor, ImageDraw, ImageEnhance, ImageFilter, ImageFont
 
+from thumbnail_formats import LANDSCAPE_16_9
+
+# La API de datos de YouTube (thumbnails.set) corta en 2 MB EXACTOS y responde
+# "Media larger than: 2097152". Ojo: NO son los 50 MB que admite el uploader web
+# de Studio; ese limite es de la interfaz, no de la API. Un PNG de 1080x1920 con
+# foto pesa ~2.7 MB, o sea que TODA miniatura vertical generada lo pasaba.
+YOUTUBE_API_THUMBNAIL_MAX_BYTES = 2 * 1024 * 1024
+
+# Escalones de calidad JPEG. Se baja de a poco: preferimos 2 MB a q75 antes que
+# 400 KB a q40, porque la miniatura se juzga a simple vista.
+_JPEG_QUALITY_STEPS = (92, 85, 78, 70, 62, 55)
+
+# Piso de ancho al reducir. Por debajo de esto la miniatura se ve borrosa en la
+# grilla y ya no vale la pena seguir achicando.
+_MIN_THUMBNAIL_WIDTH = 320
+
+
+def fit_for_youtube_api(image_path, max_bytes: int = YOUTUBE_API_THUMBNAIL_MAX_BYTES,
+                        log=None):
+    """Devuelve una ruta de miniatura que entre en el limite de la API.
+
+    Si el archivo ya entra, se devuelve tal cual. Si no, se reencoda a JPEG
+    bajando calidad y, como ultimo recurso, reduciendo tamano. Se conserva la
+    resolucion mientras se pueda: 1080x1920 esta muy por debajo del maximo de
+    YouTube, lo que sobra son bytes de PNG sin comprimir.
+
+    Devuelve (ruta, mimetype). Nunca lanza: ante cualquier problema devuelve el
+    original y que el llamador reporte el error real de la API.
+    """
+    decir = log or (lambda _m: None)
+    try:
+        origen = Path(image_path)
+        if not origen.is_file():
+            return str(origen), "image/png"
+
+        peso = origen.stat().st_size
+        if peso <= max_bytes:
+            sufijo = origen.suffix.lower()
+            return str(origen), ("image/jpeg" if sufijo in (".jpg", ".jpeg") else "image/png")
+
+        decir(f"   [thumb] {origen.name} pesa {peso/1048576:.2f} MB y la API corta en "
+              f"{max_bytes/1048576:.0f} MB; se recomprime a JPEG.")
+        with Image.open(origen) as img:
+            base = img.convert("RGB")
+            destino = origen.with_name(origen.stem + "_api.jpg")
+
+            for calidad in _JPEG_QUALITY_STEPS:
+                base.save(destino, "JPEG", quality=calidad, optimize=True,
+                          progressive=True)
+                nuevo = destino.stat().st_size
+                if nuevo <= max_bytes:
+                    decir(f"   [thumb] OK a calidad {calidad}: "
+                          f"{nuevo/1048576:.2f} MB ({destino.name})")
+                    return str(destino), "image/jpeg"
+
+            # Ultimo recurso: bajar resolucion manteniendo el aspecto. Se itera
+            # hasta que entre o hasta el piso de ancho: cortar a un numero fijo
+            # de intentos dejaba archivos patologicos por encima del limite y
+            # devolvia el original, o sea que no arreglaba nada.
+            escalada = base
+            while escalada.width > _MIN_THUMBNAIL_WIDTH:
+                escalada = escalada.resize(
+                    (max(1, escalada.width * 8 // 10), max(1, escalada.height * 8 // 10)),
+                    Image.Resampling.LANCZOS)
+                escalada.save(destino, "JPEG", quality=80, optimize=True, progressive=True)
+                nuevo = destino.stat().st_size
+                if nuevo <= max_bytes:
+                    decir(f"   [thumb] OK reduciendo a {escalada.width}x{escalada.height}: "
+                          f"{nuevo/1048576:.2f} MB")
+                    return str(destino), "image/jpeg"
+
+            # Piso alcanzado: mejor un JPEG chico y feo que un envio rechazado.
+            escalada.save(destino, "JPEG", quality=45, optimize=True, progressive=True)
+            nuevo = destino.stat().st_size
+            if nuevo <= max_bytes:
+                decir(f"   [thumb] OK al minimo ({escalada.width}x{escalada.height}, q45): "
+                      f"{nuevo/1048576:.2f} MB")
+                return str(destino), "image/jpeg"
+
+        decir(f"   [thumb] [WARN] No se logro bajar de {max_bytes/1048576:.0f} MB; "
+              "se sube el original y la API decidira.")
+        return str(origen), "image/png"
+    except Exception as exc:
+        decir(f"   [thumb] [WARN] No se pudo recomprimir la miniatura: {exc}")
+        return str(image_path), "image/png"
+
 
 class ThumbnailCompositor:
+    # Default historico. La geometria real la manda `thumbnail_formats`: un
+    # Short necesita 1080x1920 y cajas de texto distintas, no esto rotado.
     SIZE = (1280, 720)
     HEADLINE_FONT_CANDIDATES = [
         "C:/Windows/Fonts/bahnschrift.ttf",
@@ -49,33 +137,44 @@ class ThumbnailCompositor:
         },
     }
 
-    def __init__(self, log_callback=None):
+    def __init__(self, log_callback=None, thumbnail_format=None):
         self.log = log_callback or (lambda _msg: None)
+        self.format = thumbnail_format or LANDSCAPE_16_9
 
-    def create_placeholder_background(self, output_path: str, palette_name: str, subject_hint: str = "") -> str:
+    def _resolve_format(self, thumbnail_format=None):
+        return thumbnail_format or self.format or LANDSCAPE_16_9
+
+    def create_placeholder_background(self, output_path: str, palette_name: str, subject_hint: str = "",
+                                      thumbnail_format=None) -> str:
+        fmt = self._resolve_format(thumbnail_format)
         accent, secondary, overlay = self._palette_colors(palette_name)
-        image = Image.new("RGB", self.SIZE, overlay)
+        image = Image.new("RGB", fmt.size, overlay)
         draw = ImageDraw.Draw(image)
 
-        for index in range(self.SIZE[1]):
-            ratio = index / max(1, self.SIZE[1] - 1)
+        W, H = fmt.size
+        for index in range(H):
+            ratio = index / max(1, H - 1)
             r = int(overlay[0] * (1.0 - ratio) + secondary[0] * ratio)
             g = int(overlay[1] * (1.0 - ratio) + secondary[1] * ratio)
             b = int(overlay[2] * (1.0 - ratio) + secondary[2] * ratio)
-            draw.line([(0, index), (self.SIZE[0], index)], fill=(r, g, b))
+            draw.line([(0, index), (W, index)], fill=(r, g, b))
 
-        glow_box = (180, 120, 700, 620)
-        glow = Image.new("RGBA", self.SIZE, (0, 0, 0, 0))
+        # Las manchas de luz se definen en fracciones del lienzo: con las
+        # coordenadas fijas de 1280x720 quedaban en la esquina de un 1080x1920.
+        def box(l, t, r_, b_):
+            return (int(l * W), int(t * H), int(r_ * W), int(b_ * H))
+
+        glow = Image.new("RGBA", fmt.size, (0, 0, 0, 0))
         glow_draw = ImageDraw.Draw(glow)
-        glow_draw.ellipse(glow_box, fill=accent + (100,))
-        glow_draw.ellipse((620, 90, 1180, 660), fill=secondary + (60,))
+        glow_draw.ellipse(box(0.141, 0.167, 0.547, 0.861), fill=accent + (100,))
+        glow_draw.ellipse(box(0.484, 0.125, 0.922, 0.917), fill=secondary + (60,))
         glow = glow.filter(ImageFilter.GaussianBlur(radius=44))
         image = Image.alpha_composite(image.convert("RGBA"), glow).convert("RGB")
 
-        light_sweep = Image.new("RGBA", self.SIZE, (0, 0, 0, 0))
+        light_sweep = Image.new("RGBA", fmt.size, (0, 0, 0, 0))
         light_draw = ImageDraw.Draw(light_sweep)
         light_draw.polygon(
-            [(0, 0), (500, 0), (1080, 720), (520, 720)],
+            [(0, 0), (int(0.39 * W), 0), (int(0.84 * W), H), (int(0.41 * W), H)],
             fill=accent + (28,),
         )
         light_sweep = light_sweep.filter(ImageFilter.GaussianBlur(radius=52))
@@ -99,32 +198,30 @@ class ThumbnailCompositor:
         composition: str,
         kicker_text: Optional[str] = None,
         quality_tier: Optional[str] = None,
+        thumbnail_format=None,
     ) -> str:
+        fmt = self._resolve_format(thumbnail_format)
         image = Image.open(base_image_path).convert("RGB")
-        image = self._fit_cover(image, self.SIZE)
+        image = self._fit_cover(image, fmt.size)
         image = self._grade(image, palette_name)
         image = self._apply_vignette(image)
         image = self._apply_finish(image, quality_tier)
 
         canvas = image.convert("RGBA")
         accent, secondary, overlay = self._palette_colors(palette_name)
-        text_layer = Image.new("RGBA", self.SIZE, (255, 255, 255, 0))
+        text_layer = Image.new("RGBA", fmt.size, (255, 255, 255, 0))
         draw = ImageDraw.Draw(text_layer)
 
         hook_text = (hook_text or "THE SECRET").strip().upper()
         kicker_text = (kicker_text or "").strip().upper()
 
-        if composition == "subject_right_text_left":
-            text_box = (50, 120, 560, 620)
-            alignment = "left"
-        elif composition == "text_top_center":
-            text_box = (120, 40, 1160, 260)
-            alignment = "center"
-        else:
-            text_box = (720, 120, 1230, 620)
-            alignment = "left"
+        # La caja sale del formato, en fracciones. Antes estaba en pixeles de
+        # 1280x720: en vertical el texto caia fuera del lienzo o encima de la
+        # franja que YouTube tapa con el titulo del Short.
+        text_box = fmt.text_box_pixels(composition)
+        alignment = fmt.text_alignment(composition)
 
-        panel_shadow = Image.new("RGBA", self.SIZE, (0, 0, 0, 0))
+        panel_shadow = Image.new("RGBA", fmt.size, (0, 0, 0, 0))
         panel_shadow_draw = ImageDraw.Draw(panel_shadow)
         shadow_box = (
             text_box[0] + 10,
@@ -136,7 +233,7 @@ class ThumbnailCompositor:
         panel_shadow = panel_shadow.filter(ImageFilter.GaussianBlur(radius=20))
         canvas = Image.alpha_composite(canvas, panel_shadow)
 
-        panel = Image.new("RGBA", self.SIZE, (0, 0, 0, 0))
+        panel = Image.new("RGBA", fmt.size, (0, 0, 0, 0))
         panel_draw = ImageDraw.Draw(panel)
         panel_draw.rounded_rectangle(text_box, radius=34, fill=overlay + (166,), outline=(255, 255, 255, 38), width=2)
         accent_bar_width = 170 if alignment == "left" else 220
@@ -156,8 +253,11 @@ class ThumbnailCompositor:
                 draw,
                 kicker_text,
                 max_width=max(140, text_box[2] - text_box[0] - 20),
-                start_size=28,
-                min_size=18,
+                # El kicker es el unico texto de tamano fijo (el titular se
+                # auto-ajusta a la caja). Escala con el ancho del lienzo, si no
+                # en vertical queda ilegible en la grilla de Shorts.
+                start_size=int(28 * fmt.width / 1280.0 * (1.35 if fmt.is_vertical else 1.0)),
+                min_size=int(18 * fmt.width / 1280.0 * (1.35 if fmt.is_vertical else 1.0)),
                 role="kicker",
             )
             kicker_x = text_box[0] + 26 if alignment == "left" else (text_box[0] + text_box[2]) // 2
@@ -239,19 +339,19 @@ class ThumbnailCompositor:
         accent, secondary, overlay = self._palette_colors(palette_name)
         image = ImageEnhance.Contrast(image).enhance(1.22)
         image = ImageEnhance.Color(image).enhance(1.24)
-        tint = Image.new("RGBA", self.SIZE, secondary + (26,))
+        tint = Image.new("RGBA", image.size, secondary + (26,))
         image = Image.alpha_composite(image.convert("RGBA"), tint).convert("RGB")
         image = ImageEnhance.Sharpness(image).enhance(1.18)
-        glow = Image.new("RGBA", self.SIZE, accent + (18,))
+        glow = Image.new("RGBA", image.size, accent + (18,))
         image = Image.alpha_composite(image.convert("RGBA"), glow).convert("RGB")
         return image
 
     def _apply_vignette(self, image: Image.Image) -> Image.Image:
-        mask = Image.new("L", self.SIZE, 0)
+        mask = Image.new("L", image.size, 0)
         draw = ImageDraw.Draw(mask)
-        draw.ellipse((-120, -80, self.SIZE[0] + 120, self.SIZE[1] + 80), fill=255)
+        draw.ellipse((-120, -80, image.size[0] + 120, image.size[1] + 80), fill=255)
         mask = mask.filter(ImageFilter.GaussianBlur(radius=80))
-        dark = Image.new("RGB", self.SIZE, (0, 0, 0))
+        dark = Image.new("RGB", image.size, (0, 0, 0))
         return Image.composite(image, dark, Image.eval(mask, lambda value: 255 - int(value * 0.55)))
 
     def _apply_finish(self, image: Image.Image, quality_tier: Optional[str]) -> Image.Image:
@@ -260,9 +360,9 @@ class ThumbnailCompositor:
         bloom = image.filter(ImageFilter.GaussianBlur(radius=10))
         image = Image.blend(image, bloom, 0.12 if "epic" in quality or "premium" in quality else 0.08)
 
-        noise = Image.effect_noise(self.SIZE, 10 if "epic" in quality or "premium" in quality else 6)
+        noise = Image.effect_noise(image.size, 10 if "epic" in quality or "premium" in quality else 6)
         noise = noise.convert("L")
-        grain = Image.new("RGBA", self.SIZE, (255, 255, 255, 0))
+        grain = Image.new("RGBA", image.size, (255, 255, 255, 0))
         grain.putalpha(Image.eval(noise, lambda value: int(value * 0.10)))
         image = Image.alpha_composite(image.convert("RGBA"), grain).convert("RGB")
 
@@ -332,28 +432,6 @@ class ThumbnailCompositor:
             lines.append(" ".join(current))
         return lines or [text]
 
-    def _draw_text(
-        self,
-        draw: ImageDraw.ImageDraw,
-        text: str,
-        position,
-        font,
-        fill,
-        align: str,
-        anchor: str,
-        stroke_fill,
-        stroke_width: int,
-    ):
-        draw.text(
-            position,
-            text,
-            font=font,
-            fill=fill,
-            align=align,
-            anchor=anchor,
-            stroke_fill=stroke_fill,
-            stroke_width=stroke_width,
-        )
 
     def _draw_tracked_text(
         self,

@@ -36,10 +36,44 @@ class RecraftPromptQualityTests(unittest.TestCase):
             "Roswell UFO recovery in 1947 military hangar with officers and wreckage"
         )
 
-        self.assertTrue(negative.startswith("text, captions, subtitles"))
+        # Los terminos de texto/marca van primero (el recorte corta desde el final).
+        self.assertTrue(negative.startswith("text, captions"))
         self.assertIn("modern clothing", negative)
         self.assertIn("cartoon alien", negative)
+
+        # El limite NO es arbitrario: Recraft no expone parametro negativo, asi
+        # que el cliente pega esto al final del prompt dentro del mismo techo de
+        # ~1000 chars. El prompt visual se lleva ~700. Medido antes de acotarlo:
+        # se construian 895 chars y solo llegaban 25 de 63 terminos.
         self.assertLessEqual(len(negative), 360)
+
+    def test_anatomy_terms_always_survive_the_budget(self):
+        """Las manos deformes son el fallo mas visible en escenas con personas.
+
+        Estaban en un bucket de baja prioridad y con el presupuesto real nunca
+        llegaban a la API.
+        """
+        for visual in (
+            "Nubian priests before the pyramids of Meroe in 300 BC, torchlight",
+            "Roman legionaries forming a shield wall at dawn",
+        ):
+            negative = self.manager._build_negative_prompt(visual)
+            self.assertIn("extra fingers", negative, visual)
+            self.assertIn("deformed hands", negative, visual)
+
+    def test_negative_prompt_is_not_cut_mid_term(self):
+        """El recorte por caracteres dejaba fragmentos como "modern" (de
+        "modern clothing"), que no sirven y pueden confundir al modelo."""
+        from recraft_client import RecraftClient
+        negative = self.manager._build_negative_prompt(
+            "Nubian priests before the pyramids of Meroe in 300 BC"
+        )
+        compuesto = RecraftClient._compose_prompt_with_negative("x" * 700, negative)
+        enviados = compuesto.split("Avoid: ")[1]
+        completos = {t.strip() for t in negative.split(",")}
+        for termino in (t.strip() for t in enviados.split(",")):
+            self.assertIn(termino, completos,
+                          "se envio un fragmento de termino: %r" % termino)
 
     def test_recraft_prompt_is_trimmed_to_leave_room_for_negative_prompt(self):
         long_prompt = (

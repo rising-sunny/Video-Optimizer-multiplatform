@@ -164,7 +164,7 @@ VIDEO_OPTIMIZER_SUBS_USE_WHISPER=1   # Whisper aislado en subprocess
 |---|---|---|
 | `_whisper_subprocess_worker.py` (NUEVO) | Worker aislado que corre Whisper en su propio proceso, output JSON | torch 2.4.1+CPU crashea en c10.dll (`0xC0000005`) cuando se invoca desde Qt worker con RAM bajo (laptop tiene 5.8 GB) |
 | `dynamic_subtitles_generator.py` | `generate_from_audio_and_segments` invoca subprocess en lugar de torch in-process. Timeout 1800s (override con `VIDEO_OPTIMIZER_WHISPER_TIMEOUT_S`) | Si el subprocess crashea, solo muere el subprocess. App principal sigue viva, cae al fallback de timings de segmentos |
-| `burn_subs_from_project.py` (NUEVO) | Script standalone para quemar subs al MP4 existente. `--no-whisper` para deshabilitar. Detecta MP4 más reciente sin `_with_subs` en el nombre | Permite salvar un MP4 ya ensamblado sin re-correr todo |
+| `burn_subs_from_project.py` (retirado en la limpieza del 2026-09-14; está en git) | Script standalone para quemar subs al MP4 existente. `--no-whisper` para deshabilitar. Detecta MP4 más reciente sin `_with_subs` en el nombre | Permite salvar un MP4 ya ensamblado sin re-correr todo |
 | `.env` | `VIDEO_OPTIMIZER_SUBS_USE_WHISPER=1` (reactivado tras la isolación) | Mantener la opción de Whisper word-by-word |
 
 ### D. Persistencia y UI
@@ -180,7 +180,7 @@ VIDEO_OPTIMIZER_SUBS_USE_WHISPER=1   # Whisper aislado en subprocess
 
 ### E. Patch one-shot aplicado
 
-- **Proyecto Las_Guerras_Pùnicas_20260521_205412** (15-min video, primer caso): script `_patch_project_shared_images.py` propagó `image_path` del líder a follower en cada par compartido. 97/194 → 194/194 segmentos con image_path. Backup en `project.json.backup_20260522_083351.json`.
+- **Proyecto Las_Guerras_Pùnicas_20260521_205412** (15-min video, primer caso): script `_patch_project_shared_images.py` (retirado 2026-09-14; en git) propagó `image_path` del líder a follower en cada par compartido. 97/194 → 194/194 segmentos con image_path. Backup en `project.json.backup_20260522_083351.json`.
 
 ---
 

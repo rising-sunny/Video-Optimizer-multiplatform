@@ -68,16 +68,20 @@ def _upload_url(resource_type: str = "video") -> str:
     return f"{upload_prefix}/v1_1/{cloud_name}/{normalized_type}/upload"
 
 
-def check_auth() -> dict:
+def check_auth(verify_remote: bool = True) -> dict:
+    """Verifica las credenciales de Cloudinary CONTRA el servidor.
+
+    Antes solo leia el .env y devolvia authenticated=True si las variables
+    estaban: con una API key revocada respondia lo mismo que con una buena.
+    Cloudinary es el puente obligatorio para publicar en Instagram (la API de
+    Meta pide una URL publica del video), asi que un "todo bien" falso ahi se
+    descubre recien cuando falla la publicacion.
+
+    Devuelve ademas el plan y los creditos consumidos: en el plan Free son 25
+    al mes y el almacenamiento acumulado tambien cuenta.
+    """
     try:
-        cloud_name, api_key, _api_secret, upload_prefix = _resolve_config()
-        return {
-            "authenticated": True,
-            "cloud_name": cloud_name,
-            "api_key_suffix": api_key[-4:] if len(api_key) >= 4 else api_key,
-            "upload_prefix": upload_prefix,
-            "error": None,
-        }
+        cloud_name, api_key, api_secret, upload_prefix = _resolve_config()
     except Exception as e:
         return {
             "authenticated": False,
@@ -86,6 +90,90 @@ def check_auth() -> dict:
             "upload_prefix": None,
             "error": str(e),
         }
+
+    info = {
+        "authenticated": True,
+        "cloud_name": cloud_name,
+        "api_key_suffix": api_key[-4:] if len(api_key) >= 4 else api_key,
+        "upload_prefix": upload_prefix,
+        "error": None,
+    }
+    if not verify_remote:
+        info["verified_remotely"] = False
+        return info
+
+    try:
+        resp = requests.get(
+            f"{upload_prefix}/v1_1/{cloud_name}/usage",
+            auth=(api_key, api_secret),
+            timeout=30,
+        )
+        if resp.status_code == 401:
+            info.update(authenticated=False, verified_remotely=True,
+                        error="401: la API key o el secret de Cloudinary no son validos")
+            return info
+        if resp.status_code >= 400:
+            info.update(verified_remotely=False,
+                        error=f"{resp.status_code}: {(resp.text or '')[:160]}")
+            return info
+
+        datos = resp.json() or {}
+        creditos = datos.get("credits") or {}
+        info.update(
+            verified_remotely=True,
+            plan=datos.get("plan"),
+            credits_used=creditos.get("usage"),
+            credits_limit=creditos.get("limit"),
+            credits_percent=creditos.get("used_percent"),
+            resources=datos.get("resources"),
+        )
+        return info
+    except Exception as e:
+        # Sin red no se puede afirmar que las claves esten mal: se informa que
+        # no se pudo verificar, sin declararlas invalidas.
+        info.update(verified_remotely=False, error=f"no se pudo verificar: {e}")
+        return info
+
+
+def delete_video(public_id: str, resource_type: str = "video") -> dict:
+    """Borra de Cloudinary un video ya publicado.
+
+    Cloudinary aca es solo un PUENTE: la API de Instagram no acepta el archivo,
+    pide una URL publica, asi que se sube, Meta lo descarga, y despues la copia
+    queda ahi ocupando lugar para siempre. En el plan Free el almacenamiento
+    cuenta contra los 25 creditos mensuales, y publicando a diario crece solo
+    (al 2026-09-03 habia 145 recursos y 1.5 GB acumulados).
+
+    Nunca lanza: limpiar es una tarea de mantenimiento y no puede afectar a una
+    publicacion que ya salio bien. Devuelve {'deleted': bool, ...}.
+    """
+    pid = str(public_id or "").strip()
+    if not pid:
+        return {"deleted": False, "error": "public_id vacio"}
+
+    try:
+        cloud_name, api_key, api_secret, upload_prefix = _resolve_config()
+        resp = requests.delete(
+            f"{upload_prefix}/v1_1/{cloud_name}/resources/{resource_type}/upload",
+            params={"public_ids[]": pid},
+            auth=(api_key, api_secret),
+            timeout=60,
+        )
+        if resp.status_code >= 400:
+            return {"deleted": False, "public_id": pid,
+                    "error": f"{resp.status_code}: {(resp.text or '')[:160]}"}
+
+        datos = resp.json() or {}
+        # Cloudinary responde {"deleted": {"<public_id>": "deleted"|"not_found"}}
+        estado = str((datos.get("deleted") or {}).get(pid) or "").strip().lower()
+        return {
+            "deleted": estado == "deleted",
+            "public_id": pid,
+            "state": estado or "sin estado",
+            "error": None,
+        }
+    except Exception as e:
+        return {"deleted": False, "public_id": pid, "error": str(e)[:200]}
 
 
 def upload_video(video_path: str, folder: Optional[str] = None, public_id: Optional[str] = None,

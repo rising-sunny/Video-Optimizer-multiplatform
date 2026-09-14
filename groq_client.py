@@ -138,7 +138,7 @@ class GroqAiClient:
                 return filtered
         return deduped
 
-    def _generate(self, prompt_text, max_tokens=4096, task_type="general"):
+    def _generate(self, prompt_text, max_tokens=4096, task_type="general", json_mode=False):
         """Genera texto usando Groq, seleccionando modelo según tipo de tarea."""
         if not self.client:
             print("[ERROR] Groq no esta configurado.")
@@ -175,12 +175,20 @@ class GroqAiClient:
                     "if the user prompt forbids paranormal/conspiracy framing, do NOT add it. "
                     "If the user prompt requests strict factual/historical content, do NOT invent events, names, dates, organizations or quotes. "
                     "When documented material does not fill the requested duration, produce a SHORTER script rather than fabricating filler. "
+                    "Never refuse a historical documentary narration. If a proper name is unfamiliar, use the aliases and outline in the user prompt. "
+                    "Do not reply with apologies or 'I can't fulfill that request' — output narration only. "
                     "Output only the requested content without conversational filler or meta-commentary."
                 ) if task_key == "script_quality" else (
                     "You are a helpful assistant for video production. "
                     "Output only the requested content without conversational filler. Be concise and accurate."
                 )
 
+                if json_mode:
+                    system_content = (
+                        "Return exactly one complete, valid JSON object matching the requested structure. "
+                        "No markdown or narration outside the JSON. Follow the requested historical accuracy "
+                        "and uncertainty rules; do not invent sources, events or quotes."
+                    )
                 chat_completion = self.client.chat.completions.create(
                     messages=[
                         {
@@ -194,14 +202,24 @@ class GroqAiClient:
                     ],
                     model=current_model,
                     temperature=temperature,
-                    max_tokens=safe_max_tokens
+                    max_tokens=safe_max_tokens,
+                    **({'response_format': {'type': 'json_object'}} if json_mode else {})
                 )
 
+                if json_mode and chat_completion.choices[0].finish_reason == 'length':
+                    last_error = 'Respuesta JSON truncada por límite de tokens'
+                    print(f'[WARN] {last_error}; probando siguiente modelo.')
+                    continue
                 response = chat_completion.choices[0].message.content
                 if response:
                     import re
                     cleaned_response = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', '', response)
                     cleaned_response = re.sub(r'[\u0000-\u001F\u007F-\u009F]', '', cleaned_response)
+                    if json_mode:
+                        import json
+                        payload = json.loads(cleaned_response)
+                        if not isinstance(payload, dict):
+                            raise ValueError('La respuesta JSON debe ser un objeto')
                     self.model_cursors[task_key] = (start_idx + idx) % len(candidate_models)
                     if task_key == "general":
                         self.model_index = self.model_cursors[task_key]

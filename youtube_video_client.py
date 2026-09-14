@@ -14,8 +14,7 @@ from urllib.parse import parse_qs, urlparse
 
 # Intentar importar la API de YouTube
 try:
-    from google_search_api import search_youtube_trends
-    YOUTUBE_API_AVAILABLE = True
+        YOUTUBE_API_AVAILABLE = True
 except ImportError:
     YOUTUBE_API_AVAILABLE = False
     print("️ google_search_api.py no encontrado. La búsqueda de YouTube no funcionará.")
@@ -42,17 +41,55 @@ class YouTubeVideoClient:
     - yt-dlp instalado: pip install yt-dlp (para descarga)
     """
     
+    # Token OAuth del canal propio. Su proyecto de Google Cloud SI tiene la
+    # YouTube Data API habilitada (es el que se usa para subir), asi que sirve
+    # de respaldo cuando la API key pertenece a otro proyecto donde no lo esta.
+    OAUTH_TOKEN_FILE = "token.json"
+
     def __init__(self):
-        self.api_key = os.getenv("GOOGLE_API_KEY")
+        # YOUTUBE_API_KEY tiene prioridad: permite usar una key del MISMO
+        # proyecto que el OAuth, sin depender de para que se creo GOOGLE_API_KEY
+        # (que suele ser la de Gemini/CSE, de otro proyecto).
+        self.api_key = os.getenv("YOUTUBE_API_KEY") or os.getenv("GOOGLE_API_KEY")
         if not self.api_key:
-            print("️ YouTube Video Client: GOOGLE_API_KEY no configurado")
-            print("   Configura esta variable en tu archivo .env:")
-            print("   - GOOGLE_API_KEY: Obtén en https://console.cloud.google.com/apis/credentials")
-        
+            print("️ YouTube Video Client: sin API key (YOUTUBE_API_KEY / GOOGLE_API_KEY)")
+            print("   Se intentara con las credenciales OAuth del canal (token.json).")
+
+
         if not YT_DLP_AVAILABLE:
             print("️ YouTube Video Client: yt-dlp no está instalado")
             print("   Instala con: pip install yt-dlp")
     
+    @staticmethod
+    def _is_api_not_enabled(error) -> bool:
+        """403 accessNotConfigured: la Data API no esta habilitada en ESE proyecto."""
+        texto = str(error)
+        return "accessNotConfigured" in texto or "has not been used in project" in texto
+
+    def _oauth_youtube(self):
+        """Cliente de YouTube con el OAuth del canal, o None si no se puede."""
+        try:
+            from google.oauth2.credentials import Credentials
+            from google.auth.transport.requests import Request
+            from googleapiclient.discovery import build
+
+            ruta = self.OAUTH_TOKEN_FILE
+            if not os.path.exists(ruta):
+                base = os.path.dirname(os.path.abspath(__file__))
+                ruta = os.path.join(base, self.OAUTH_TOKEN_FILE)
+            if not os.path.exists(ruta):
+                return None
+
+            creds = Credentials.from_authorized_user_file(ruta)
+            if not creds.valid:
+                creds.refresh(Request())
+                with open(ruta, "w", encoding="utf-8") as fh:
+                    fh.write(creds.to_json())
+            return build("youtube", "v3", credentials=creds, cache_discovery=False)
+        except Exception as exc:
+            print(f"   [WARN] No se pudo usar el OAuth del canal como respaldo: {exc}")
+            return None
+
     @staticmethod
     def is_youtube_url(value: str) -> bool:
         """Detecta si un texto parece una URL de YouTube."""
@@ -197,15 +234,17 @@ class YouTubeVideoClient:
             print(" YouTube API no disponible")
             return []
 
-        if not self.api_key:
-            print(" GOOGLE_API_KEY no configurado")
-            return []
-
         try:
             from googleapiclient.discovery import build
             from googleapiclient.errors import HttpError
 
-            youtube = build('youtube', 'v3', developerKey=self.api_key)
+            if self.api_key:
+                youtube = build('youtube', 'v3', developerKey=self.api_key)
+            else:
+                youtube = self._oauth_youtube()
+                if youtube is None:
+                    print(" Sin API key ni OAuth utilizable para buscar en YouTube")
+                    return []
 
             # Parámetros de búsqueda
             search_params = {
@@ -221,10 +260,27 @@ class YouTubeVideoClient:
                 search_params['videoLicense'] = 'creativeCommon'
                 print(f" Buscando videos con licencia Creative Commons...")
 
-            request = youtube.search().list(**search_params)
-            
-            response = request.execute()
-            
+            try:
+                response = youtube.search().list(**search_params).execute()
+            except HttpError as exc:
+                # La API key puede ser de otro proyecto de Google Cloud (p.ej. la
+                # de Gemini/CSE), donde la YouTube Data API no esta habilitada.
+                # El OAuth del canal si la tiene: se reintenta con eso antes de
+                # devolver una lista vacia, que en la GUI parece "no hay videos".
+                if not self._is_api_not_enabled(exc):
+                    raise
+                print("   [WARN] La API key no tiene habilitada la YouTube Data API "
+                      "en su proyecto; reintentando con el OAuth del canal...")
+                youtube_oauth = self._oauth_youtube()
+                if youtube_oauth is None:
+                    print("   Habilitala en: https://console.cloud.google.com/apis/library/"
+                          "youtube.googleapis.com  (o defini YOUTUBE_API_KEY de otro proyecto)")
+                    raise
+                youtube = youtube_oauth
+                response = youtube.search().list(**search_params).execute()
+                print("   [OK] Busqueda resuelta con las credenciales OAuth del canal.")
+
+
             videos = []
             for item in response.get('items', []):
                 video_id = item['id']['videoId']

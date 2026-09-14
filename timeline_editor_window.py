@@ -19,7 +19,7 @@ def _normalize_project_path(project_path):
     if not project_path:
         return None
     try:
-        return os.path.normcase(os.path.abspath(str(project_path)))
+        return os.path.normcase(os.path.realpath(str(project_path)))
     except Exception:
         return str(project_path)
 

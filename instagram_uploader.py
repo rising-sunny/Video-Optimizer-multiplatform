@@ -85,7 +85,11 @@ def _load_upload_metadata(output_dir: Path) -> dict:
         meta_path = output_dir / filename
         if meta_path.exists():
             with open(meta_path, "r", encoding="utf-8") as handle:
-                return json.load(handle)
+                datos = json.load(handle)
+            # Un archivo con `null` o con una lista no es metadata utilizable:
+            # devolver eso tal cual hacia reventar al llamador con
+            # "'NoneType' object has no attribute 'get'".
+            return datos if isinstance(datos, dict) else {}
     raise FileNotFoundError(
         f"No Instagram metadata found in {output_dir}. "
         f"Expected one of: {', '.join(INSTAGRAM_METADATA_FILES)}"
@@ -328,6 +332,37 @@ def save_upload_result(result_path: str, upload_result: dict, title: str = "",
     return save_data
 
 
+def _cleanup_cloudinary(public_id: Optional[str]) -> dict:
+    """Borra la copia intermedia de Cloudinary una vez publicado el reel.
+
+    Se puede desactivar con CLOUDINARY_DELETE_AFTER_PUBLISH=0 en el .env, por
+    si alguna vez conviene conservar el archivo (depurar, republicar sin
+    volver a subir).
+
+    Nunca propaga un error: el reel YA esta publicado y perder la limpieza es
+    un costo de almacenamiento, no un fallo de la publicacion.
+    """
+    if str(_env("CLOUDINARY_DELETE_AFTER_PUBLISH", "1") or "1").strip().lower() in (
+            "0", "false", "no", "off"):
+        return {"deleted": False, "skipped": "desactivado por configuracion"}
+    if not public_id:
+        return {"deleted": False, "skipped": "Cloudinary no devolvio public_id"}
+
+    try:
+        from cloudinary_uploader import delete_video
+
+        resultado = delete_video(str(public_id))
+        if resultado.get("deleted"):
+            print(f"   [Cloudinary] Copia intermedia borrada: {public_id}")
+        else:
+            print(f"   [Cloudinary] No se pudo borrar {public_id}: "
+                  f"{resultado.get('error') or resultado.get('state')}")
+        return resultado
+    except Exception as e:
+        print(f"   [Cloudinary] Limpieza omitida: {e}")
+        return {"deleted": False, "error": str(e)[:200]}
+
+
 def upload_video(video_path: str, title: str, description: str = "", share_to_feed: Optional[bool] = None,
                  on_progress=None, api_version: Optional[str] = None) -> dict:
     video_file = Path(video_path)
@@ -382,6 +417,11 @@ def upload_video(video_path: str, title: str, description: str = "", share_to_fe
     media_info = _get_media_info(media_id, access_token=access_token, api_version=api_version)
     permalink = _normalize_permalink(media_info.get("permalink"))
 
+    # Recien ACA se borra la copia de Cloudinary: Meta ya descargo el video
+    # durante la creacion del contenedor y el reel esta publicado con su
+    # media_id. Borrar antes dejaria a Instagram sin de donde bajarlo.
+    cleanup = _cleanup_cloudinary(cloudinary_result.get("public_id"))
+
     return {
         "media_id": media_id,
         "container_id": container_id,
@@ -395,6 +435,7 @@ def upload_video(video_path: str, title: str, description: str = "", share_to_fe
         "page_name": identity.get("page_name"),
         "cloudinary_url": public_video_url,
         "cloudinary_public_id": cloudinary_result.get("public_id"),
+        "cloudinary_cleanup": cleanup,
         "container_status": container_status,
         "publish_response": publish_response,
         "media_info": media_info,

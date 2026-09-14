@@ -9,6 +9,11 @@ import numpy as np
 from PIL import Image
 from typing import List, Dict, Optional, Tuple
 
+# ANTES de importar moviepy: sin este shim, moviepy 1.0.3 sobre Pillow >= 10
+# revienta en cada clip.resize() (Image.ANTIALIAS ya no existe) y los efectos
+# de movimiento mueren en silencio. Ver moviepy_pillow_compat.py.
+import moviepy_pillow_compat  # noqa: F401
+
 # Verificar dependencias
 MOVIEPY_AVAILABLE = False
 CINEMATIC_AVAILABLE = False
@@ -20,7 +25,6 @@ try:
         TextClip, CompositeAudioClip, concatenate_audioclips
     )
     import moviepy.audio.fx.all as vfx
-    import moviepy.video.fx.all as vfx_video
     from moviepy.audio.AudioClip import AudioClip
     MOVIEPY_AVAILABLE = True
 except ImportError as e:
@@ -355,7 +359,11 @@ class ContextualVideoAssembler:
             visual_clips = []
             clip_media_sources = []
             transitionable_mask = []
-            
+            # Contadores de QA: si el usuario pide movimiento y estos quedan en
+            # 0, los stills salen congelados. Se reporta al terminar el bucle.
+            cinematic_applied = 0
+            ken_burns_applied = 0
+
             for i, item in enumerate(prompts_data):
                 # --- BUSCADOR INFALIBLE DE ARCHIVOS ---
                 original_path = item.get('filename', '')
@@ -599,24 +607,47 @@ class ContextualVideoAssembler:
                                 print(f"       Error crítico en resize: {e2}, saltando imagen")
                                 continue
                         
-                        # DESPUÉS aplicar efectos cinematográficos o Ken Burns
-                        if cinematic_engine and segments and i < len(segments):
-                            # Detectar contexto del segmento
-                            segment_text = segments[i].get('narration_text', '')
-                            duration = item.get('duration', 4)
-                            
-                            print(f"    Segmento {i+1}: Aplicando efectos cinematográficos...")
-                            
-                            # Aplicar efectos según preset
+                    # Efectos cinematograficos / Ken Burns.
+                    #
+                    # CUIDADO CON LA INDENTACION: este bloque vivia DENTRO del
+                    # `except MemoryError` de arriba, asi que los efectos solo
+                    # se aplicaban cuando la carga de la imagen fallaba por
+                    # memoria (o sea, practicamente nunca) y los stills salian
+                    # congelados aunque la GUI dijera lo contrario. Tiene que
+                    # correr para los dos caminos de carga: normal y fallback.
+                    if cinematic_engine and segments and i < len(segments):
+                        # Detectar contexto del segmento
+                        segment_text = segments[i].get('narration_text', '')
+                        duration = item.get('duration', 4)
+
+                        print(f"    Segmento {i+1}: Aplicando efectos cinematográficos...")
+
+                        # El try es a proposito: si el motor de efectos falla,
+                        # el `except Exception` del bucle se comeria el clip
+                        # ENTERO y el segmento desapareceria del video. Que un
+                        # efecto falle debe costar el movimiento, no la escena.
+                        try:
+                            from cinematic_effects import filter_for_preset
                             clip = cinematic_engine.apply_effects_to_segment(
-                                clip, 
+                                clip,
                                 segment_text=segment_text,
                                 duration=duration,
-                                auto_detect=True
+                                auto_detect=True,
+                                force_filter=filter_for_preset(cinematic_preset)
                             )
-                        elif apply_ken_burns:
+                            cinematic_applied += 1
+                        except Exception as fx_error:
+                            print(f"      [FAIL] Efectos cinematograficos fallaron en el "
+                                  f"segmento {i+1} ({type(fx_error).__name__}: {fx_error}); "
+                                  f"el clip queda estatico")
+                    elif apply_ken_burns:
+                        try:
                             clip = clip.resize(lambda t: 1 + zoom_intensity * t)
-                    
+                            ken_burns_applied += 1
+                        except Exception as kb_error:
+                            print(f"      [FAIL] Ken Burns fallo en el segmento {i+1} "
+                                  f"({type(kb_error).__name__}: {kb_error}); clip estatico")
+
                     # Ya no necesitamos resize aquí porque se hizo arriba
                     clip = clip.set_start(item['timestamp_start'])
                     
@@ -652,6 +683,21 @@ class ContextualVideoAssembler:
             if not visual_clips:
                 print(" No se generaron clips válidos.")
                 return None, None
+
+            # QA de movimiento: sin esto, que los stills salgan congelados no
+            # se nota hasta ver el video exportado (20 min despues).
+            if cinematic_engine:
+                if cinematic_applied:
+                    print(f"   [OK] Efectos cinematograficos aplicados a {cinematic_applied} clip(s)")
+                else:
+                    print("   [FAIL] Efectos cinematograficos ACTIVADOS pero aplicados a 0 clips: "
+                          "los stills van a salir congelados")
+            elif apply_ken_burns:
+                if ken_burns_applied:
+                    print(f"   [OK] Ken Burns aplicado a {ken_burns_applied} clip(s)")
+                else:
+                    print("   [FAIL] Ken Burns ACTIVADO pero aplicado a 0 clips: "
+                          "los stills van a salir congelados")
             
             # Asegurar que CompositeVideoClip esté disponible
             if not MOVIEPY_AVAILABLE:

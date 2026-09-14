@@ -14,6 +14,7 @@ import traceback
 import copy
 from pathlib import Path
 from datetime import datetime, timedelta
+from studio_channel_controls import project_channel_config, restore_channel_config
 
 # Utilidades para manejar errores de Google Drive
 try:
@@ -41,6 +42,78 @@ class StudioProjectManager:
                 return os.path.normcase(os.path.abspath(str(project_path)))
             except Exception:
                 return str(project_path)
+
+    def _storyboard_is_unusable(self, storyboard) -> bool:
+        try:
+            from storyboard_generator import storyboard_is_unusable
+            return bool(storyboard_is_unusable(storyboard))
+        except Exception:
+            return False
+
+    def prepare_isolated_project_for_topic(self, topic: str) -> bool:
+        """Detach from the current folder when the topic changed or the storyboard is a refusal.
+
+        Returns True if the next save should create a new project folder.
+        """
+        tab = self.studio_tab
+        existing_topic = ""
+        memory = getattr(tab, "last_storyboard_data", None)
+        if isinstance(memory, dict):
+            existing_topic = str(memory.get("topic") or "")
+
+        path = getattr(tab, "current_project_path", None)
+        if path and os.path.exists(path) and not existing_topic:
+            try:
+                with open(path, "r", encoding="utf-8") as handle:
+                    data = json.load(handle)
+                existing_topic = str((data.get("config") or {}).get("topic") or "")
+                if not existing_topic:
+                    existing_topic = str((data.get("storyboard") or {}).get("topic") or "")
+            except Exception:
+                existing_topic = ""
+
+        try:
+            from storyboard_generator import topics_are_same_project
+            same_topic = topics_are_same_project(existing_topic, topic)
+        except Exception:
+            same_topic = (str(existing_topic or "").strip().lower() == str(topic or "").strip().lower())
+
+        poisoned = self._storyboard_is_unusable(memory)
+        topic_changed = bool(path and existing_topic and topic and not same_topic)
+        if not poisoned and not topic_changed:
+            return False
+
+        reason = (
+            "storyboard de rechazo en memoria"
+            if poisoned
+            else f"tema distinto ('{existing_topic}' → '{topic}')"
+        )
+        print(f"[Project] Aislando proyecto nuevo: {reason}")
+        if hasattr(tab, "log"):
+            tab.log(f" Proyecto nuevo aislado: {reason}")
+        tab.current_project_path = None
+        tab._storyboard_just_generated = True
+        if poisoned:
+            tab.last_storyboard_data = None
+        self._close_existing_timeline_editor()
+        return True
+
+    def _verify_saved_storyboard(self, project_path, expected_segments: int) -> bool:
+        try:
+            with open(project_path, "r", encoding="utf-8") as handle:
+                data = json.load(handle)
+            saved_n = len((data.get("storyboard") or {}).get("segments") or [])
+            if int(saved_n) != int(expected_segments):
+                print(
+                    f"[ProjectAutoSave] VERIFICACIÓN FALLÓ: disco={saved_n} "
+                    f"memoria={expected_segments} ({project_path})"
+                )
+                return False
+            print(f"[ProjectAutoSave] Verificado: {saved_n} segmentos en disco")
+            return True
+        except Exception as exc:
+            print(f"[ProjectAutoSave] No se pudo verificar el JSON: {exc}")
+            return False
 
     def _get_timeline_editor(self):
         """Obtiene el Timeline Editor activo si existe."""
@@ -363,7 +436,7 @@ class StudioProjectManager:
 
 
             config = {
-
+                **project_channel_config(self.studio_tab),
                 'topic': topic,
 
                 'category': category,
@@ -384,7 +457,9 @@ class StudioProjectManager:
 
                 'style': self.studio_tab.style_combo.currentText(),
 
-                'subtitle_style': self.studio_tab.subtitle_style_combo.currentText() if self.studio_tab.subtitles_check.isChecked() else None,
+                # Se guarda SIEMPRE, no solo con subtitulos activados: al
+                # apagarlos y volver a encenderlos se perdia el estilo elegido.
+                'subtitle_style': self.studio_tab.subtitle_style_combo.currentText() if hasattr(self.studio_tab, 'subtitle_style_combo') else None,
 
                 'subtitles_enabled': self.studio_tab.subtitles_check.isChecked(),
 
@@ -411,6 +486,10 @@ class StudioProjectManager:
                 'transition_type': self.studio_tab.transition_type_combo.currentText() if hasattr(self.studio_tab, 'transition_type_combo') else " Fade Suave",
 
                 'transition_duration': self.studio_tab.transition_duration_spin.value() if hasattr(self.studio_tab, 'transition_duration_spin') else 0.5,
+
+                'transition_sfx_enabled': self.studio_tab.is_transition_sfx_enabled() if hasattr(self.studio_tab, 'is_transition_sfx_enabled') else True,
+
+                'transition_sfx_path': self.studio_tab.get_transition_sfx_path() if hasattr(self.studio_tab, 'get_transition_sfx_path') else None,
 
                 'images_per_segment_ratio': self.studio_tab.images_per_segment_spin.value() if hasattr(self.studio_tab, 'images_per_segment_spin') else 1
 
@@ -648,9 +727,10 @@ class StudioProjectManager:
                 return
 
             # Si el storyboard acaba de generarse, sus datos son autoritativos.
-            # Omitir sync para evitar que segmentos obsoletos del timeline anterior lo sobreescriban.
+            # No borrar el flag aquí: se limpia al abrir el timeline con los
+            # segmentos nuevos. Si se limpia en el primer auto-save, un timeline
+            # viejo de 3 escenas vuelve a pisar el guion de 500+ segmentos.
             if getattr(self.studio_tab, '_storyboard_just_generated', False):
-                self.studio_tab._storyboard_just_generated = False
                 print("[TimelineSync] Omitiendo sincronización: storyboard recién generado tiene prioridad sobre timeline obsoleto")
                 return
 
@@ -727,6 +807,14 @@ class StudioProjectManager:
                                 if not seg.get('video_source') and existing.get('video_source'):
                                     seg['video_source'] = existing['video_source']
 
+                    if existing_segments and len(segments_copy) < max(3, int(len(existing_segments) * 0.7)):
+                        print(
+                            "[TimelineSync] Omitiendo sincronización: el timeline tiene "
+                            f"{len(segments_copy)} segmentos y el storyboard en memoria tiene "
+                            f"{len(existing_segments)}. No se pisa una generación nueva."
+                        )
+                        return
+
                     # Actualizar los segmentos en last_storyboard_data
                     self.studio_tab.last_storyboard_data['segments'] = segments_copy
                     print(f" Sincronizados {len(segments_copy)} segmentos del Timeline Editor al storyboard")
@@ -767,10 +855,20 @@ class StudioProjectManager:
             # Sincronizar segmentos del Timeline Editor con last_storyboard_data antes de auto-guardar
             self._sync_timeline_editor_to_storyboard()
 
-            if not self.studio_tab.last_storyboard_data:
+            topic_widget = getattr(getattr(self.studio_tab, 'parent_gui', None), 'topic_input', None)
+            draft_topic = topic_widget.text().strip() if topic_widget else ''
+            if not self.studio_tab.last_storyboard_data and not draft_topic:
+                return True  # Todavía no hay contenido de proyecto.
 
-                # No hay nada que guardar aún
-
+            if self._storyboard_is_unusable(self.studio_tab.last_storyboard_data):
+                print(
+                    "[ProjectAutoSave] Abortado: no se persiste un storyboard de rechazo "
+                    f"({reason})"
+                )
+                if hasattr(self.studio_tab, "log"):
+                    self.studio_tab.log(
+                        " No se guardó el storyboard: el texto es un rechazo del LLM."
+                    )
                 return
 
             from project_manager_v2 import ProjectManagerV2
@@ -792,12 +890,14 @@ class StudioProjectManager:
                     # Actualizar con datos actuales
 
                     config = project_data.get('config', {})
+                    config.update(project_channel_config(self.studio_tab))
+                    config['topic'] = draft_topic or config.get('topic', '')
 
                     # Actualizar todas las opciones de Auto Video Studio Pro
 
                     config['image_provider'] = self.studio_tab.image_provider_combo.currentText() if hasattr(
 
-                        self, 'image_provider_combo') else "Auto (Inteligente)"
+                        self.studio_tab, 'image_provider_combo') else "Auto (Inteligente)"
 
                     config['visual_mode'] = 'static' if (
 
@@ -809,7 +909,7 @@ class StudioProjectManager:
 
                     config['cinematic_preset'] = self.studio_tab.cinematic_preset_combo.currentText() if hasattr(
 
-                        self, 'cinematic_preset_combo') else " Auto-Detect (Inteligente)"
+                        self.studio_tab, 'cinematic_preset_combo') else " Auto-Detect (Inteligente)"
 
                     config['transition_type'] = self.studio_tab.transition_type_combo.currentText(
 
@@ -818,6 +918,10 @@ class StudioProjectManager:
                     config['transition_duration'] = self.studio_tab.transition_duration_spin.value(
 
                     ) if hasattr(self.studio_tab, 'transition_duration_spin') else 0.5
+
+                    config['transition_sfx_enabled'] = self.studio_tab.is_transition_sfx_enabled() if hasattr(self.studio_tab, 'is_transition_sfx_enabled') else True
+
+                    config['transition_sfx_path'] = self.studio_tab.get_transition_sfx_path() if hasattr(self.studio_tab, 'get_transition_sfx_path') else None
 
                     config['images_per_segment_ratio'] = self.studio_tab.images_per_segment_spin.value(
 
@@ -839,6 +943,16 @@ class StudioProjectManager:
 
                     ) if hasattr(self.studio_tab, 'subtitles_check') else False
 
+                    # El estilo de subtitulos no se escribia en ESTA ruta de
+                    # guardado (si en las otras dos), asi que el auto-guardado
+                    # lo perdia. Se guarda siempre, no solo con subtitulos
+                    # activados: si se apagan y se vuelven a encender, la
+                    # eleccion sigue ahi.
+
+                    config['subtitle_style'] = self.studio_tab.subtitle_style_combo.currentText() if hasattr(
+
+                        self.studio_tab, 'subtitle_style_combo') else None
+
                     config['music_enabled'] = self.studio_tab.music_check.isChecked(
 
                     ) if hasattr(self.studio_tab, 'music_check') else False
@@ -848,6 +962,10 @@ class StudioProjectManager:
                     # Actualizar storyboard (copiar imágenes/videos manuales antes)
 
                     storyboard_data_to_save = self._copy_manual_media_to_project(self.studio_tab.last_storyboard_data)
+                    print(
+                        f"[ProjectAutoSave] Guardando {len((storyboard_data_to_save or {}).get('segments') or [])} "
+                        f"segmentos ({reason})"
+                    )
 
                     # Copiar archivos físicos a la carpeta del proyecto y actualizar rutas
 
@@ -867,7 +985,7 @@ class StudioProjectManager:
 
                     else:
 
-                        project_data['storyboard'] = storyboard_data_to_save
+                        project_data['storyboard'] = storyboard_data_to_save or {}
 
                     # Actualizar progreso
 
@@ -929,7 +1047,8 @@ class StudioProjectManager:
                     if hasattr(self.studio_tab, '_save_last_project_path'):
                         self.studio_tab._save_last_project_path(self.studio_tab.current_project_path)
 
-                    return
+                    expected = len((self.studio_tab.last_storyboard_data or {}).get("segments") or [])
+                    return self._verify_saved_storyboard(self.studio_tab.current_project_path, expected)
 
             # Si no hay proyecto cargado, crear uno nuevo con nombre automático
             # Recopilar configuraciones actuales
@@ -943,12 +1062,14 @@ class StudioProjectManager:
 
             config = {
                 'topic': topic,
+                **project_channel_config(self.studio_tab),
                 'platform': self.studio_tab.platform_combo.currentText(),
                 'platform_key': self.studio_tab.get_selected_platform_key() if hasattr(self.studio_tab, 'get_selected_platform_key') else self.studio_tab.platform_combo.currentText(),
                 'video_format': self.studio_tab.get_selected_video_format() if hasattr(self.studio_tab, 'get_selected_video_format') else '16:9',
                 'duration': self.studio_tab.duration_slider.value(),
                 'language': 'es' if self.studio_tab.lang_es.isChecked() else 'en',
                 'style': self.studio_tab.style_combo.currentText(),
+                'subtitle_style': self.studio_tab.subtitle_style_combo.currentText() if hasattr(self.studio_tab, 'subtitle_style_combo') else None,
                 # Opciones de Auto Video Studio Pro
                 'image_provider': self.studio_tab.image_provider_combo.currentText() if hasattr(self.studio_tab, 'image_provider_combo') else "Auto (Inteligente)",
                 'visual_mode': 'static' if (hasattr(self.studio_tab, 'visual_static') and self.studio_tab.visual_static.isChecked()) else 'mixed',
@@ -956,6 +1077,8 @@ class StudioProjectManager:
                 'cinematic_preset': self.studio_tab.cinematic_preset_combo.currentText() if hasattr(self.studio_tab, 'cinematic_preset_combo') else " Auto-Detect (Inteligente)",
                 'transition_type': self.studio_tab.transition_type_combo.currentText() if hasattr(self.studio_tab, 'transition_type_combo') else " Fade Suave",
                 'transition_duration': self.studio_tab.transition_duration_spin.value() if hasattr(self.studio_tab, 'transition_duration_spin') else 0.5,
+                'transition_sfx_enabled': self.studio_tab.is_transition_sfx_enabled() if hasattr(self.studio_tab, 'is_transition_sfx_enabled') else True,
+                'transition_sfx_path': self.studio_tab.get_transition_sfx_path() if hasattr(self.studio_tab, 'get_transition_sfx_path') else None,
                 'subtitles_enabled': self.studio_tab.subtitles_check.isChecked() if hasattr(self.studio_tab, 'subtitles_check') else False,
                 'music_enabled': self.studio_tab.music_check.isChecked() if hasattr(self.studio_tab, 'music_check') else False,
                 'selected_music_path': getattr(self.studio_tab, 'selected_music_path', None),
@@ -1008,10 +1131,14 @@ class StudioProjectManager:
 
                 # El nuevo sistema ya maneja la copia de archivos automáticamente
                 self.studio_tab.log(f" Auto-guardado: {project_name} {reason}")
+                expected = len((self.studio_tab.last_storyboard_data or {}).get("segments") or [])
+                return self._verify_saved_storyboard(project_path, expected)
+            return False
 
         except Exception as e:
             # No mostrar error en auto-guardado para no interrumpir el flujo
             self.studio_tab.log(f"️ Error en auto-guardado: {e}")
+            return False
 
     def _persist_selected_music_for_project(self, project_path, project_data):
         """Asegura que la m?sica seleccionada quede guardada dentro de la carpeta del proyecto."""
@@ -1266,6 +1393,7 @@ class StudioProjectManager:
 
             # Restaurar configuraciones
             config = project_data.get('config', {})
+            restore_channel_config(self.studio_tab, config)
 
             if hasattr(self.studio_tab, 'parent_gui'):
                 if hasattr(self.studio_tab.parent_gui, 'topic_input') and config.get('topic'):
@@ -1334,19 +1462,15 @@ class StudioProjectManager:
                         self.studio_tab.pending_voice_selection = voice_name
                         self.studio_tab.log(f" Voz '{voice_name}' se aplicará cuando las voces estén cargadas")
 
-            if config.get('style'):
-                index = self.studio_tab.style_combo.findText(config.get('style'))
+            self.studio_tab.subtitles_check.setChecked(bool(config.get('subtitles_enabled')))
+            # El estilo se restaura SIEMPRE, tambien con los subtitulos
+            # apagados: si no, encenderlos despues devolvia el estilo por
+            # defecto en vez del que se habia elegido.
+            if config.get('subtitle_style') and hasattr(self.studio_tab, 'subtitle_style_combo'):
+                index = self.studio_tab.subtitle_style_combo.findText(config.get('subtitle_style'))
                 if index >= 0:
-                    self.studio_tab.style_combo.setCurrentIndex(index)
-
-            if config.get('subtitles_enabled'):
-                self.studio_tab.subtitles_check.setChecked(True)
-                if config.get('subtitle_style'):
-                    index = self.studio_tab.subtitle_style_combo.findText(config.get('subtitle_style'))
-                    if index >= 0:
-                        self.studio_tab.subtitle_style_combo.setCurrentIndex(index)
-            else:
-                self.studio_tab.subtitles_check.setChecked(False)
+                    self.studio_tab.subtitle_style_combo.setCurrentIndex(index)
+                    self.studio_tab.log(f" Estilo de subtitulos restaurado: {config.get('subtitle_style')}")
 
             if hasattr(self.studio_tab, 'overlays_check') and config.get('overlays_enabled') is not None:
                 self.studio_tab.overlays_check.setChecked(config.get('overlays_enabled'))
@@ -1374,6 +1498,14 @@ class StudioProjectManager:
                 if index >= 0:
                     self.studio_tab.image_provider_combo.setCurrentIndex(index)
 
+            # El estilo visual va DESPUES del proveedor a proposito: cambiar el
+            # proveedor dispara `_on_image_provider_changed`, que vacia y vuelve
+            # a llenar `style_combo`. Restaurado antes, se perdia.
+            if config.get('style') and hasattr(self.studio_tab, 'style_combo'):
+                index = self.studio_tab.style_combo.findText(config.get('style'))
+                if index >= 0:
+                    self.studio_tab.style_combo.setCurrentIndex(index)
+
             if hasattr(self.studio_tab, 'visual_static') and hasattr(self.studio_tab, 'visual_mixed'):
                 visual_mode = config.get('visual_mode', 'mixed')
                 if visual_mode == 'static':
@@ -1398,6 +1530,13 @@ class StudioProjectManager:
 
             if hasattr(self.studio_tab, 'transition_duration_spin') and config.get('transition_duration') is not None:
                 self.studio_tab.transition_duration_spin.setValue(config.get('transition_duration', 0.5))
+
+            if hasattr(self.studio_tab, 'transition_sfx_check') and config.get('transition_sfx_enabled') is not None:
+                self.studio_tab.transition_sfx_check.setChecked(bool(config.get('transition_sfx_enabled')))
+            if hasattr(self.studio_tab, '_populate_transition_sfx_combo'):
+                self.studio_tab._populate_transition_sfx_combo(config.get('transition_sfx_path'))
+            if hasattr(self.studio_tab, '_on_transition_sfx_toggled') and hasattr(self.studio_tab, 'transition_sfx_check'):
+                self.studio_tab._on_transition_sfx_toggled(self.studio_tab.transition_sfx_check.isChecked())
 
             # Restaurar ratio de imágenes por segmento
             if hasattr(self.studio_tab, 'images_per_segment_spin') and config.get('images_per_segment_ratio') is not None:
@@ -1480,7 +1619,14 @@ class StudioProjectManager:
                 self.studio_tab._save_last_project_path(project_path)
 
             # Restaurar storyboard si existe
-            storyboard_data = project_data.get('storyboard', {})
+            storyboard_data = project_data.get('storyboard') or {}
+            if self._storyboard_is_unusable(storyboard_data):
+                self.studio_tab.log(
+                    " El storyboard guardado es un rechazo del LLM. Se ignora y no se abre el timeline."
+                )
+                print("[ProjectLoad] Storyboard de rechazo ignorado; no se restaura.")
+                storyboard_data = {}
+                self.studio_tab.last_storyboard_data = None
             if storyboard_data and storyboard_data.get('segments'):
                 segments = storyboard_data.get('segments', [])
                 self.studio_tab.log(f"    Restaurando storyboard con {len(segments)} segmentos...")
@@ -1776,6 +1922,7 @@ class StudioProjectManager:
                 self.studio_tab.log(f"   ️ Thumbnail no encontrado en: {project_data.get('thumbnail_path')}")
 
             self.studio_tab.log(f"\n Proyecto cargado exitosamente")
+            return True
 
         except Exception as e:
             self.studio_tab.log(f" Error cargando proyecto desde ruta: {e}")
@@ -1795,7 +1942,7 @@ class StudioProjectManager:
 
         # Validar audio del storyboard
 
-        storyboard = project_data.get('storyboard', {})
+        storyboard = project_data.get('storyboard') or {}
 
         audio_path = storyboard.get('audio_path')
 

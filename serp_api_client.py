@@ -228,37 +228,6 @@ class SerpApiClient:
         
         return paa_results[:10]  # Limitar a 10
     
-    def get_video_results(self, query: str, location: str = "Spain", 
-                         language: str = "es", max_videos: int = 10) -> List[Dict[str, Any]]:
-        """
-        Obtiene resultados de videos de Google
-        
-        Returns:
-            Lista de videos con información estructurada
-        """
-        results = self.search_google(query, location, language, num_results=20)
-        if not results:
-            return []
-            
-        videos = []
-        
-        try:
-            if "video_results" in results:
-                for video in results["video_results"][:max_videos]:
-                    if isinstance(video, dict):
-                        videos.append({
-                            "title": video.get("title", "").strip(),
-                            "link": video.get("link", "").strip(),
-                            "thumbnail": video.get("thumbnail", "").strip(),
-                            "channel": video.get("channel", {}).get("name", "") if isinstance(video.get("channel"), dict) else "",
-                            "duration": video.get("duration", "").strip(),
-                            "views": video.get("views", "").strip(),
-                            "date": video.get("date", "").strip()
-                        })
-        except (KeyError, TypeError, AttributeError) as e:
-            print(f"️ Error extrayendo video results: {e}")
-        
-        return videos
     
     def get_trending_keywords(self, category: str, location: str = "Spain", 
                              language: str = "es") -> List[str]:

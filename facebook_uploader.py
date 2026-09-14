@@ -11,6 +11,7 @@ Optional env vars:
 
 import json
 import os
+import re
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -60,6 +61,10 @@ FACEBOOK_METADATA_FILES = ("facebook_metadata.json", "metadata.json")
 REQUEST_TIMEOUT = 120
 POLL_INTERVAL_SECONDS = 5
 POLL_TIMEOUT_SECONDS = 300
+# Si TODAS las consultas de estado fallan, se abandona a los 45s en vez
+# de agotar POLL_TIMEOUT_SECONDS: el reel ya esta publicado y esos 5
+# minutos extra empujaban el trabajo del VPS mas alla del tope de SSH.
+STATUS_ERROR_GRACE_SECONDS = 45
 
 
 def _write_json(path: Path, payload: dict) -> None:
@@ -118,7 +123,11 @@ def _load_upload_metadata(output_dir: Path) -> dict:
         meta_path = output_dir / filename
         if meta_path.exists():
             with open(meta_path, "r", encoding="utf-8") as handle:
-                return json.load(handle)
+                datos = json.load(handle)
+            # Un archivo con `null` o con una lista no es metadata utilizable:
+            # devolver eso tal cual hacia reventar al llamador con
+            # "'NoneType' object has no attribute 'get'".
+            return datos if isinstance(datos, dict) else {}
     raise FileNotFoundError(
         f"No Facebook metadata found in {output_dir}. "
         f"Expected one of: {', '.join(FACEBOOK_METADATA_FILES)}"
@@ -171,8 +180,29 @@ def _normalize_permalink(url: Optional[str], video_id: Optional[str] = None) -> 
     return text or None
 
 
+class FacebookRequestError(requests.exceptions.RequestException):
+    """Error de red hacia Graph API, ya sin el token en el mensaje."""
+
+
+_TOKEN_RE = re.compile(r"(access_token=)[^&\s\"']+", re.IGNORECASE)
+
+
+def _redact_tokens(text: str) -> str:
+    """Saca los access_token de cualquier texto antes de loguearlo."""
+    return _TOKEN_RE.sub(r"\1<REDACTED>", str(text))
+
+
 def _request_json(method: str, url: str, timeout: Optional[float] = None, **kwargs) -> dict:
-    response = requests.request(method, url, timeout=timeout or REQUEST_TIMEOUT, **kwargs)
+    try:
+        response = requests.request(method, url, timeout=timeout or REQUEST_TIMEOUT, **kwargs)
+    except requests.exceptions.RequestException as exc:
+        # El token viaja en la query string: urllib3 mete la URL entera en el
+        # texto de la excepcion, y de ahi al traceback, al log y a cualquier
+        # lado donde se pegue ese log. `from None` corta la cadena de causas
+        # para que la version sin censurar no reaparezca mas abajo.
+        raise FacebookRequestError(
+            f"{type(exc).__name__}: {_redact_tokens(exc)}"
+        ) from None
     if response.status_code >= 400:
         try:
             payload = response.json()
@@ -191,13 +221,153 @@ def _request_json(method: str, url: str, timeout: Optional[float] = None, **kwar
     return response.json()
 
 
+def _probe_page_token(token: str, api_version: Optional[str] = None) -> tuple:
+    """Una sola consulta que responde las DOS preguntas del page token.
+
+    `/me` sobre un page token devuelve la identidad de SU pagina, asi que el
+    mismo request dice si el token vive y a donde publica. Van juntas a
+    proposito: preguntarlas por separado duplicaba la llamada a la API.
+
+    Devuelve (estado, page_id):
+      "ok"      -> token vivo; page_id es la pagina a la que pertenece
+      "dead"    -> Facebook lo rechazo (tipico 190 por vencimiento)
+      "unknown" -> no se pudo averiguar (sin red); no se concluye nada
+    """
+    if not token:
+        return "dead", None
+    try:
+        data = _request_json(
+            "GET",
+            _graph_api_url("me", api_version=api_version),
+            params={"fields": "id", "access_token": token},
+        )
+        return "ok", (str(data.get("id") or "").strip() or None)
+    except requests.exceptions.RequestException:
+        # Sin red no se puede afirmar que el token este mal: se lo da por bueno
+        # y que falle mas adelante con el error real.
+        return "unknown", None
+    except Exception:
+        return "dead", None
+
+
+def _manageable_pages(user_access_token: str, api_version: Optional[str] = None) -> list:
+    """Paginas que el user token puede administrar (mejor mensaje de error)."""
+    try:
+        data = _request_json(
+            "GET",
+            _graph_api_url("me/accounts", api_version=api_version),
+            params={"fields": "id,name", "access_token": user_access_token},
+        )
+        return list(data.get("data") or [])
+    except Exception:
+        return []
+
+
+def _granular_page_scopes(user_access_token: str, page_id: Optional[str],
+                          api_version: Optional[str] = None) -> Optional[list]:
+    """A que paginas alcanza cada permiso `pages_*` DE ESTE token.
+
+    Meta congela en el token que paginas cubre cada scope, segun lo que se eligio
+    en el dialogo "que paginas queres usar con esta app" al autorizarla. Un rol
+    de administrador en el Business NO lo cambia, y el token viejo tampoco se
+    actualiza: hay que reautorizar la app y emitir un token nuevo.
+    """
+    try:
+        data = _request_json(
+            "GET",
+            _graph_api_url("debug_token", api_version=api_version),
+            params={"input_token": user_access_token, "access_token": user_access_token},
+        )
+    except Exception:
+        return None
+
+    detalle = []
+    for grant in ((data.get("data") or {}).get("granular_scopes") or []):
+        scope = str(grant.get("scope") or "")
+        if not scope.startswith("pages_"):
+            continue
+        targets = grant.get("target_ids")
+        if targets is None:
+            detalle.append((scope, None, True))
+        else:
+            ids = [str(t) for t in targets]
+            detalle.append((scope, ids, page_id is not None and str(page_id) in ids))
+    return detalle
+
+
+def _page_token_help(page_id: Optional[str], user_access_token: str,
+                     api_version: Optional[str] = None) -> str:
+    """Error accionable en vez del 190 generico de Facebook."""
+    lines = [
+        "No hay un Facebook Page access token utilizable.",
+        "  - FACEBOOK_PAGE_ACCESS_TOKEN esta vencido o fue rechazado.",
+        "  - Tampoco se pudo derivar uno desde FACEBOOK_USER_ACCESS_TOKEN"
+        f" para la pagina {page_id or '(sin FACEBOOK_PAGE_ID)'}.",
+    ]
+
+    pages = _manageable_pages(user_access_token, api_version=api_version)
+    if pages:
+        lines.append("  - Paginas que ESE user token si administra:")
+        for page in pages:
+            lines.append(f"      {page.get('name')} (id={page.get('id')})")
+    else:
+        lines.append("  - Ese user token no administra ninguna pagina.")
+
+    scopes = _granular_page_scopes(user_access_token, page_id, api_version=api_version)
+    if scopes and page_id and not any(cubre for _, _, cubre in scopes):
+        lines.append(f"  - Permisos pages_* de este token (NO cubren {page_id}):")
+        for scope, ids, _ in scopes:
+            lines.append(f"      {scope} -> {'todas' if ids is None else ', '.join(ids)}")
+        lines.append(
+            "  - Causa: Meta limita cada permiso pages_* a las paginas que se"
+            " tildaron al autorizar la app. Tener rol de administrador en el"
+            " Business NO alcanza, y el token ya emitido NO se actualiza solo."
+        )
+        lines.append(
+            "  - Solucion: reautorizar la app incluyendo esa pagina (Facebook >"
+            " Configuracion > Aplicaciones y sitios web > la app > Editar) y"
+            " emitir un token NUEVO; o generar un token de usuario del sistema"
+            " en el Business que posee la pagina."
+        )
+
+    return "\n".join(lines)
+
+
 def _resolve_page_access_token(api_version: Optional[str] = None) -> tuple[str, Optional[str]]:
     page_access_token = _env("FACEBOOK_PAGE_ACCESS_TOKEN")
     user_access_token = _env("FACEBOOK_USER_ACCESS_TOKEN")
     page_id = _env("FACEBOOK_PAGE_ID")
 
     if page_access_token:
-        return page_access_token, page_id
+        # El token puede ser PERFECTAMENTE VALIDO y aun asi ser de OTRA pagina.
+        # Paso al abrir la pagina del canal nuevo (2026-09-02): alcanzaba con
+        # cambiar FACEBOOK_PAGE_ID y dejar el token viejo para que el pipeline
+        # devolviera (token de Stunning Revelations, id de Stunning Facts of
+        # History). Publicar en la pagina equivocada es peor que no publicar.
+        estado, pagina_del_token = _probe_page_token(page_access_token, api_version=api_version)
+        if page_id and pagina_del_token and str(pagina_del_token) != str(page_id):
+            aviso = (
+                f"[FB] El FACEBOOK_PAGE_ACCESS_TOKEN es de la pagina {pagina_del_token} "
+                f"pero FACEBOOK_PAGE_ID dice {page_id}."
+            )
+            if not user_access_token:
+                raise RuntimeError(
+                    aviso + "\n     No hay FACEBOOK_USER_ACCESS_TOKEN para derivar uno "
+                    "correcto. Emiti un page token de la pagina destino y actualiza "
+                    ".env (y .env.txt, que es el que viaja al VPS)."
+                )
+            print(aviso + " Se ignora y se intenta derivar uno desde el user token...")
+            page_access_token = ""
+        # Sin user token no hay plan B: se usa tal cual, como siempre.
+        elif not user_access_token:
+            return page_access_token, page_id
+        elif estado != "dead":
+            return page_access_token, page_id
+        print(
+            "[FB] FACEBOOK_PAGE_ACCESS_TOKEN rechazado por Facebook (vencido); "
+            "intentando derivar uno nuevo desde FACEBOOK_USER_ACCESS_TOKEN..."
+        )
+        page_access_token = ""
 
     if not user_access_token:
         raise RuntimeError(
@@ -216,7 +386,9 @@ def _resolve_page_access_token(api_version: Optional[str] = None) -> tuple[str, 
         )
         token = str(data.get("access_token") or "").strip()
         if not token:
-            raise RuntimeError("Could not resolve FACEBOOK_PAGE_ACCESS_TOKEN from FACEBOOK_PAGE_ID.")
+            # Facebook responde 200 pero SIN access_token cuando la pagina no
+            # cuelga de un rol personal del usuario (tipico de Business Manager).
+            raise RuntimeError(_page_token_help(page_id, user_access_token, api_version))
         return token, str(data.get("id") or page_id)
 
     data = _request_json(
@@ -320,15 +492,34 @@ def get_reel_status(video_id: str, api_version: Optional[str] = None,
 
 def _wait_for_reel_ready(video_id: str, page_access_token: str, api_version: Optional[str] = None,
                          timeout_seconds: int = POLL_TIMEOUT_SECONDS) -> dict:
-    deadline = time.time() + max(5, int(timeout_seconds))
+    inicio = time.time()
+    deadline = inicio + max(5, int(timeout_seconds))
     last_state = {}
+    ultimo_error = None
+    hubo_respuesta = False
 
     while time.time() < deadline:
-        last_state = get_reel_status(
-            video_id=video_id,
-            api_version=api_version,
-            page_access_token=page_access_token,
-        )
+        try:
+            last_state = get_reel_status(
+                video_id=video_id,
+                api_version=api_version,
+                page_access_token=page_access_token,
+            )
+        except Exception as exc:
+            # Este poll corre DESPUES de que el reel ya se publico. Justo despues
+            # de publicar, Facebook devuelve a veces error 100 ("Object with ID
+            # ... does not exist") sobre el id que el mismo acaba de dar: es
+            # consistencia eventual. Que eso reviente hacia que un video ya
+            # publicado se reportara como fallo (2026-09-03, Caral).
+            ultimo_error = exc
+            if not hubo_respuesta and (time.time() - inicio) >= STATUS_ERROR_GRACE_SECONDS:
+                # Nunca contesto: no tiene sentido seguir esperando.
+                break
+            time.sleep(POLL_INTERVAL_SECONDS)
+            continue
+
+        hubo_respuesta = True
+        ultimo_error = None
         status = last_state.get("status", {}) or {}
         video_status = str(status.get("video_status") or "").strip().lower()
         processing_phase = status.get("processing_phase", {}) or {}
@@ -348,6 +539,16 @@ def _wait_for_reel_ready(video_id: str, page_access_token: str, api_version: Opt
             return last_state
 
         time.sleep(POLL_INTERVAL_SECONDS)
+
+    if ultimo_error is not None and not last_state:
+        # No se pudo confirmar, pero el reel YA esta publicado: se avisa y se
+        # sigue, en vez de convertir una publicacion exitosa en un error.
+        print(
+            f"   [WARN] No se pudo verificar el estado del reel {video_id} "
+            f"({type(ultimo_error).__name__}: {str(ultimo_error)[:160]}).\n"
+            f"          El video ya fue publicado; revisalo en Meta Business Suite."
+        )
+        return {"status_check_failed": str(ultimo_error)[:300]}
 
     return last_state
 

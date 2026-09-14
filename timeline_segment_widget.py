@@ -244,7 +244,8 @@ class TimelineSegment(QFrame):
         self.btn_copy_recraft_prompts = QPushButton("Copiar Prompts")
         self.btn_copy_recraft_prompts.setCursor(QCursor(Qt.CursorShape.ArrowCursor))
         self.btn_copy_recraft_prompts.setToolTip(
-            "Copia el prompt y negative prompt Recraft de este segmento."
+            "Copia el prompt y negative prompt de este segmento, "
+            "incluyendo el formato de imagen de la GUI (16:9, 9:16 o 1:1)."
         )
         self.btn_copy_recraft_prompts.setMinimumHeight(24)
 
@@ -991,7 +992,9 @@ class TimelineSegment(QFrame):
         """Muestra placeholder de video cuando no se puede extraer miniatura."""
         self.image_preview.setText("Video")
         self.image_status_label.setText("Video")
-        self.image_preview.setToolTip(f"Video\n{os.path.basename(image_path)}")
+        self.image_preview.setToolTip(
+            f"Video\n{os.path.basename(image_path)}\n\nClick para reproducir"
+        )
         self._last_preview_path = image_path
 
     def _on_async_video_thumb_finished(self, image_path, temp_path, request_id):
@@ -1012,7 +1015,6 @@ class TimelineSegment(QFrame):
                 self.image_preview.setText("")
                 _set_cached_pixmap(image_path, scaled_pixmap)
                 self._update_media_status_label(image_path)
-                self.image_preview.setToolTip(f"Video\n{os.path.basename(image_path)}\n\nClick para ver en tamano completo")
                 self._last_preview_path = image_path
             else:
                 self._show_video_fallback(image_path)
@@ -1099,6 +1101,9 @@ class TimelineSegment(QFrame):
                     break
             self.image_status_label.setText(label_text)
             self.image_status_label.setStyleSheet(f"QLabel {{ color: {color}; font-size: 7pt; padding: 2px; font-weight: bold; }}")
+            self.image_preview.setToolTip(
+                f"Video\n{os.path.basename(image_path)}\n\nClick para reproducir"
+            )
         else:
             is_generated = any(k in image_path.lower() for k in ('generated_media', 'leonardo', 'runway', 'fal', 'eden', 'thumb_'))
             if is_generated:
@@ -1304,27 +1309,60 @@ class TimelineSegment(QFrame):
 
         event.ignore()
     
+    def _get_preview_video_path(self):
+        """Ruta local del video insertado (o recorte) si el segmento tiene uno."""
+        image_path, video_path = self._get_resolved_segment_media_paths()
+        if video_path:
+            return video_path
+        if image_path and self._is_video_path(image_path):
+            return image_path
+        return None
+
     def on_image_clicked(self, event):
-        """Maneja el click en la imagen para mostrar vista previa"""
-        if event.button() == Qt.MouseButton.LeftButton:
-            # Solo usar image_path explÃ­cito (asignado en generaciÃ³n de imÃ¡genes)
-            # NO buscar automÃ¡ticamente por assigned_filename
-            image_path, video_path = self._get_resolved_segment_media_paths()
-            
-            # Solo mostrar vista previa si hay image_path explÃ­cito
-            if image_path and not video_path and not self.segment_data.get('image_deleted', False):
-                self.show_image_preview(image_path)
-            elif self.segment_data.get('image_deleted', False):
-                # Si la imagen fue eliminada, no hacer nada
-                pass
-            else:
-                # No hay imagen disponible
-                QMessageBox.information(
-                    self,
-                    "Sin Imagen",
-                    "No hay imagen generada para este segmento.\n\n"
-                    "Usa el boton 'Generar imagenes' para crear una imagen."
-                )
+        """Maneja el click en la miniatura: preview de imagen o reproducción de video."""
+        if event.button() != Qt.MouseButton.LeftButton:
+            return
+
+        video_path = self._get_preview_video_path()
+        if video_path:
+            self.show_video_preview(video_path)
+            return
+
+        image_path, _ = self._get_resolved_segment_media_paths()
+        if image_path and not self.segment_data.get('image_deleted', False):
+            self.show_image_preview(image_path)
+            return
+
+        if self.segment_data.get('image_deleted', False):
+            return
+
+        QMessageBox.information(
+            self,
+            "Sin media",
+            "Este segmento no tiene imagen ni video asignado.\n\n"
+            "Insertá un video o generá una imagen para ver la vista previa.",
+        )
+
+    def show_video_preview(self, video_path):
+        """Abre un diálogo que reproduce el video insertado o el recorte."""
+        resolved = self._resolve_existing_media_path(video_path) or video_path
+        if not resolved or not os.path.exists(resolved):
+            QMessageBox.warning(
+                self,
+                "Video no encontrado",
+                f"No se encontró el video de este segmento:\n{video_path}",
+            )
+            return
+        try:
+            from video_preview_dialog import LocalVideoPreviewDialog
+            dialog = LocalVideoPreviewDialog(self, resolved)
+            dialog.exec()
+        except Exception as exc:
+            QMessageBox.critical(
+                self,
+                "Error",
+                f"No se pudo abrir el reproductor:\n{exc}",
+            )
     
     def show_image_preview(self, image_path):
         """Muestra una ventana con la imagen en tamaÃ±o grande"""
@@ -1463,7 +1501,10 @@ class TimelineSegment(QFrame):
         regenerate_text_action.setToolTip("Reescribe este segmento con contexto del guion completo")
         regenerate_text_action.triggered.connect(self._on_regenerate_text_clicked)
         copy_recraft_prompts_action = menu.addAction("Copiar prompts Recraft")
-        copy_recraft_prompts_action.setToolTip("Copia el prompt y negative prompt Recraft del segmento")
+        copy_recraft_prompts_action.setToolTip(
+            "Copia el prompt y negative prompt del segmento, "
+            "incluyendo el formato de imagen de la GUI (16:9, 9:16 o 1:1)"
+        )
         copy_recraft_prompts_action.triggered.connect(self._on_copy_recraft_prompts_clicked)
 
         menu.addSeparator()
@@ -1523,6 +1564,12 @@ class TimelineSegment(QFrame):
 
             # Opciones para videos
             if has_video_data:
+                play_video_action = menu.addAction("Reproducir video")
+                play_path = video_path or raw_video_path
+                play_video_action.triggered.connect(
+                    lambda checked=False, p=play_path: self.show_video_preview(p)
+                )
+
                 edit_video_action = menu.addAction("Editar video")
                 edit_video_action.triggered.connect(lambda: self.video_edit_requested.emit(self.index))
 
@@ -1630,6 +1677,8 @@ class GroupedSegmentsWidget(QFrame):
     grouped_strip_watermark_requested = pyqtSignal(list)  # eliminar marca de agua Gemini del grupo
     grouped_generate_fal_image_requested = pyqtSignal(list)  # generar imagen con FAL.AI para el grupo
     grouped_animate_fal_video_requested = pyqtSignal(list)   # animar imagen del grupo a video con FAL.AI
+    grouped_extend_requested = pyqtSignal(list)             # sumar el siguiente segmento
+    grouped_shrink_requested = pyqtSignal(list)             # quitar el último segmento
 
     def __init__(self, member_widgets, shared_image_path=None, shared_image_source=None,
                  parent=None):
@@ -1653,15 +1702,18 @@ class GroupedSegmentsWidget(QFrame):
         """Lista de indices originales de los segmentos agrupados."""
         return [getattr(w, 'index', -1) for w in self.member_widgets]
 
+    def set_range_actions_enabled(self, can_extend=True, can_shrink=True):
+        """Habilita +1 / -1 según si hay siguiente segmento o el grupo puede encogerse."""
+        if hasattr(self, "btn_extend_group"):
+            self.btn_extend_group.setEnabled(bool(can_extend))
+        if hasattr(self, "btn_shrink_group"):
+            self.btn_shrink_group.setEnabled(bool(can_shrink))
+
     def set_fal_mode(self, enabled: bool):
         """Activa/desactiva los botones FAL.AI de este grupo."""
         self._fal_mode = bool(enabled)
         self._update_fal_buttons()
 
-    def set_fal_generate_busy(self, busy: bool):
-        if hasattr(self, 'btn_fal_image'):
-            self.btn_fal_image.setEnabled(not busy)
-            self.btn_fal_image.setText("Generando..." if busy else "Generar imagen")
 
     def set_fal_animate_busy(self, busy: bool):
         if hasattr(self, 'btn_fal_animate'):
@@ -1745,7 +1797,8 @@ class GroupedSegmentsWidget(QFrame):
 
         self.btn_copy_prompts = QPushButton("Copiar Prompts")
         self.btn_copy_prompts.setToolTip(
-            "Copia el prompt y negative prompt de la imagen compartida al portapapeles."
+            "Copia el prompt y negative prompt de la imagen compartida, "
+            "incluyendo el formato de imagen de la GUI (16:9, 9:16 o 1:1)."
         )
         self.btn_copy_prompts.setMinimumHeight(24)
 
@@ -1771,6 +1824,25 @@ class GroupedSegmentsWidget(QFrame):
         )
         self.btn_fal_animate.setVisible(False)
         left_column.addWidget(self.btn_fal_animate)
+
+        range_row = QHBoxLayout()
+        range_row.setContentsMargins(0, 0, 0, 0)
+        range_row.setSpacing(4)
+        self.btn_extend_group = QPushButton("+1")
+        self.btn_extend_group.setToolTip("Sumar el siguiente segmento a esta imagen")
+        self.btn_extend_group.setMinimumHeight(24)
+        self.btn_extend_group.clicked.connect(
+            lambda: self.grouped_extend_requested.emit(self.member_indices)
+        )
+        self.btn_shrink_group = QPushButton("-1")
+        self.btn_shrink_group.setToolTip("Quitar el último segmento de este grupo")
+        self.btn_shrink_group.setMinimumHeight(24)
+        self.btn_shrink_group.clicked.connect(
+            lambda: self.grouped_shrink_requested.emit(self.member_indices)
+        )
+        range_row.addWidget(self.btn_shrink_group)
+        range_row.addWidget(self.btn_extend_group)
+        left_column.addLayout(range_row)
 
         left_widget = QWidget()
         left_widget.setLayout(left_column)
@@ -1892,6 +1964,16 @@ class GroupedSegmentsWidget(QFrame):
             lambda: self.grouped_image_remove_requested.emit(self.member_indices)
         )
         menu.addSeparator()
+        extend_action = menu.addAction("Sumar siguiente segmento (+1)")
+        extend_action.triggered.connect(
+            lambda: self.grouped_extend_requested.emit(self.member_indices)
+        )
+        shrink_action = menu.addAction("Quitar último segmento (-1)")
+        shrink_action.setEnabled(len(self.member_indices) >= 2)
+        shrink_action.triggered.connect(
+            lambda: self.grouped_shrink_requested.emit(self.member_indices)
+        )
+        menu.addSeparator()
         ungroup_action = menu.addAction("Desagrupar segmentos")
         ungroup_action.setToolTip(
             "Mantiene la imagen solo en el primer segmento y deja los otros sin imagen."
@@ -1908,7 +1990,9 @@ class GroupedSegmentsWidget(QFrame):
                 try:
                     # Usar la resolución de rutas del propio miembro (maneja paths relativos)
                     image_path, video_path = self.member_widgets[0]._get_resolved_segment_media_paths()
-                    if image_path and not video_path:
+                    if video_path:
+                        self.member_widgets[0].show_video_preview(video_path)
+                    elif image_path:
                         self.member_widgets[0].show_image_preview(image_path)
                 except Exception:
                     pass

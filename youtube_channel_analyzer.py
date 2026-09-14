@@ -40,20 +40,19 @@ class YouTubeChannelAnalyzer:
         self._youtube_api_warning_logged = False
         self._youtube_api_disable_reason = ""
         
-        if True:
+        try:
+            from googleapiclient.discovery import build
             try:
-                from googleapiclient.discovery import build
-                try:
-                    from youtube_uploader import _get_credentials
-                    creds = _get_credentials(interactive=False)
-                    if creds:
-                        self.youtube_service = build('youtube', 'v3', credentials=creds)
-                except Exception as oe:
-                    pass
-                if not self.youtube_service and self.api_key:
-                    self.youtube_service = build('youtube', 'v3', developerKey=self.api_key)
-            except Exception as e:
-                print(f"️ Error inicializando YouTube API: {e}")
+                from youtube_uploader import _get_credentials
+                creds = _get_credentials(interactive=False)
+                if creds:
+                    self.youtube_service = build('youtube', 'v3', credentials=creds)
+            except Exception as oe:
+                pass
+            if not self.youtube_service and self.api_key:
+                self.youtube_service = build('youtube', 'v3', developerKey=self.api_key)
+        except Exception as e:
+            print(f"️ Error inicializando YouTube API: {e}")
 
     def _is_access_not_configured_error(self, error: Exception) -> bool:
         """Detecta si la API de YouTube está deshabilitada en el proyecto de Google."""

@@ -207,42 +207,12 @@ class TextCorrectionEngine:
 
         return corrected_project
     
-    def add_correction(self, incorrect: str, correct: str):
-        """
-        Agrega una nueva corrección al diccionario.
-        
-        Args:
-            incorrect: Texto incorrecto
-            correct: Texto correcto
-        """
-        self.corrections[incorrect] = correct
-        _safe_print(f"[ADD] Nueva correccion agregada: '{incorrect}' -> '{correct}'")
     
     def list_corrections(self):
         """Muestra todas las correcciones configuradas."""
         _safe_print("[LIST] Correcciones configuradas:")
         for incorrect, correct in self.corrections.items():
             _safe_print(f"  '{incorrect}' -> '{correct}'")
-
-
-# Función de conveniencia para uso rápido
-def correct_text_file(file_path: str) -> str:
-    """
-    Función de conveniencia para corregir un archivo de texto rápidamente.
-    
-    Args:
-        file_path: Ruta del archivo a corregir
-        
-    Returns:
-        Ruta del archivo corregido
-    """
-    corrector = TextCorrectionEngine()
-    success = corrector.correct_project_file(file_path)
-    
-    if success:
-        return file_path.replace('.json', '_corrected.json')
-    else:
-        return file_path
 
 
 if __name__ == "__main__":

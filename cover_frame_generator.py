@@ -208,6 +208,7 @@ def generate_cover_frame(
     image_provider: str = "auto",
     cover_text_override: Optional[str] = None,
     log_callback=None,
+    media_base_dir: Optional[str] = None,
 ) -> Optional[dict[str, Any]]:
     config = _get_cover_frame_config()
     if not config.get("enabled", True):
@@ -266,10 +267,26 @@ def generate_cover_frame(
             # log "cannot identify image file 'X.mp4'" + caída al gradiente oscuro
             # cuando el usuario asignó un video al primer segmento (drag & drop).
             _IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".avif", ".tiff", ".tif"}
+            # Las rutas del storyboard suelen ser relativas al proyecto
+            # ("project_media/segment_001.png"). Sin resolverlas, os.path.exists
+            # falla desde el cwd y el cover cae al gradiente oscuro aunque haya
+            # imagenes perfectamente usables.
+            bases = [b for b in (media_base_dir, out_dir, Path.cwd()) if b]
             for seg in storyboard["segments"]:
                 img_path = seg.get("image_path")
-                if not img_path or not os.path.exists(str(img_path)):
+                if not img_path:
                     continue
+                if not os.path.exists(str(img_path)):
+                    for base in bases:
+                        try:
+                            candidato = Path(base) / str(img_path)
+                        except Exception:
+                            continue
+                        if candidato.exists():
+                            img_path = str(candidato)
+                            break
+                    else:
+                        continue
                 ext = os.path.splitext(str(img_path))[1].lower()
                 if ext not in _IMAGE_EXTS:
                     _log(f"   [Cover Frame] Saltando {os.path.basename(str(img_path))} (no es imagen)")

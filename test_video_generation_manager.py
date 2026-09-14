@@ -1,5 +1,9 @@
 """
-Tests para video_generation_manager.py y fal_ai_client.py (video)
+Tests para video_generation_manager.py (ruta Runway).
+
+Los tests de fal (FalAiClient.generate_video, generate_video_with_fal) se retiraron
+en la limpieza del 2026-09-14: probaban una API que ya no existe (hoy es
+FalAiVideoClient.image_to_video / text_to_video) y fallaban desde el rename.
 Verifica: orden de modelos, truncado de prompts, fallback entre modelos/proveedores,
 integracion fal.ai video, y cost_calculator.
 """
@@ -182,190 +186,10 @@ class TestAspectRatio(unittest.TestCase):
 # Fal.ai video tests
 # =====================================================================
 
-class TestFalVideoInManager(unittest.TestCase):
-    """Verifica que el manager delega correctamente a fal_client."""
-
-    def test_fal_video_delegates_to_client(self):
-        """generate_video_with_fal debe llamar fal_client.generate_video."""
-        mock_fal = MagicMock()
-        mock_fal.client_available = True
-        mock_fal.generate_video.return_value = "/tmp/ok.mp4"
-
-        mgr = VideoGenerationManager(
-            fal_client=mock_fal,
-            fal_available=True,
-        )
-        result = mgr.generate_video_with_fal("cinematic ocean", "/tmp/out.mp4", is_vertical=True)
-
-        self.assertEqual(result, "/tmp/ok.mp4")
-        mock_fal.generate_video.assert_called_once_with(
-            prompt="cinematic ocean",
-            output_path="/tmp/out.mp4",
-            is_vertical=True,
-            duration=4,
-            image_url=None,
-            preferred_model=None,
-        )
-
-    def test_fal_video_returns_none_without_client(self):
-        mgr = VideoGenerationManager(fal_client=None, fal_available=False)
-        result = mgr.generate_video_with_fal("test", "/tmp/out.mp4")
-        self.assertIsNone(result)
-
-    def test_fal_video_returns_none_on_exception(self):
-        mock_fal = MagicMock()
-        mock_fal.client_available = True
-        mock_fal.generate_video.side_effect = Exception("network error")
-
-        mgr = VideoGenerationManager(fal_client=mock_fal, fal_available=True)
-        result = mgr.generate_video_with_fal("test", "/tmp/out.mp4")
-        self.assertIsNone(result)
-
-
-class TestFalAiClientVideo(unittest.TestCase):
-    """Tests para FalAiClient.generate_video directamente."""
-
-    def _make_client(self, logs=None):
-        """Crea un FalAiClient con fal_client mockeado."""
-        with patch("fal_ai_client.fal_client") as mock_fal_mod:
-            # Forzar import y patchear
-            from fal_ai_client import FalAiClient
-            client = FalAiClient.__new__(FalAiClient)
-            client.log_callback = (logs.append if logs else None)
-            client.model_id = "fal-ai/flux/schnell"
-            client.api_key = "fake-key"
-            client.api_key_id = None
-            client.api_key_secret = None
-            client.client_available = True
-            client.last_error = None
-            return client, mock_fal_mod
-
-    def test_generate_video_success(self):
-        logs = []
-        client, mock_fal_mod = self._make_client(logs)
-        mock_fal_mod.subscribe.return_value = {"video": {"url": "https://fal.ai/video.mp4"}}
-
-        out = os.path.join(tempfile.gettempdir(), "test_fal_video.mp4")
-
-        with patch("fal_ai_client.fal_client", mock_fal_mod), \
-             patch("fal_ai_client.requests") as mock_requests:
-            mock_requests.get.return_value.content = b"fake_video"
-            result = client.generate_video("ocean waves", out)
-
-        self.assertEqual(result, out)
-        mock_fal_mod.subscribe.assert_called_once()
-        call_args = mock_fal_mod.subscribe.call_args
-        self.assertIn("prompt", call_args.kwargs.get("arguments", call_args[1].get("arguments", {})))
-
-    def test_generate_video_no_client(self):
-        from fal_ai_client import FalAiClient
-        client = FalAiClient.__new__(FalAiClient)
-        client.client_available = False
-        client.last_error = None
-        client.log_callback = None
-
-        result = client.generate_video("test", "/tmp/out.mp4")
-        self.assertIsNone(result)
-
-    def test_generate_video_empty_prompt(self):
-        logs = []
-        client, _ = self._make_client(logs)
-        result = client.generate_video("", "/tmp/out.mp4")
-        self.assertIsNone(result)
-
-    def test_extract_video_url_formats(self):
-        """Verifica que _extract_video_url maneja varios formatos de respuesta."""
-        from fal_ai_client import FalAiClient
-        client = FalAiClient.__new__(FalAiClient)
-
-        # Formato {"video": {"url": "..."}}
-        self.assertEqual(
-            client._extract_video_url({"video": {"url": "https://a.com/v.mp4"}}),
-            "https://a.com/v.mp4")
-
-        # Formato {"video": "url_string"}
-        self.assertEqual(
-            client._extract_video_url({"video": "https://a.com/v.mp4"}),
-            "https://a.com/v.mp4")
-
-        # Formato {"videos": [{"url": "..."}]}
-        self.assertEqual(
-            client._extract_video_url({"videos": [{"url": "https://a.com/v.mp4"}]}),
-            "https://a.com/v.mp4")
-
-        # Formato {"video_url": "..."}
-        self.assertEqual(
-            client._extract_video_url({"video_url": "https://a.com/v.mp4"}),
-            "https://a.com/v.mp4")
-
-        # Formato vacio
-        self.assertIsNone(client._extract_video_url({}))
-        self.assertIsNone(client._extract_video_url(None))
-
 
 # =====================================================================
 # Fallback cascade tests
 # =====================================================================
-
-class TestFallbackCascade(unittest.TestCase):
-
-    def test_default_prefers_fal_over_runway(self):
-        """Sin proveedor preferido, fal.ai debe intentarse primero (mas barato)."""
-        logs = []
-        mock_fal = MagicMock()
-        mock_fal.client_available = True
-        mock_fal.generate_video.return_value = "/tmp/fal_ok.mp4"
-
-        mock_runway = MagicMock()
-
-        mgr = VideoGenerationManager(
-            log_callback=logs.append,
-            fal_client=mock_fal,
-            fal_available=True,
-            runway_client=mock_runway,
-        )
-
-        with patch.object(mgr, 'generate_video_with_fal', return_value="/tmp/fal_ok.mp4") as mock_fal_gen, \
-             patch.object(mgr, 'generate_video_with_runway') as mock_runway_gen:
-            result = mgr.generate_video_with_fallback("test", "/tmp/out.mp4")
-
-        self.assertEqual(result, "/tmp/fal_ok.mp4")
-        mock_fal_gen.assert_called_once()
-        mock_runway_gen.assert_not_called()
-
-    def test_fal_fails_falls_back_to_runway(self):
-        """Si fal.ai falla, debe caer a Runway."""
-        logs = []
-        mock_fal = MagicMock()
-        mock_fal.client_available = True
-        mock_runway = MagicMock()
-
-        mgr = VideoGenerationManager(
-            log_callback=logs.append,
-            fal_client=mock_fal,
-            fal_available=True,
-            runway_client=mock_runway,
-        )
-
-        with patch.object(mgr, 'generate_video_with_fal', return_value=None) as mock_fal_gen, \
-             patch.object(mgr, 'generate_video_with_runway', return_value="/tmp/runway_ok.mp4") as mock_runway_gen:
-            result = mgr.generate_video_with_fallback("test", "/tmp/out.mp4")
-
-        self.assertEqual(result, "/tmp/runway_ok.mp4")
-        mock_fal_gen.assert_called_once()
-        mock_runway_gen.assert_called_once()
-
-    def test_runway_preferred_tries_runway_first(self):
-        logs = []
-        mock_runway = MagicMock()
-        mgr = VideoGenerationManager(log_callback=logs.append, runway_client=mock_runway)
-
-        with patch.object(mgr, 'generate_video_with_runway', return_value="/tmp/ok.mp4") as mock_gen:
-            result = mgr.generate_video_with_fallback(
-                "test", "/tmp/out.mp4", preferred_provider='runway')
-
-        self.assertEqual(result, "/tmp/ok.mp4")
-        mock_gen.assert_called_once()
 
 
 # =====================================================================

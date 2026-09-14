@@ -126,8 +126,9 @@ def _plan_dimensions(minutes: int) -> tuple[int, int, int]:
 
 
 def _generate_chapter_outline(client, topic: str, category: str, n_chapters: int) -> list[dict]:
-    prompt = f"""You are a documentary story editor for the YouTube channel "Stunning Revelations"
-(niche: forgotten history, lost civilizations, dark mysteries, natural disasters).
+    from channel_strategy import get_channel_name, get_channel_audience_line
+    prompt = f"""You are a documentary story editor for the YouTube channel "{get_channel_name()}"
+(niche: {get_channel_audience_line()}).
 
 Design the chapter outline for a {n_chapters}-chapter long-form documentary about:
 "{topic}" (category: {category or 'history'}).
@@ -174,7 +175,8 @@ def _generate_chapter_script(client, topic, chap_title, chap_brief,
             "\nThis is the COLD OPEN. Apply these hook rules to the very first paragraph:\n"
             f"{hook_instr}\n"
         )
-    script_prompt = f"""You write documentary narration for YouTube long-form (English, "Stunning Revelations").
+    from channel_strategy import get_channel_name
+    script_prompt = f"""You write documentary narration for YouTube long-form (English, "{get_channel_name()}").
 
 Topic: {topic}
 Section: {chap_title}
@@ -358,7 +360,9 @@ def build_long_form(
     est_min = (all_segments[-1]["end_time"] if all_segments else 0) / 60.0
     _log(f"\nSegments: {len(all_segments)} | words: {len(full_script.split())} | est. ~{est_min:.1f} min")
 
+    from channel_profiles import active_channel
     storyboard = {
+        "channel_profile": active_channel(),
         "topic": topic,
         "category": category,
         "storyboard_format": "long_form_16_9",
@@ -505,7 +509,12 @@ def _run_tts(storyboard: dict, out: Path, cfg: dict, outline: list[dict]) -> Pat
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Build a reusable long-form documentary (no upload).")
     ap.add_argument("topic", help="Documentary topic, e.g. 'The Antikythera Mechanism'")
-    ap.add_argument("--minutes", type=int, default=10, help="Target length in minutes (default 10)")
+    ap.add_argument("--minutes", type=float, default=None, help="Target minutes (traditional: 10; microdoc: 4.5)")
+    ap.add_argument("--format", choices=["traditional", "micro_documentary"], default="traditional")
+    from channel_profiles import CHANNELS, DEFAULT_CHANNEL, select_channel
+    ap.add_argument("--channel", choices=list(CHANNELS), default=DEFAULT_CHANNEL)
+    ap.add_argument("--editorial-json", help="Manual topic provenance, historical sources and uncertainty notes")
+    ap.add_argument("--approve-preflight", action="store_true", help="Approve an EXISTING reviewed experiment.json and generate the script")
     ap.add_argument("--category", default=None, help="Channel category label")
     ap.add_argument("--output-dir", default=None, help="Output project dir")
     ap.add_argument("--provider", default="flux_dev", help="Image provider (default flux_dev)")
@@ -515,9 +524,20 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--bgm", default=None, help="Background music file path")
     args = ap.parse_args(argv)
 
+    select_channel(args.channel)
+    if args.format == "micro_documentary":
+        from micro_documentary import build
+        editorial = json.loads(Path(args.editorial_json).read_text(encoding="utf-8")) if args.editorial_json else None
+        out = args.output_dir or PROJECT_DIR / "long_form" / args.channel / f"{_slugify(args.topic)}_microdoc"
+        result = build(args.topic, out, channel=args.channel, seconds=(args.minutes if args.minutes is not None else 4.5) * 60,
+                       editorial=editorial, approve=args.approve_preflight, assemble=not args.no_assemble,
+                       image_provider=args.provider)
+        print(json.dumps(result, indent=2, ensure_ascii=False))
+        return 0
+
     result = build_long_form(
         topic=args.topic,
-        minutes=args.minutes,
+        minutes=args.minutes if args.minutes is not None else 10,
         category=args.category,
         output_dir=args.output_dir,
         image_provider=args.provider,

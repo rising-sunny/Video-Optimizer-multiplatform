@@ -13,7 +13,7 @@ import json
 load_dotenv()
 
 try:
-    from google_search_api import search_youtube_trends, GOOGLE_API_KEY
+    from google_search_api import GOOGLE_API_KEY
     YOUTUBE_API_AVAILABLE = True
 except ImportError:
     YOUTUBE_API_AVAILABLE = False
