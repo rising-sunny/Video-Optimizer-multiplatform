@@ -28,6 +28,33 @@ REQUEST_TIMEOUT = 60
 POLL_INTERVAL_SECONDS = 15
 POLL_TIMEOUT_SECONDS = 300
 
+# Codigos con los que Meta marca el contenedor como ERROR por fallas de SU lado.
+# 2207076 (2026-09-15, "Halifax Explosion"): "Media upload has failed" con el
+# mismo mp4 que Facebook acepto un minuto antes, specs impecables; la comunidad
+# lo trata como intermitente y lo resuelve reintentando. 2207001 media no
+# lista, 2207005/2207053 error desconocido de subida, 2207052 fetch fallido.
+TRANSIENT_CONTAINER_CODES = ("2207076", "2207001", "2207005", "2207052", "2207053")
+# 2 y no 3: cuando Meta esta caido (2026-09-15/16: rechazaba TODO, incluso videos
+# que ya habia publicado) reintentar mas seguido solo alarga la espera.
+CONTAINER_ATTEMPTS = max(1, int(str(os.getenv("INSTAGRAM_CONTAINER_ATTEMPTS", "2") or "2")))
+CONTAINER_RETRY_WAITS = (30, 90)   # segundos entre intentos (el ultimo se repite)
+
+# Como llega el binario a Meta.
+#   resumable (default): el archivo se POSTea directo a rupload.facebook.com, el
+#       mismo mecanismo con el que Facebook Reels SI publica estos videos. No hay
+#       Cloudinary ni URL publica ni "fetch" del lado de Meta.
+#   url: el flujo viejo (Cloudinary -> video_url). Queda como respaldo: el
+#       2207076 (2026-09-15/16, dos shorts 9:16 impecables, tres intentos cada
+#       uno) es Meta fallando al traer el archivo por URL, y no depende del video.
+UPLOAD_MODE = str(os.getenv("INSTAGRAM_UPLOAD_MODE", "resumable") or "resumable").strip().lower()
+RESUMABLE_UPLOAD_TIMEOUT = 300   # s por trozo
+# MEDIDO 2026-09-16: un POST unico de 103 MB a rupload se cae ("Remote end closed
+# connection", SSL EOF); en trozos de 4 MB con `offset` incremental Meta acepta
+# los 24 trozos. Y solo con Content-Type video/mp4 llega a la etapa de procesado;
+# con application/octet-stream devuelve un 400 generico.
+RESUMABLE_CHUNK_BYTES = 4 * 1024 * 1024
+RESUMABLE_CHUNK_RETRIES = 3
+
 
 def _env(name: str, default: Optional[str] = None) -> Optional[str]:
     value = os.getenv(name, default)
@@ -265,8 +292,9 @@ def get_container_status(container_id: str, access_token: str, api_version: Opti
 
 
 def _wait_for_container_ready(container_id: str, access_token: str, api_version: Optional[str] = None,
-                              timeout_seconds: int = POLL_TIMEOUT_SECONDS) -> dict:
-    deadline = time.time() + max(30, int(timeout_seconds))
+                              timeout_seconds: int = POLL_TIMEOUT_SECONDS, on_status=None) -> dict:
+    started = time.time()
+    deadline = started + max(30, int(timeout_seconds))
     last_state = {}
     while time.time() < deadline:
         last_state = get_container_status(container_id, access_token, api_version=api_version)
@@ -276,8 +304,168 @@ def _wait_for_container_ready(container_id: str, access_token: str, api_version:
         if status_code in {"ERROR", "EXPIRED"}:
             status_text = str(last_state.get("status") or status_code).strip()
             raise RuntimeError(f"Instagram container failed: {status_text}")
+        _status(on_status, f"Meta procesando el reel ({status_code or 'IN_PROGRESS'}, {int(time.time() - started)} s)...")
         time.sleep(POLL_INTERVAL_SECONDS)
     return last_state
+
+
+def _status(on_status, message: str) -> None:
+    """Etapa legible para el panel de la GUI (y la consola). Nunca rompe la subida."""
+    print(f"   [Instagram] {message}")
+    if on_status:
+        try:
+            on_status(message)
+        except Exception:
+            pass
+
+
+def is_transient_container_error(message) -> bool:
+    """True si el fallo del contenedor es de los que Meta resuelve al reintentar."""
+    text = str(message or "")
+    return any(code in text for code in TRANSIENT_CONTAINER_CODES)
+
+
+def _create_container_with_retries(ig_user_id: str, access_token: str, video_url: str, caption: str,
+                                   share_to_feed: bool, api_version: Optional[str] = None,
+                                   attempts: Optional[int] = None, sleep=time.sleep, on_status=None) -> tuple:
+    """Crea el contenedor y espera a que este listo; reintenta si Meta falla de su lado.
+
+    Reusa la MISMA URL de Cloudinary: el video ya esta publico, no hace falta
+    volver a subirlo. Devuelve (container_id, estado_final).
+    """
+    total = max(1, int(attempts or CONTAINER_ATTEMPTS))
+    for attempt in range(1, total + 1):
+        container = _create_reel_container(
+            ig_user_id=ig_user_id, access_token=access_token, video_url=video_url,
+            caption=caption, share_to_feed=share_to_feed, api_version=api_version,
+        )
+        container_id = str(container.get("id") or "").strip()
+        if not container_id:
+            raise RuntimeError(f"Instagram did not return a media container id: {container}")
+        _status(on_status, f"Contenedor {container_id} creado (intento {attempt}/{total}); esperando a Meta...")
+        try:
+            status = _wait_for_container_ready(container_id, access_token, api_version=api_version,
+                                               on_status=on_status)
+            return container_id, status
+        except RuntimeError as exc:
+            if attempt >= total or not is_transient_container_error(exc):
+                raise
+            wait = CONTAINER_RETRY_WAITS[min(attempt - 1, len(CONTAINER_RETRY_WAITS) - 1)]
+            _status(on_status, f"Meta fallo de su lado ({exc}); reintento {attempt + 1}/{total} "
+                               f"en {wait} s con la misma URL de Cloudinary")
+            sleep(wait)
+    raise RuntimeError("Instagram container retries exhausted")  # inalcanzable
+
+
+def _create_resumable_container(ig_user_id: str, access_token: str, caption: str,
+                                share_to_feed: bool = True, api_version: Optional[str] = None) -> dict:
+    """Contenedor de reel que espera el binario por POST (no una URL)."""
+    return _request_json(
+        "POST",
+        _graph_api_url(f"{ig_user_id}/media", api_version=api_version),
+        params={
+            "media_type": "REELS",
+            "upload_type": "resumable",
+            "caption": caption,
+            "share_to_feed": str(bool(share_to_feed)).lower(),
+            "access_token": access_token,
+        },
+        headers={"User-Agent": "VideoOptimizerPro/1.0"},
+    )
+
+
+def _resumable_upload_uri(container: dict, api_version: Optional[str] = None) -> str:
+    """El `uri` que devuelve Meta; si no viene, se construye segun la doc."""
+    uri = str(container.get("uri") or "").strip()
+    if uri:
+        return uri
+    container_id = str(container.get("id") or "").strip()
+    if not container_id:
+        raise RuntimeError(f"Instagram did not return a resumable container: {container}")
+    return f"https://rupload.facebook.com/ig-api-upload/{api_version or _default_api_version()}/{container_id}"
+
+
+def _describe_rupload_error(payload) -> str:
+    """El detalle util de rupload viene anidado (message dentro de message)."""
+    if not isinstance(payload, dict):
+        return str(payload)[:300]
+    info = payload.get("debug_info") or payload.get("error") or payload
+    message = info.get("message") if isinstance(info, dict) else None
+    return str(message or info)[:300]
+
+
+def _upload_binary_resumable(upload_uri: str, access_token: str, video_path: str,
+                             on_progress=None, chunk_bytes: Optional[int] = None,
+                             sleep=time.sleep) -> dict:
+    """Manda el archivo a rupload en trozos con `offset` incremental.
+
+    Devuelve el JSON del ultimo trozo (el que completa el archivo). Un error de
+    red en un trozo se reintenta; un 4xx/5xx de Meta se propaga con su detalle:
+    en el ULTIMO trozo es Meta procesando el video, no la subida.
+    """
+    path = Path(video_path)
+    file_size = path.stat().st_size
+    chunk = max(1, int(chunk_bytes or RESUMABLE_CHUNK_BYTES))
+    if on_progress:
+        on_progress(0, file_size)
+    payload = {}
+    with open(path, "rb") as handle:
+        offset = 0
+        while offset < file_size:
+            data = handle.read(chunk)
+            if not data:
+                break
+            headers = {
+                "Authorization": f"OAuth {access_token}",
+                "offset": str(offset),
+                "file_size": str(file_size),
+                "Content-Type": "video/mp4",
+                "User-Agent": "VideoOptimizerPro/1.0",
+            }
+            response = None
+            for attempt in range(1, RESUMABLE_CHUNK_RETRIES + 1):
+                try:
+                    response = requests.post(upload_uri, headers=headers, data=data,
+                                             timeout=RESUMABLE_UPLOAD_TIMEOUT)
+                    break
+                except requests.RequestException as exc:
+                    if attempt >= RESUMABLE_CHUNK_RETRIES:
+                        raise RuntimeError(f"Instagram resumable upload: red caida en el trozo "
+                                           f"@{offset} ({type(exc).__name__}: {exc})") from exc
+                    sleep(2 * attempt)
+            try:
+                payload = response.json()
+            except Exception:
+                payload = {"raw": response.text[:300]}
+            if response.status_code >= 400:
+                last = offset + len(data) >= file_size
+                stage = "Meta no pudo procesar el video" if last else f"trozo @{offset} rechazado"
+                raise RuntimeError(f"Instagram resumable upload failed (HTTP {response.status_code}, {stage}): "
+                                   f"{_describe_rupload_error(payload)}")
+            offset += len(data)
+            if on_progress:
+                on_progress(offset, file_size)
+    if not (isinstance(payload, dict) and payload.get("success")):
+        raise RuntimeError(f"Instagram resumable upload did not confirm success: {_describe_rupload_error(payload)}")
+    return payload
+
+
+def _publish_via_resumable(ig_user_id: str, access_token: str, video_path: str, caption: str,
+                           share_to_feed: bool, api_version: Optional[str] = None,
+                           on_progress=None, on_status=None) -> tuple:
+    """Contenedor resumable + binario + espera. Devuelve (container_id, estado)."""
+    container = _create_resumable_container(ig_user_id, access_token, caption,
+                                            share_to_feed=share_to_feed, api_version=api_version)
+    container_id = str(container.get("id") or "").strip()
+    if not container_id:
+        raise RuntimeError(f"Instagram did not return a media container id: {container}")
+    upload_uri = _resumable_upload_uri(container, api_version=api_version)
+    size_mb = Path(video_path).stat().st_size / 1_000_000
+    _status(on_status, f"Contenedor {container_id} creado; enviando el video directo a Meta ({size_mb:.1f} MB)...")
+    _upload_binary_resumable(upload_uri, access_token, video_path, on_progress=on_progress)
+    _status(on_status, "Video recibido por Meta; esperando el procesado...")
+    status = _wait_for_container_ready(container_id, access_token, api_version=api_version, on_status=on_status)
+    return container_id, status
 
 
 def _publish_reel(ig_user_id: str, container_id: str, access_token: str,
@@ -364,7 +552,7 @@ def _cleanup_cloudinary(public_id: Optional[str]) -> dict:
 
 
 def upload_video(video_path: str, title: str, description: str = "", share_to_feed: Optional[bool] = None,
-                 on_progress=None, api_version: Optional[str] = None) -> dict:
+                 on_progress=None, api_version: Optional[str] = None, on_status=None) -> dict:
     video_file = Path(video_path)
     if not video_file.exists():
         raise FileNotFoundError(f"Video not found: {video_file}")
@@ -376,46 +564,69 @@ def upload_video(video_path: str, title: str, description: str = "", share_to_fe
         raise RuntimeError("Could not resolve INSTAGRAM_BUSINESS_ACCOUNT_ID.")
 
     publish_to_feed = bool(True if share_to_feed is None else share_to_feed)
-    cloudinary_result = upload_video_to_cloudinary(
-        str(video_file),
-        folder=_env("CLOUDINARY_UPLOAD_FOLDER", "video_optimizer/instagram"),
-        tags=["video-optimizer", "instagram", "reels"],
-        on_progress=on_progress,
-    )
-    public_video_url = str(cloudinary_result.get("secure_url") or "").strip()
-    if not public_video_url:
-        raise RuntimeError(f"Cloudinary did not return a secure_url: {cloudinary_result}")
-
     caption = _compose_caption(title, description)
-    container = _create_reel_container(
-        ig_user_id=ig_user_id,
-        access_token=access_token,
-        video_url=public_video_url,
-        caption=caption,
-        share_to_feed=publish_to_feed,
-        api_version=api_version,
-    )
-    container_id = str(container.get("id") or "").strip()
-    if not container_id:
-        raise RuntimeError(f"Instagram did not return a media container id: {container}")
+    cuenta = identity.get('instagram_username') or ig_user_id
 
-    container_status = _wait_for_container_ready(
-        container_id=container_id,
-        access_token=access_token,
-        api_version=api_version,
-    )
-    publish_response = _publish_reel(
-        ig_user_id=ig_user_id,
-        container_id=container_id,
-        access_token=access_token,
-        api_version=api_version,
-    )
-    media_id = str(publish_response.get("id") or "").strip()
-    if not media_id:
-        raise RuntimeError(f"Instagram did not return a published media id: {publish_response}")
+    container_id = container_status = None
+    transport = "resumable"
+    if UPLOAD_MODE != "url":
+        _status(on_status, f"Cuenta @{cuenta}; subida directa (resumable), sin Cloudinary...")
+        try:
+            container_id, container_status = _publish_via_resumable(
+                ig_user_id, access_token, str(video_file), caption, publish_to_feed,
+                api_version=api_version, on_progress=on_progress, on_status=on_status,
+            )
+        except Exception as exc:
+            _status(on_status, f"Subida directa fallo ({exc}); probando el camino por URL (Cloudinary)...")
+            container_id = None
+
+    cloudinary_result = {}
+    public_video_url = ""
+    if container_id is None:
+        transport = "url"
+        _status(on_status, f"Cuenta @{cuenta}; subiendo a Cloudinary ({video_file.stat().st_size / 1_000_000:.1f} MB)...")
+        cloudinary_result = upload_video_to_cloudinary(
+            str(video_file),
+            folder=_env("CLOUDINARY_UPLOAD_FOLDER", "video_optimizer/instagram"),
+            tags=["video-optimizer", "instagram", "reels"],
+            on_progress=on_progress,
+        )
+        public_video_url = str(cloudinary_result.get("secure_url") or "").strip()
+        if not public_video_url:
+            raise RuntimeError(f"Cloudinary did not return a secure_url: {cloudinary_result}")
+        _status(on_status, "Cloudinary listo; creando el contenedor del reel en Meta...")
+
+    try:
+        if container_id is None:
+            container_id, container_status = _create_container_with_retries(
+                ig_user_id=ig_user_id,
+                access_token=access_token,
+                video_url=public_video_url,
+                caption=caption,
+                share_to_feed=publish_to_feed,
+                api_version=api_version,
+                on_status=on_status,
+            )
+        _status(on_status, "Reel procesado; publicando...")
+        publish_response = _publish_reel(
+            ig_user_id=ig_user_id,
+            container_id=container_id,
+            access_token=access_token,
+            api_version=api_version,
+        )
+        media_id = str(publish_response.get("id") or "").strip()
+        if not media_id:
+            raise RuntimeError(f"Instagram did not return a published media id: {publish_response}")
+    except Exception:
+        # No se publico: la copia de Cloudinary no sirve para nada y antes se
+        # quedaba huerfana (asi se juntaron 145 en la cuenta). Un reintento
+        # manual vuelve a subir de todos modos.
+        _cleanup_cloudinary(cloudinary_result.get("public_id"))
+        raise
 
     media_info = _get_media_info(media_id, access_token=access_token, api_version=api_version)
     permalink = _normalize_permalink(media_info.get("permalink"))
+    _status(on_status, f"Publicado: {permalink or media_id}")
 
     # Recien ACA se borra la copia de Cloudinary: Meta ya descargo el video
     # durante la creacion del contenedor y el reel esta publicado con su
@@ -433,7 +644,8 @@ def upload_video(video_path: str, title: str, description: str = "", share_to_fe
         "instagram_name": identity.get("instagram_name"),
         "page_id": identity.get("page_id"),
         "page_name": identity.get("page_name"),
-        "cloudinary_url": public_video_url,
+        "transport": transport,
+        "cloudinary_url": public_video_url or None,
         "cloudinary_public_id": cloudinary_result.get("public_id"),
         "cloudinary_cleanup": cleanup,
         "container_status": container_status,
@@ -443,18 +655,16 @@ def upload_video(video_path: str, title: str, description: str = "", share_to_fe
     }
 
 
-def upload_from_metadata(output_dir: str, share_to_feed: Optional[bool] = None, on_progress=None) -> dict:
+def upload_from_metadata(output_dir: str, share_to_feed: Optional[bool] = None, on_progress=None,
+                         on_status=None) -> dict:
     output_dir = Path(output_dir)
     metadata = _load_upload_metadata(output_dir)
 
-    video_path = None
-    for pattern in ("*.mp4", "*.mov", "*.mkv", "*.webm"):
-        videos = list(output_dir.glob(pattern))
-        if videos:
-            video_path = videos[0]
-            break
+    from output_video_locator import find_output_video
+    video_path = find_output_video(output_dir)
     if not video_path:
         raise FileNotFoundError(f"No video file found in {output_dir}")
+    video_path = Path(video_path)
 
     title = metadata.get("title") or output_dir.name
     description = metadata.get("description") or ""
@@ -464,6 +674,7 @@ def upload_from_metadata(output_dir: str, share_to_feed: Optional[bool] = None, 
         description=description,
         share_to_feed=share_to_feed,
         on_progress=on_progress,
+        on_status=on_status,
     )
     save_upload_result(
         result_path=output_dir / "instagram_upload_result.json",

@@ -416,13 +416,9 @@ def build_long_form(
             visual_style=cfg["visual_style"],
         )
         if video:
-            final = out / f"{_slugify(topic).upper()}_DOCUMENTARY.mp4"
-            try:
-                import shutil
-                shutil.copy2(video, final)
-                video_path = str(final)
-            except Exception:
-                video_path = str(video)
+            # Copia unica en auto_videos/output (Drive); assemble_video ya dejo la
+            # ruta en pipeline_state.json para que la subida la encuentre.
+            video_path = str(video)
             _log(f"VIDEO: {video_path}")
 
     youtube_metadata = None

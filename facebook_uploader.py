@@ -839,15 +839,11 @@ def upload_from_metadata(output_dir: str, video_state: str = "PUBLISHED", on_pro
     output_dir = Path(output_dir)
     metadata = _load_upload_metadata(output_dir)
 
-    video_path = None
-    for pattern in ("*.mp4", "*.mov", "*.mkv", "*.webm"):
-        videos = list(output_dir.glob(pattern))
-        if videos:
-            video_path = videos[0]
-            break
-
+    from output_video_locator import find_output_video
+    video_path = find_output_video(output_dir)
     if not video_path:
         raise FileNotFoundError(f"No video file found in {output_dir}")
+    video_path = Path(video_path)
 
     title = metadata.get("title") or output_dir.name
     description = metadata.get("description") or ""

@@ -126,7 +126,10 @@ class OrdenDeLosPasos(unittest.TestCase):
         fuente = inspect.getsource(ig.upload_video)
         pos_publicar = fuente.index("_publish_reel(")
         pos_media_info = fuente.index("_get_media_info(")
-        pos_limpieza = fuente.index("_cleanup_cloudinary(")
+        # Desde 2026-09-15 hay DOS limpiezas: la del `except` (no se publico,
+        # la copia no sirve) y la del camino feliz. Esta guarda es sobre la
+        # segunda: en el camino feliz se borra recien despues del permalink.
+        pos_limpieza = fuente.rindex("_cleanup_cloudinary(")
         self.assertLess(pos_publicar, pos_limpieza,
                         "se borra Cloudinary ANTES de publicar el reel")
         self.assertLess(pos_media_info, pos_limpieza,

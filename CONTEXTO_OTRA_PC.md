@@ -42,8 +42,8 @@ El runtime se rehízo hace poco. **Esto es el estado actual:**
 2. **Whisper (transcripción de subtítulos) corre en un VPS remoto**, no local.
    Por eso el entorno local NO incluye `torch` ni `openai-whisper` (son pesados).
    Hay un `requirements_local.txt` liviano para esto.
-3. Se sacó casi todo de Google Drive. Solo `projects/`, `daily_shorts/` y
-   `auto_videos/` siguen como **junctions** a Drive (por su peso).
+3. Se sacó casi todo de Google Drive. Solo `projects/`, `daily_shorts/`,
+   `auto_videos/` y `long_form/` siguen como **junctions** a Drive (por su peso).
 4. Mejoras de código recientes ya en el repo: dedup de títulos YouTube en `daily_short_pipeline.py`,
    `gc.collect()` en `video_export_manager.py` (evita MemoryError), logging en
    `auto_video_generator_v2.py`.
@@ -119,6 +119,7 @@ cd C:\dev\Video-Optimizer-multiplatform
 mklink /J projects      "G:\Mi unidad\Scripts Python\Video-Optimizer-multiplatform\projects"
 mklink /J daily_shorts  "G:\Mi unidad\Scripts Python\Video-Optimizer-multiplatform\daily_shorts"
 mklink /J auto_videos   "G:\Mi unidad\Scripts Python\Video-Optimizer-multiplatform\auto_videos"
+mklink /J long_form     "G:\Mi unidad\Scripts Python\Video-Optimizer-multiplatform\long_form"
 ```
 
 > Ajustá la ruta si Drive usa otra letra. Si una carpeta ya existe (no vacía),

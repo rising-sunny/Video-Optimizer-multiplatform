@@ -28,11 +28,17 @@ def get_tone_profile_for_category(category: str) -> str:
     'documentary' — the safest choice that forbids fabrication.
     """
     cat = (category or "").strip().lower()
-    if any(k in cat for k in ("misterio", "conspiraci", "paranormal", "ovni")):
+    # Los perfiles de canal nombran las categorias en INGLES ("Historical
+    # Disasters", "Historical Mysteries"); hasta 2026-09-21 solo se reconocian
+    # las palabras en espanol y todo caia en 'documentary'.
+    if any(k in cat for k in ("misterio", "conspiraci", "paranormal", "ovni",
+                              "myster", "conspir", "ufo")):
         return PROFILE_MYSTERY
-    if any(k in cat for k in ("natural", "desastre", "extremo", "catastrof")):
+    if any(k in cat for k in ("natural", "desastre", "extremo", "catastrof",
+                              "disaster", "catastroph", "extreme")):
         return PROFILE_DRAMATIC_FACTUAL
-    if any(k in cat for k in ("historia", "documental", "ciencia", "tecnolog", "actualidad")):
+    if any(k in cat for k in ("historia", "documental", "ciencia", "tecnolog", "actualidad",
+                              "histor", "archaeolog", "civiliz", "empire", "science", "technolog", "war")):
         return PROFILE_DOCUMENTARY
     return PROFILE_DOCUMENTARY
 

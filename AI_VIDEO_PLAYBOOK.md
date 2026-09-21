@@ -141,6 +141,12 @@ obligatorio con número/fecha en el cap. 1) → prompts visuales → TTS → sto
 - `is_short` se detecta **solo** (por metadata o por el video: vertical y ≤180s). Los
   documentales 16:9 ya NO se suben como Shorts. No lo fuerces.
 - Editar metadata de un video ya subido = modificar contenido público → **confirmá primero**.
+- **Dónde está el video (desde 2026-09-15):** cada render existe UNA sola vez, en
+  `auto_videos/output/<plataforma>_<fecha>_<tema>.mp4` (Drive). La carpeta del proyecto/draft
+  NO tiene copia: guarda la ruta en `pipeline_state.json` / `project.json` / `manifest.json`, y
+  los cuatro uploaders la resuelven con `output_video_locator.find_output_video(output_dir)`
+  (cae al mp4 más reciente de la carpeta solo para drafts viejos). No vuelvas a copiar el
+  render dentro del proyecto ni a buscar `videos[0]`.
 
 ---
 
@@ -203,6 +209,7 @@ concreta + sujeto nombrado**, duración corta. Ej: "72 Seconds: The Wow! Signal"
 | `youtube_channel_analyzer.py` | Métricas + historial de cualquier canal via API |
 | `storyboard_generator.py` | Generación de storyboard (guión + escenas) |
 | `RUN.bat` | Abre la GUI (`video_optimizer_pyqt6.py`) |
+| `check_instagram_ingest.py` | Prueba en seco si Instagram procesa videos (no publica); correr cuando IG falle |
 | `build_derinkuyu_long.py` | Ejemplo one-off de documental (referencia; hardcodeado) |
 
 ---
@@ -211,7 +218,9 @@ concreta + sujeto nombrado**, duración corta. Ej: "72 Seconds: The Wow! Signal"
 
 - Usá SIEMPRE `.venv`; el Python global puede estar corrupto en la PC del usuario.
 - No importes torch/whisper en local (pesados; Whisper va al VPS).
-- Carpetas `projects/`, `daily_shorts/`, `auto_videos/` son **junctions a Google Drive**.
+- Carpetas `projects/`, `daily_shorts/`, `auto_videos/` y `long_form/` son **junctions a Google
+  Drive** (`G:\Mi unidad\Scripts Python\Video-Optimizer-multiplatform\...`). Ningún video
+  generado vive en C:.
   Para borrar un junction: `[System.IO.Directory]::Delete($path, $false)` (no `rmdir`).
 - No commitees secretos (`.env`, `.env.txt` están gitignored; mantenelo así).
 - Convención de guardado: cuando el usuario diga "guardá/subí a git" → `git add` de los
@@ -221,6 +230,54 @@ concreta + sujeto nombrado**, duración corta. Ej: "72 Seconds: The Wow! Signal"
 ---
 
 ## Changelog
+
+- **2026-09-21** — **El perfil editorial seguía pegado al canal viejo.** `select_channel` es global:
+  abrir un proyecto de Stunning Revelations lo dejaba activo y cada proyecto nuevo heredaba sus
+  categorías, ganchos, títulos y tono sin ningún control visible. Desde el 8-9 (Coronel,
+  Gunnerside, Bagdad, Berlín, Halifax, Çatalhöyük) los guiones para Stunning Facts of History
+  se escribieron con `channel_profile = stunning-revelations`. Regla nueva
+  (`studio_channel_controls`): hasta que haya guion, el perfil editorial sigue al destino de
+  publicación; al escribir un guion nuevo se sincroniza con el destino (log "Perfil editorial:
+  …"); un proyecto ya escrito conserva el suyo. El combo de categorías sale del perfil activo
+  desde el arranque (antes: lista fija en español). `tone_profile` entiende los nombres en
+  inglés ("Historical Disasters" → dramático-factual, "Historical Mysteries" → misterio); antes
+  todo caía en documental y la categoría solo aparecía en el prompt. Guardas:
+  `test_studio_channel_controls.py` (+3), `test_tone_profile.py` (7).
+
+- **2026-09-16** — **Instagram: diagnóstico del 2207076 y subida resumable.** No era transitorio:
+  el mismo mp4 que Facebook publica, Instagram lo rechaza al *procesarlo* (por rupload el detalle
+  es "Video Transcoding Error: both HD and SD progressive failed to transcode"). Probado en seco
+  con tres archivos (uno de junio y el Gunnerside del 9-9, ambos ya publicados en IG antes), dos
+  cuentas (@stunning.foh y @stunning.revelations), tres transportes (URL/Cloudinary, POST único,
+  trozos) y sin edit lists: todo falla → **es Meta**, desde el 15-09 al menos. Nada que arreglar
+  en el video. Cambios: `instagram_uploader` sube ahora por **resumable en trozos de 4 MB** con
+  `Content-Type: video/mp4` (un POST de 103 MB se caía; `octet-stream` da 400 genérico), sin
+  Cloudinary; el flujo por URL queda de respaldo (`INSTAGRAM_UPLOAD_MODE=url`); reintentos del
+  contenedor por URL bajan a 2. **`check_instagram_ingest.py`** prueba en seco si Meta ya procesa
+  videos (no publica). Guardas: `test_instagram_resumable.py` (14).
+
+- **2026-09-15b** — **Instagram: reintentos ante el error intermitente de Meta.** "Media upload has
+  failed with error code 2207076" con un mp4 impecable que Facebook acababa de aceptar. Es
+  transitorio del lado de Meta; ahora el contenedor se reintenta hasta 3 veces (30 s, 90 s)
+  con la MISMA URL de Cloudinary (`INSTAGRAM_CONTAINER_ATTEMPTS`), solo para códigos
+  transitorios (2207076/2207001/2207005/2207052/2207053); un formato no soportado (2207026)
+  no se reintenta. Si al final no se publica, la copia de Cloudinary se borra igual (antes
+  quedaba huérfana). `VPS_UPLOAD_ENABLED=0` en `.env` salta el VPS para Facebook/Instagram
+  (cada uno esperaba 40 s a un ssh mudo). El camino local ahora escribe etapas en el panel
+  (Cloudinary %, contenedor creado, "Meta procesando (n s)", reintentos, publicado) vía
+  `on_status` + `upload_progress.make_byte_progress_reporter` y la señal thread-safe
+  `_publish_log_signal`; antes el panel quedaba mudo minutos. Guardas:
+  `test_instagram_container_retry.py` (11), `test_upload_progress.py` (10).
+
+- **2026-09-15** — **Un solo lugar para los videos generados: `auto_videos/output/` (Drive).**
+  El pipeline CLI y los microdocumentales copiaban el render dentro de la carpeta del
+  proyecto (`short_HHMMSS.mp4`, `<TEMA>_DOCUMENTARY.mp4`) porque los uploaders buscaban
+  "el primer mp4 de la carpeta": cada video estaba dos veces (434 MB solo en Gunnerside) y
+  los documentales quedaban en C:. Ahora `assemble_video` devuelve el render y registra la
+  ruta en `pipeline_state.json`; `long_form_builder` ya no copia; YouTube/Facebook/
+  Instagram/X resuelven el video con `output_video_locator.find_output_video` (ruta
+  registrada, si no el mp4 más reciente). `long_form/` pasó a ser junction a Drive (1,9 GB
+  movidos) y está en `.gitignore`. Guardas: `test_output_video_location.py` (12).
 
 - **2026-09-14** — **Limpieza del repo.** 230 → 169 archivos `.py` en la raíz (−11.100 líneas en
   total; 4.640 de ellas quitadas de módulos que siguen vivos). Todo lo borrado está en git

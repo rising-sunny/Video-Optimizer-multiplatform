@@ -140,8 +140,14 @@ class StudioStoryboardHandlers:
                               "Ingresa un tema en la pestaÃ±a de AnÃ¡lisis primero")
             return
 
+        isolated = False
         if hasattr(self.studio_tab, "project_manager"):
-            self.studio_tab.project_manager.prepare_isolated_project_for_topic(topic)
+            isolated = bool(self.studio_tab.project_manager.prepare_isolated_project_for_topic(topic))
+        try:
+            from studio_channel_controls import sync_editorial_before_writing
+            sync_editorial_before_writing(self.studio_tab, isolated=isolated)
+        except Exception as exc:
+            self.studio_tab.log(f" No se pudo sincronizar el perfil editorial: {exc}")
 
         category = self.studio_tab.parent_gui.category_combo.currentText()
         duration = self.studio_tab.duration_slider.value()

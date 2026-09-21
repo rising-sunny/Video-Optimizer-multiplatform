@@ -1943,7 +1943,7 @@ REGLAS CRÍTICAS:
                 cat, sent = analyze_narration(result.get("script", ""))
                 if not cat:
                     cat = category
-                    sent = -0.5 if category in ["Misterios", "Paranormal", "Conspiraciones"] else 0.5
+                    sent = -0.5 if self._get_tone_profile_for_category(category) == "mystery" else 0.5
                 if cat:
                     tags = map_ai_to_jamendo_tags(cat, sent)
                     tracks = search_jamendo_api(tags, self.jamendo_client_id, limit=1)
@@ -2060,7 +2060,7 @@ REGLAS CRÍTICAS:
                 cat, sent = analyze_narration(result.get("script", ""))
                 if not cat:
                     cat = category
-                    sent = -0.5 if category in ["Misterios", "Paranormal", "Conspiraciones"] else 0.5
+                    sent = -0.5 if self._get_tone_profile_for_category(category) == "mystery" else 0.5
                 if cat:
                     tags = map_ai_to_jamendo_tags(cat, sent)
                     if "Cinematic" in style:
@@ -3006,7 +3006,7 @@ Sin explicaciones antes ni después. Solo JSON válido."""
                     self.log("   â„¹ï¸ AnÃ¡lisis de sentimiento no disponible (Google Cloud). Usando categorÃ­a base.")
                     # Mapear categorÃ­a de la GUI a algo que entienda el recomendador
                     cat = category  # Ej: "Historia", "Misterios"
-                    sent = -0.5 if category in ["Misterios", "Paranormal", "Conspiraciones"] else 0.5
+                    sent = -0.5 if self._get_tone_profile_for_category(category) == "mystery" else 0.5
                 
                 # 3. Buscar en Jamendo
                 if cat:

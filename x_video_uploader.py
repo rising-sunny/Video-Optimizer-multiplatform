@@ -266,12 +266,8 @@ def upload_from_metadata(output_dir: str, on_progress=None,
                          video_url: str = "") -> Dict[str, Any]:
     """Misma forma que los uploaders de YouTube y Facebook: carpeta + metadata."""
     carpeta = Path(output_dir)
-    video = None
-    for patron in ("*.mp4", "*.mov", "*.m4v"):
-        encontrados = sorted(carpeta.glob(patron))
-        if encontrados:
-            video = encontrados[0]
-            break
+    from output_video_locator import find_output_video
+    video = find_output_video(carpeta)
     if not video:
         raise FileNotFoundError(f"No se encontro video en {output_dir}")
 

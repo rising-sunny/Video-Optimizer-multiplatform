@@ -1450,14 +1450,14 @@ def assemble_video(storyboard: dict, output_dir: Path,
     storyboard["_project_path"] = str(output_dir)
     save_storyboard(output_dir, storyboard)
 
-    # Copiar video al directorio de salida
-    import shutil
-    final_name = f"short_{datetime.now().strftime('%H%M%S')}.mp4"
-    final_path = output_dir / final_name
-    shutil.copy2(video_path, final_path)
+    # El render vive UNA sola vez, en auto_videos/output (Google Drive) con el
+    # tema en el nombre. Antes se copiaba aca como short_HHMMSS.mp4 porque los
+    # uploaders buscaban "el primer mp4 de la carpeta"; ahora leen la ruta
+    # registrada (ver output_video_locator.find_output_video).
+    save_pipeline_state(output_dir, storyboard=storyboard, video_path=str(video_path))
 
-    log(f"Video generado: {final_path}", "OK")
-    return str(final_path)
+    log(f"Video generado: {video_path}", "OK")
+    return str(video_path)
 
 
 # ═══════════════════════════════════════════════════════════════════════════

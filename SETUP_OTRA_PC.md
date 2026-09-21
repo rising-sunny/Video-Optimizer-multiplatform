@@ -104,6 +104,7 @@ cd C:\dev\Video-Optimizer-multiplatform
 mklink /J projects      "G:\Mi unidad\Scripts Python\Video-Optimizer-multiplatform\projects"
 mklink /J daily_shorts  "G:\Mi unidad\Scripts Python\Video-Optimizer-multiplatform\daily_shorts"
 mklink /J auto_videos   "G:\Mi unidad\Scripts Python\Video-Optimizer-multiplatform\auto_videos"
+mklink /J long_form     "G:\Mi unidad\Scripts Python\Video-Optimizer-multiplatform\long_form"
 ```
 
 > Si la letra/ruta de Drive es distinta en esta PC, ajustá el destino. Si una

@@ -374,16 +374,12 @@ def upload_from_metadata(
     from upload_metadata import metadata_for_channel
     metadata = metadata_for_channel(metadata, project_channel)
 
-    # Find video file
-    video_path = None
-    for ext in ["*.mp4", "*.webm", "*.mkv"]:
-        videos = list(output_dir.glob(ext))
-        if videos:
-            video_path = videos[0]
-            break
-
+    # El render vive en auto_videos/output; la carpeta solo tiene la ruta registrada.
+    from output_video_locator import find_output_video
+    video_path = find_output_video(output_dir)
     if not video_path:
         raise FileNotFoundError(f"No se encontró video en {output_dir}")
+    video_path = Path(video_path)
 
     # Find thumbnail
     thumbnail_path = None

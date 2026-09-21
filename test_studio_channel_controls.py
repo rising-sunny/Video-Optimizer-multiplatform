@@ -9,7 +9,8 @@ from unittest.mock import patch
 
 from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QComboBox, QSlider, QRadioButton, QPushButton
 from channel_profiles import active_channel, DEFAULT_CHANNEL, select_channel
-from studio_channel_controls import install_controls, restore_channel_config, project_channel_config, PilotDialog
+from studio_channel_controls import (install_controls, restore_channel_config, project_channel_config,
+                                     PilotDialog, sync_editorial_before_writing)
 
 
 class StudioStub(QWidget):
@@ -44,6 +45,9 @@ class ChannelGuiTests(unittest.TestCase):
     def test_selection_and_project_restore(self):
         tab = StudioStub()
         restore_channel_config(tab, {'channel_profile': 'stunning-revelations', 'format_strategy': 'micro_documentary'})
+        # Con guion escrito, cambiar el destino NO cambia el perfil con el que se escribio.
+        tab.last_storyboard_data = {'segments': [{'text': 'ya escrito'}]}
+        tab.current_project_path = str(Path(self.settings_dir.name) / 'project.json')
         tab.channel_combo.setCurrentIndex(tab.channel_combo.findData(DEFAULT_CHANNEL))
         config = project_channel_config(tab)
         self.assertEqual(config['upload_channel'], DEFAULT_CHANNEL)
@@ -52,6 +56,60 @@ class ChannelGuiTests(unittest.TestCase):
         restore_channel_config(tab, config)
         self.assertEqual(tab.channel_combo.currentData(), DEFAULT_CHANNEL)
         self.assertEqual(active_channel(), 'stunning-revelations')
+        tab.close()
+
+    def _with_parent(self, tab):
+        """El combo de categorias vive en la ventana principal (parent_gui)."""
+        parent = QWidget()
+        parent.category_combo = QComboBox()
+        tab.parent_gui = parent
+        self.addCleanup(parent.close)
+        return parent
+
+    def test_un_proyecto_nuevo_se_escribe_para_el_canal_destino(self):
+        """BUG 2026-09-21: desde el 8-9 todos los guiones del canal nuevo se escribieron
+        con el perfil editorial del viejo (select_channel es global y quedaba pegado)."""
+        tab = StudioStub()
+        parent = self._with_parent(tab)
+        # Se abrio un proyecto viejo de Stunning Revelations...
+        restore_channel_config(tab, {'channel_profile': 'stunning-revelations', 'upload_channel': DEFAULT_CHANNEL})
+        self.assertEqual(active_channel(), 'stunning-revelations')
+        self.assertIn('Historical Mysteries', [parent.category_combo.itemText(i) for i in range(parent.category_combo.count())])
+        # ...y ahora se va a escribir un guion NUEVO (sin storyboard) para el canal destino.
+        tab.last_storyboard_data = None
+        tab.current_project_path = None
+        self.assertTrue(sync_editorial_before_writing(tab))
+        self.assertEqual(active_channel(), DEFAULT_CHANNEL)
+        self.assertEqual(project_channel_config(tab)['channel_profile'], DEFAULT_CHANNEL)
+        categorias = [parent.category_combo.itemText(i) for i in range(parent.category_combo.count())]
+        self.assertIn('War & Military History', categorias)
+        self.assertNotIn('Historical Mysteries', categorias)
+        self.assertTrue(any('Perfil editorial' in e for e in tab.events))
+        tab.close()
+
+    def test_un_proyecto_con_guion_conserva_su_perfil(self):
+        tab = StudioStub()
+        self._with_parent(tab)
+        restore_channel_config(tab, {'channel_profile': 'stunning-revelations', 'upload_channel': DEFAULT_CHANNEL})
+        tab.last_storyboard_data = {'segments': [{'text': 'x'}]}
+        tab.current_project_path = str(Path(self.settings_dir.name) / 'project.json')
+        self.assertFalse(sync_editorial_before_writing(tab))
+        self.assertEqual(active_channel(), 'stunning-revelations')
+        # Salvo que el tema cambie y el proyecto se aisle: entonces es un proyecto nuevo.
+        self.assertTrue(sync_editorial_before_writing(tab, isolated=True))
+        self.assertEqual(active_channel(), DEFAULT_CHANNEL)
+        tab.close()
+
+    def test_sin_guion_el_combo_de_destino_arrastra_al_editorial(self):
+        tab = StudioStub()
+        parent = self._with_parent(tab)
+        tab.last_storyboard_data = None
+        tab.channel_combo.setCurrentIndex(tab.channel_combo.findData('stunning-revelations'))
+        self.assertEqual(active_channel(), 'stunning-revelations')
+        self.assertEqual(project_channel_config(tab)['channel_profile'], 'stunning-revelations')
+        tab.channel_combo.setCurrentIndex(tab.channel_combo.findData(DEFAULT_CHANNEL))
+        self.assertEqual(active_channel(), DEFAULT_CHANNEL)
+        self.assertIn('War & Military History', [parent.category_combo.itemText(i) for i in range(parent.category_combo.count())])
         tab.close()
 
     def test_publishing_cannot_change_destination(self):

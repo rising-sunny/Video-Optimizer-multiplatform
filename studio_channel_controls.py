@@ -17,13 +17,54 @@ def project_channel_config(tab):
             "format_strategy": strategy.currentData() if strategy else "traditional"}
 
 
+def set_editorial_channel(tab, key, reason=""):
+    """El perfil con el que se ESCRIBE el guion (categorias, ganchos, titulos, tono).
+
+    Distinto del destino de publicacion: un proyecto ya escrito conserva el
+    perfil con el que se escribio aunque se publique en otro canal. Repuebla el
+    combo de categorias, que es lo unico visible de este perfil en la GUI.
+    """
+    if key not in CHANNELS:
+        raise ValueError(f"Unknown channel: {key}")
+    changed = getattr(tab, '_editorial_channel', None) != key or active_channel() != key
+    tab._editorial_channel = key
+    select_channel(key)
+    parent = getattr(tab, 'parent_gui', None)
+    if parent and hasattr(parent, 'category_combo'):
+        from channel_strategy import get_all_category_names
+        parent.category_combo.clear()
+        parent.category_combo.addItems(get_all_category_names())
+    if changed and hasattr(tab, 'log'):
+        tab.log(f"Perfil editorial: {CHANNELS[key]['name']}" + (f" ({reason})" if reason else ""))
+    return changed
+
+
+def project_has_script(tab) -> bool:
+    memory = getattr(tab, 'last_storyboard_data', None)
+    return bool(isinstance(memory, dict) and memory.get('segments')) and bool(getattr(tab, 'current_project_path', None))
+
+
+def sync_editorial_before_writing(tab, isolated=False):
+    """Antes de escribir un guion NUEVO, el perfil editorial es el del canal destino.
+
+    BUG (2026-09-21): `select_channel` es global. Abrir un proyecto viejo de
+    Stunning Revelations lo dejaba activo, y cada proyecto NUEVO heredaba su
+    perfil en silencio: desde el 8-9 todos los guiones para Stunning Facts of
+    History se escribieron con las categorias, ganchos y tono del canal viejo,
+    sin ningun control visible que lo mostrara.
+    """
+    if isolated or not project_has_script(tab):
+        key = getattr(tab, '_upload_channel', None) or active_channel()
+        return set_editorial_channel(tab, key, "proyecto nuevo: se escribe para el canal destino")
+    return False
+
+
 def restore_channel_config(tab, config):
     if not hasattr(tab, 'channel_combo'):
         return
     key = config.get('channel_profile', DEFAULT_CHANNEL)
     if key not in CHANNELS:
         raise ValueError(f"Unknown saved channel: {key}")
-    tab._editorial_channel = key
     destination = config.get('upload_channel', key)
     if destination not in CHANNELS:
         raise ValueError(f'Unknown upload channel: {destination}')
@@ -32,12 +73,7 @@ def restore_channel_config(tab, config):
         combo.blockSignals(True)
         combo.setCurrentIndex(max(0, combo.findData(value)))
         combo.blockSignals(False)
-    select_channel(key)
-    parent = getattr(tab, 'parent_gui', None)
-    if parent and hasattr(parent, 'category_combo'):
-        from channel_strategy import get_all_category_names
-        parent.category_combo.clear()
-        parent.category_combo.addItems(get_all_category_names())
+    set_editorial_channel(tab, key, "perfil guardado en el proyecto")
 
 
 def install_controls(tab, layout):
@@ -68,6 +104,10 @@ def install_controls(tab, layout):
             return
         key = tab.channel_combo.currentData()
         tab._upload_channel = key
+        # Sin guion todavia, el perfil editorial acompana al destino: lo que se
+        # va a escribir es para ESE canal. Con guion, se conserva (ver arriba).
+        if not project_has_script(tab):
+            set_editorial_channel(tab, key, "sigue al destino hasta que haya guion")
         if hasattr(tab, 'auto_save_project'):
             tab.auto_save_project('cambio de canal de publicación')
         tab.log(f"Destino de publicación: {CHANNELS[key]['name']}")

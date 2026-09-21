@@ -168,6 +168,8 @@ class AutoVideoStudioTab(QWidget):
     _download_error_signal = pyqtSignal(str)
     _download_progress_signal = pyqtSignal(int)
     _publish_done_signal = pyqtSignal(dict)
+    # El hilo de publicacion escribe en el panel a traves de esta senal (thread-safe).
+    _publish_log_signal = pyqtSignal(str)
     LONG_HORIZONTAL_MIN_DURATION_SECONDS = 120
     LONG_HORIZONTAL_DEFAULT_DURATION_SECONDS = 1800
     DURATION_SLIDER_MAX_SECONDS = 7200
@@ -185,6 +187,7 @@ class AutoVideoStudioTab(QWidget):
         # Conectar seÃ±ales thread-safe
         self._play_file_signal.connect(self._play_local_file)
         self._download_error_signal.connect(self._on_download_error)
+        self._publish_log_signal.connect(self.log)
         self._download_progress_signal.connect(self._on_download_progress)
 
         # Estado
@@ -1517,7 +1520,7 @@ Respond ONLY with valid JSON."""
                 # ocurren incluso con la publicacion ya hecha (el error 100 de
                 # Facebook del 2026-09-03 llegaba despues de publicar el reel).
                 if do_facebook:
-                    self.log(" Subiendo a Facebook (via VPS)...")
+                    self.log(" Subiendo a Facebook...")
                     try:
                         results['facebook'] = self._upload_facebook_via_vps(
                             staging, _video_path, _facebook_meta, is_long=_is_long, publish_at=_publish_at_facebook
@@ -1526,7 +1529,7 @@ Respond ONLY with valid JSON."""
                         self.log(f"⚠ Facebook error: {fb_err}")
                         results['facebook'] = None
                 if do_instagram:
-                    self.log(" Subiendo a Instagram (via VPS)...")
+                    self.log(" Subiendo a Instagram...")
                     try:
                         results['instagram'] = self._upload_instagram_via_vps(
                             staging, _video_path, _instagram_meta
@@ -1583,9 +1586,17 @@ Respond ONLY with valid JSON."""
 
         ssh_host = os.getenv('VPS_SSH_HOST', '').strip()
 
+        # VPS_UPLOAD_ENABLED=0 en .env: saltar el VPS sin borrar su config. Con
+        # el VPS sin usar, cada plataforma esperaba 40s a un ssh que no
+        # contestaba antes de caer al upload local (2026-09-15).
+        if str(os.getenv('VPS_UPLOAD_ENABLED', '1') or '1').strip().lower() in ('0', 'false', 'no', 'off'):
+            self.log(f"   VPS desactivado (VPS_UPLOAD_ENABLED=0): {platform} se sube desde esta PC")
+            return fallback_fn() if fallback_fn else None
+
         if not ssh_host:
             self.log(f"️ VPS_SSH_HOST no configurado, intentando upload {platform} local...")
             return fallback_fn() if fallback_fn else None
+        self.log(f"   Via VPS {ssh_host}...")
 
         video_basename = os.path.basename(video_path)
         safe_name = video_basename.replace('.mp4', '').replace(' ', '_')
@@ -1707,11 +1718,13 @@ Respond ONLY with valid JSON."""
 
         def _local_fallback():
             from facebook_uploader import upload_from_metadata
+            from upload_progress import make_byte_progress_reporter
             return upload_from_metadata(
                 output_dir=str(staging_dir),
                 video_state='PUBLISHED',
                 upload_type=upload_type,
-                scheduled_publish_time=publish_at
+                scheduled_publish_time=publish_at,
+                on_progress=make_byte_progress_reporter("   Facebook: subiendo", self._publish_log_signal.emit),
             )
 
         return self._upload_via_vps(
@@ -1728,7 +1741,15 @@ Respond ONLY with valid JSON."""
     def _upload_instagram_via_vps(self, staging_dir, video_path: str, instagram_meta: dict) -> dict:
         def _local_fallback():
             from instagram_uploader import upload_from_metadata
-            return upload_from_metadata(output_dir=str(staging_dir), share_to_feed=True)
+            from upload_progress import make_byte_progress_reporter
+            # Sin esto el panel quedaba mudo desde "se sube desde esta PC" hasta el
+            # resultado: Cloudinary + Meta procesando (hasta 5 min por intento).
+            notify = self._publish_log_signal.emit
+            return upload_from_metadata(
+                output_dir=str(staging_dir), share_to_feed=True,
+                on_progress=make_byte_progress_reporter("   Cloudinary", notify),
+                on_status=lambda msg: notify(f"   Instagram: {msg}"),
+            )
 
         return self._upload_via_vps(
             platform="Instagram",
@@ -2015,7 +2036,15 @@ Respond ONLY with valid JSON."""
         category_layout = QHBoxLayout()
         category_layout.addWidget(QLabel("Categoria:"))
         self.category_combo = QComboBox()
-        self.category_combo.addItems([
+        # Las categorias son las del perfil del canal activo (su Bible), no una
+        # lista fija: hasta 2026-09-21 arrancaba con esta lista en espanol y
+        # solo cambiaba al restaurar un proyecto.
+        try:
+            from channel_strategy import get_all_category_names
+            categorias = list(get_all_category_names())
+        except Exception:
+            categorias = []
+        self.category_combo.addItems(categorias or [
             "Historia militar/guerras", "Historia antigua/civilizaciones",
             "Documentales", "Eventos naturales extremos",
             "Ciencia/Tecnologia actual", "Misterios con datos",
