@@ -396,19 +396,25 @@ JSON:
                 "tags": [topic, "history", "documentary", "analysis"],
             }
         if self.platform_name == "facebook":
+            # Sin '#Mystery' (angulo descartado) ni marca fija: al publicar, facebook_metadata
+            # agrega los hashtags investigados y la marca de la pagina real.
+            from facebook_metadata import trim_at_boundary
             return {
                 "title": topic,
                 "description": (
-                    f"{preview}\n\nWhat do you think really happened?\n\n"
-                    "#History #Mystery #StunningRevelations"
+                    f"{trim_at_boundary(script, 260) or preview}\n\nWhat do you think really happened?\n\n"
+                    "#History"
                 ),
             }
         if self.platform_name == "instagram":
+            # Igual que Facebook: los hashtags investigados y la marca de la cuenta real los
+            # agrega instagram_uploader al publicar.
+            from facebook_metadata import trim_at_boundary
             return {
                 "title": topic,
                 "description": (
-                    f"{preview}\n\nWhat do you think really happened?\n\n"
-                    "#stunningrevelations #history #mystery #reels #facts"
+                    f"{trim_at_boundary(script, 320) or preview}\n\nWhat do you think really happened?\n\n"
+                    "#History"
                 ),
             }
         return {

@@ -614,7 +614,7 @@ Return ONLY a JSON array, no markdown, no extra text:
 
     def generate_thumbnail_super_prompt(self, topic, script_excerpt="", category="",
                                         language="es", thumbnail_format=None,
-                                        render_text=True):
+                                        render_text=True, format_archetype=None, research_brief=None):
         """Genera los prompts de miniatura listos para pegar en una IA externa.
 
         Devuelve {'positive', 'negative', 'text'} o None si falla.
@@ -636,7 +636,39 @@ Return ONLY a JSON array, no markdown, no extra text:
         fmt = thumbnail_format or LANDSCAPE_16_9
         print(f"Generando super prompt de thumbnail para IA externa ({fmt.aspect_label})...")
 
+        # Composicion por angulo narrativo (mecanismo -> el objeto en proceso;
+        # hallazgo -> la pieza in situ; historia humana -> el objeto de la persona).
+        angle_line = ""
+        try:
+            from channel_strategy import archetype_thumbnail_brief, archetype_label, get_active_archetype
+            _arche = format_archetype or get_active_archetype()
+            brief = archetype_thumbnail_brief(_arche) if _arche else ""
+            if brief:
+                angle_line = f"\n- Narrative angle: {archetype_label(_arche)} -> composition: {brief}"
+        except Exception:
+            angle_line = ""
+
         lang_note = "The video is in Spanish." if language == "es" else "The video is in English."
+
+        # Investigacion (thumbnail_research.build_thumbnail_brief): si esta, la paleta, la
+        # luminancia y el texto salen de la competencia real en vez de los valores fijos.
+        brief = research_brief if isinstance(research_brief, dict) else {}
+        research_block = ("\n" + brief["prompt_block"] + "\n") if brief.get("prompt_block") else ""
+        if brief.get("luminance"):
+            _lo, _hi = brief["luminance"]
+            lum_line = f"- Average luminance: {_lo}-{_hi} (out of 255), from the competition research."
+        else:
+            lum_line = "- Average luminance: 100-150 (out of 255)."
+        fam = brief.get("family")
+        warm_line = ("- Warm channel (R+G) minus cool channel (B): >= 15 on average."
+                     if fam in (None, "warm") else
+                     "- Keep ONE accent family (see COLOR SYSTEM); do not drift back to the default amber/red.")
+        pal = brief.get("palette")
+        color_line = ("COLOR SYSTEM - Highlights: #f3c267, #e07a2b, #b32a1c - Mids: #6a3a1e, #2f3a44 - Shadows: #0e1318, #1a2330"
+                      if not pal else
+                      f"COLOR SYSTEM ({pal['label']}, chosen to stand out from the competing thumbnails) - "
+                      f"Highlights: {', '.join(pal['highlights'])} - Mids: {', '.join(pal['mids'])} - "
+                      f"Shadows: {', '.join(pal['shadows'])}")
         script_block = (
             f"\nScript excerpt (first 1200 chars):\n{script_excerpt[:1200]}"
             if script_excerpt else ""
@@ -678,9 +710,9 @@ Return ONLY a JSON array, no markdown, no extra text:
 
 VIDEO DATA:
 - Title / Topic: {topic}
-- Category: {category or "documented history"}
+- Category: {category or "documented history"}{angle_line}
 - {lang_note}{script_block}
-
+{research_block}
 TASK: Analyze the video data and produce a thumbnail prompt for an external AI
 image generator (Recraft, gpt-image, Midjourney, Ideogram, Flux, etc.).
 
@@ -715,13 +747,13 @@ MANDATORY COMPOSITION RULES (all must be respected):
 
 {bloque_texto}
 QUANTITATIVE TARGETS:
-- Average luminance: 100-150 (out of 255).
+{lum_line}
 - Subject zone brighter than the calm zone by >= 20 luminance points.
 - Edge density in the subject third: >= 55% of total edge mass.
-- Warm channel (R+G) minus cool channel (B): >= 15 on average.
+{warm_line}
 - No single histogram bin > 30% of pixels.
 
-COLOR SYSTEM - Highlights: #f3c267, #e07a2b, #b32a1c - Mids: #6a3a1e, #2f3a44 - Shadows: #0e1318, #1a2330
+{color_line}
 
 EMOTIONAL HOOK -- express it through the SCENE, not through a face:
 - shock -> impossible scale, a tiny human against something enormous

@@ -150,6 +150,12 @@ class StudioStoryboardHandlers:
             self.studio_tab.log(f" No se pudo sincronizar el perfil editorial: {exc}")
 
         category = self.studio_tab.parent_gui.category_combo.currentText()
+        try:
+            from studio_channel_controls import resolve_archetype_for_topic
+            format_archetype = resolve_archetype_for_topic(self.studio_tab, topic, category)
+        except Exception as exc:
+            self.studio_tab.log(f" Sin ángulo narrativo ({exc}); sigue el Bible general.")
+            format_archetype = ""
         duration = self.studio_tab.duration_slider.value()
         language = 'es' if self.studio_tab.lang_es.isChecked() else 'en'
         style = self.studio_tab.style_combo.currentText()
@@ -215,7 +221,8 @@ class StudioStoryboardHandlers:
             find_auto_music=find_auto_music,
             use_research=use_research,
             pre_research_snippets=pre_research_snippets if pre_research_snippets else None,
-            rate=voice_rate
+            rate=voice_rate,
+            format_archetype=format_archetype,
         )
         if hasattr(self.studio_tab, '_bind_current_worker_to_project'):
             self.studio_tab._bind_current_worker_to_project()

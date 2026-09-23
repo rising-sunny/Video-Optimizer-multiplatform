@@ -6,6 +6,11 @@ from unittest.mock import patch
 
 import instagram_uploader
 
+# upload_from_metadata resuelve la cuenta (marca de los hashtags): sin esto el test
+# consultaba la Graph API real y corria la investigacion de titulos.
+FAKE_IDENTITY = {"access_token": "token-falso", "ig_user_id": "1784", "instagram_username": "stunning.foh",
+                 "instagram_name": "Stunning Facts of History", "page_id": "1291", "page_name": "Stunning Facts of History"}
+
 
 class InstagramUploaderTests(unittest.TestCase):
     def test_upload_from_metadata_prefers_instagram_metadata_file(self):
@@ -50,8 +55,8 @@ class InstagramUploaderTests(unittest.TestCase):
                 "instagram_username": "stunning.revelations",
             }
 
-            with patch.object(instagram_uploader, "upload_video", return_value=fake_result) as upload_mock:
-                result = instagram_uploader.upload_from_metadata(str(root), share_to_feed=True)
+            with patch.object(instagram_uploader, "upload_video", return_value=fake_result) as upload_mock,                  patch.object(instagram_uploader, "_resolve_instagram_identity", return_value=FAKE_IDENTITY):
+                result = instagram_uploader.upload_from_metadata(str(root), share_to_feed=True, optimize=False)
 
             self.assertEqual(result["media_id"], "178900000001")
             upload_mock.assert_called_once()
@@ -88,8 +93,8 @@ class InstagramUploaderTests(unittest.TestCase):
                 "cloudinary_public_id": "video_optimizer/instagram/example",
             }
 
-            with patch.object(instagram_uploader, "upload_video", return_value=fake_result):
-                instagram_uploader.upload_from_metadata(str(root))
+            with patch.object(instagram_uploader, "upload_video", return_value=fake_result),                  patch.object(instagram_uploader, "_resolve_instagram_identity", return_value=FAKE_IDENTITY):
+                instagram_uploader.upload_from_metadata(str(root), optimize=False)
 
             result_path = root / "instagram_upload_result.json"
             self.assertTrue(result_path.exists())

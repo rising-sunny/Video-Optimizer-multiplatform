@@ -6,6 +6,10 @@ from unittest.mock import patch
 
 import facebook_uploader
 
+# upload_from_metadata resuelve la pagina (para la marca de los hashtags): sin esto el
+# test consultaba la Graph API real.
+FAKE_PAGE = ("token-falso", "987654321", {"id": "987654321", "name": "Stunning Facts of History"})
+
 
 class FacebookUploaderTests(unittest.TestCase):
     def test_upload_from_metadata_prefers_facebook_metadata_file(self):
@@ -39,8 +43,8 @@ class FacebookUploaderTests(unittest.TestCase):
                 "page_name": "Stunning Revelations",
             }
 
-            with patch.object(facebook_uploader, "upload_video", return_value=fake_result) as upload_mock:
-                result = facebook_uploader.upload_from_metadata(str(root), video_state="PUBLISHED")
+            with patch.object(facebook_uploader, "upload_video", return_value=fake_result) as upload_mock,                  patch.object(facebook_uploader, "_page_context", return_value=FAKE_PAGE):
+                result = facebook_uploader.upload_from_metadata(str(root), video_state="PUBLISHED", optimize=False)
 
             self.assertEqual(result["video_id"], "123456789")
             upload_mock.assert_called_once()
@@ -82,11 +86,12 @@ class FacebookUploaderTests(unittest.TestCase):
                 "page_name": "Stunning Revelations",
             }
 
-            with patch.object(facebook_uploader, "upload_video", return_value=fake_result) as upload_mock:
+            with patch.object(facebook_uploader, "upload_video", return_value=fake_result) as upload_mock,                  patch.object(facebook_uploader, "_page_context", return_value=FAKE_PAGE):
                 result = facebook_uploader.upload_from_metadata(
                     str(root),
                     video_state="PUBLISHED",
                     scheduled_publish_time="2099-01-01T12:00:00Z",
+                    optimize=False,
                 )
 
             self.assertEqual(result["video_id"], "555666777")

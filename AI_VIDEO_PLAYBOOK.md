@@ -164,6 +164,39 @@ Cambios en el código (commit del 2026-07-19) — la generación ya sale mejorad
 - **Mezcla de temas por datos:** `production_weight` en el Bible ahora SÍ pesa la
   selección de temas (`build_category_weight_map`).
 
+### 6b. El bucle de datos (2026-09-22) — de la métrica al guion, al cover y al thumbnail
+
+Cinco capas, todas alimentadas por lo medido y no por intuición. Cómo se usan:
+
+1. **Botón "Rendimiento"** (fila del canal en el Studio) o `performance_feedback.py`: mide
+   YouTube Analytics (vistas, engaged %, retención, subs por video) + Facebook (plays, tiempo
+   medio, retención 25/50/75, seguidores por reel), lo cruza con cada `project.json` y escribe
+   `daily_shorts/performance_snapshot.json`. Correrlo **una vez por semana**: el prompt del
+   guion lee el snapshot (bloque `WHAT IS WORKING NOW`, con fecha) y los pesos de categoría
+   se recalculan. Regla empírica que usa: un short despega (≥300 vistas en 24 h) o muere (<50).
+2. **Ángulo** (`format_archetype`, combo en el Studio, o `auto`): *cómo lo hicieron* /
+   *hallazgo* / *historia humana* / *evento con cifra*. Vive en el Bible (`format_archetypes`,
+   cada uno con su evidencia), se guarda en el proyecto y viaja: prompt del guion →
+   packaging del microdoc → título → palabras del cover frame → composición del super prompt
+   del thumbnail. `auto` = palabras del tema, si no el ángulo con mejor peso medido, si no
+   `scale_event`.
+3. **Primeros segundos** (`first_seconds` en el Bible; `hook_report`): cifra o pregunta en la
+   primera frase, **la fecha en la segunda**, ≤14 palabras, sin carraspeo. Medido en Facebook:
+   abrir con fecha retiene ~30 % al primer cuarto, la mejor curva (sin fecha) 50 %. Cada render
+   imprime `QA DEL GANCHO` junto al QA de audio.
+4. **Botón "Tendencias"** o `trend_report.py`: shorts de historia más vistos del mes (Data API,
+   filtrado), Wikipedia histórica, efemérides de `anniversaries.json` (con ángulo y gancho) y
+   propuestas de Groq ancladas en hechos documentados. Doble clic en una fila carga tema +
+   categoría + ángulo.
+5. **Short vertical autónomo**: de cada 16:9 (microdocumental) sale un Short 9:16 de 60–90 s
+   que cuenta la historia completa, con imágenes nuevas en vertical y las reglas del canal —
+   NO un tráiler con "mirá el video completo" (el teaser legado sigue vía `mode="teaser"`).
+   Razón: Thera hizo 52 K plays en Facebook y 49 vistas en YouTube, que no distribuye 16:9 en
+   Shorts.
+
+Al publicar desde el Studio, los ids por red quedan en `project.json → publish_results`
+(`publish_record.py`), que es lo que permite cruzar métricas con proyectos.
+
 ---
 
 ## 7. El Channel Bible (Stunning Revelations)
@@ -210,6 +243,14 @@ concreta + sujeto nombrado**, duración corta. Ej: "72 Seconds: The Wow! Signal"
 | `storyboard_generator.py` | Generación de storyboard (guión + escenas) |
 | `RUN.bat` | Abre la GUI (`video_optimizer_pyqt6.py`) |
 | `check_instagram_ingest.py` | Prueba en seco si Instagram procesa videos (no publica); correr cuando IG falle |
+| `performance_feedback.py` | Snapshot YT+FB → `daily_shorts/performance_snapshot.json` (lo lee el prompt) |
+| `trend_report.py` + `anniversaries.json` | Tendencias del nicho + efemérides → temas con ángulo y fecha |
+| `publish_record.py` | Ids por red en `project.json` al publicar (cruce métricas ↔ proyectos) |
+| `youtube_tags.py` | Tags investigados (autocompletado + competencia) y puerta final de 500 caracteres |
+| `youtube_titles.py` | Títulos investigados con puntaje explicado (optimize/suggest) |
+| `thumbnail_publish.py` | Miniatura al subir: formato, reintentos, aviso y verificación de lo que YouTube muestra |
+| `thumbnail_research.py` | Miniaturas de la competencia → acento, brillo y texto del super prompt |
+| `facebook_metadata.py` | Título, arranque de la descripción y hashtags de Facebook e Instagram con la investigación de YouTube |
 | `build_derinkuyu_long.py` | Ejemplo one-off de documental (referencia; hardcodeado) |
 
 ---
@@ -230,6 +271,107 @@ concreta + sujeto nombrado**, duración corta. Ej: "72 Seconds: The Wow! Signal"
 ---
 
 ## Changelog
+
+- **2026-09-22g** — **Instagram: lo mismo que Facebook.** `instagram_uploader.upload_from_metadata`
+  llama a `facebook_metadata.prepare_instagram_metadata` (mismo motor; en Instagram no hay campo
+  de título: el caption arranca con el título, así que no se antepone nada). Marca = nombre de la
+  cuenta (@stunning.foh, "Stunning Facts of History"); fuera `#stunningrevelations #mystery #reels
+  #facts` de los respaldos (Studio, Metadata Studio, pipeline) y el corte a mitad de palabra.
+  Investigación encadenada: YouTube → Facebook (`research_used` en su resultado) → Instagram
+  (`research_for_next_platform`), sin investigar dos veces. **Portada:** la API solo la acepta al
+  crear el contenedor como `cover_url` (URL pública, JPEG): se convierte a JPEG ≤8 MB, se sube a
+  Cloudinary (`cloudinary_uploader.upload_image`), va en el contenedor (resumable y por URL), se
+  borra después, y se verifica contra `thumbnail_url`. Si Meta rechaza la portada se publica sin
+  ella; un error del video (la caída de ingesta) se propaga igual que antes. Después de publicado
+  no se cambia por API (sí en la app). `INSTAGRAM_SEO=0` apaga la optimización;
+  `FACEBOOK_SEO_RESEARCH=0` apaga la investigación propia de las dos redes. **Ojo:** el 22-09
+  `check_instagram_ingest.py` seguía fallando (Meta no procesa videos desde el 15-09), así que
+  esto no se pudo ver en vivo. Guardas: `test_instagram_metadata.py` (22).
+- **2026-09-22f** — **Facebook: título/hashtags investigados + la misma miniatura que YouTube.**
+  (1) `facebook_metadata.py`, llamado desde `facebook_uploader.upload_from_metadata` (cubre
+  Studio, `run_pipeline` y el scheduler del VPS). Facebook no tiene campo de tags: se optimizan
+  el título, el arranque de la descripción (lo visible antes de "Ver más", ~125 car.) y 3-5
+  hashtags. Reusa lo que YouTube ya investigó en la misma tanda (`research_from_youtube`, el
+  Studio lo deja en `facebook_metadata.json['research']`); si no hubo YouTube, investiga igual
+  que `youtube_uploader`. Título: `optimize` (respaldo) usa el investigado, `suggest` (lo
+  escribiste en el Metadata Studio) lo deja y reporta la alternativa. Hashtags: sujeto amplio
+  primero, palabra clave, variedad (máx. 2 con el sujeto), cada palabra respaldada por el guion,
+  `#History` y la marca de la PÁGINA real (Stunning Facts of History) al final; fuera
+  `#Mystery`, `#StunningRevelations`, `#fyp`/`#viral`/`#reels`. Repara el primer párrafo cortado
+  a mitad de palabra por el respaldo viejo (reel de Hannibal: "...every s"). `FACEBOOK_SEO=0`
+  apaga todo; `FACEBOOK_SEO_RESEARCH=0` solo la investigación propia. (2) Miniatura:
+  `POST /{video_id}/thumbnails` (source + `is_preferred=true`) para reels y videos de página, con
+  WebP→JPEG, reintentos (10/30/60 s), verificación contra la preferida que guarda Facebook, aviso
+  en el panel y `thumbnail_set/thumbnail_error` en el resultado. (3) Encontrado al probar, arreglado
+  para YouTube también: `youtube_titles.unsupported_numbers` exige la misma unidad ("30 km" de
+  ceniza no respalda "30 eruptions") y `factcheck_candidates` hace que el LLM verifique los mejores
+  candidatos contra el guion antes de elegir (rechazó "casts hold bodies" y "30 eruptions";
+  `YOUTUBE_TITLE_FACTCHECK=0` lo apaga). (4) El VPS ahora recibe `facebook_metadata.py`,
+  `thumbnail_publish.py` y `output_video_locator.py` (este último faltaba desde f2e531d).
+  Guardas: `test_facebook_metadata.py` (33), `test_youtube_titles.py` (29).
+- **2026-09-22e** — **Miniaturas: subida confiable y prompt guiado por datos.**
+  (1) `thumbnail_publish.py`: el selector aceptaba `.webp` y el uploader solo buscaba
+  png/jpg (se publicaba sin miniatura, en silencio); ahora se detecta el formato por contenido y
+  se convierte a JPEG ≤2 MB, `thumbnails.set` reintenta errores transitorios (8 s, 20 s), el
+  resultado va al PANEL (y a `publish_results`: `thumbnail_set`, `thumbnail_error`) y el Studio
+  avisa antes de publicar qué miniatura sale o si no hay. `verify_served_thumbnail` compara lo
+  que YouTube muestra con el archivo local (recorta el centro en Shorts). Verificado: en este
+  canal los Shorts SÍ muestran la miniatura personalizada (canal/búsqueda, nunca el feed);
+  Gunnerside y Hannibal muestran miniaturas que el usuario subió a mano después.
+  (2) `thumbnail_research.py`: baja las miniaturas de los videos que rankean para la palabra
+  clave (misma investigación que tags/título) y mide brillo, saturación, familia de color y
+  carga visual con numpy; elige el acento que MENOS usa la competencia, el brillo contrario y
+  minimalismo si están cargadas; el texto complementa al título (cifra del guion con su
+  sustantivo, búsqueda real de 2+ palabras, palabra del ángulo) y cada palabra tiene que estar
+  en el guion. El super prompt reemplaza su paleta ámbar fija y la luminancia fija por las de la
+  investigación. En vivo: Pompeii (competencia 5/8 cálida) → teal + `1,000 CASTS`; Kaiten → cálido
+  + `63 SAILORS`. `THUMBNAIL_RESEARCH=0` lo apaga. Guardas: `test_thumbnail_publish.py` (13),
+  `test_thumbnail_research.py` (17).
+
+- **2026-09-22d** — **Títulos investigados** (`youtube_titles.py`). Usa la MISMA investigación que
+  los tags (`youtube_tags.gather_research`, una sola llamada de cuota por video). Candidatos:
+  borrador, borrador con la palabra clave al frente y ~10 de Groq con todo el contexto (búsqueda
+  principal y secundarias, títulos que rankean para diferenciarse, ganadores propios, plantillas
+  del Bible y del ángulo, el guion como única fuente de datos). Puntaje determinístico 0-100
+  estilo vidIQ: palabra clave presente (30) y al principio (15), largo en franja (20), cifra
+  respaldada (10), búsquedas secundarias (8), ángulo (5); penaliza palabras muertas, aperturas
+  prohibidas, copiar a la competencia, repeticiones, emojis, hashtags, MAYÚSCULAS. **Invalida**
+  cifras o nombres propios que no están en el guion. Modo `optimize` (título inventado por el
+  LLM al publicar: cambia si gana por 5+) / `suggest` (Metadata Studio o piloto aprobado: deja
+  el del usuario y reporta la mejor alternativa) / `off`; `YOUTUBE_TITLE_MODE` lo fuerza. En vivo:
+  Hannibal 65→87-95, Kaiten 54→91, Pompeii 38→87. Guardas: `test_youtube_titles.py` (22).
+
+- **2026-09-22c** — **Tags de YouTube investigados y bien insertados** (`youtube_tags.py`).
+  Auditoría de los 33 videos (tags GUARDADOS, Data API): 6 sin tags, un tag gigante pegado
+  (Great Zimbabwe), hashtags como tags (`#shorts`, `Baghdad1258`), relleno fijo del microdoc
+  (`history, documentary`), el uploader cortaba `500 tags` en vez de 500 caracteres y metía
+  `Shorts` primero. Ahora: (1) `finalize_youtube_tags` es la puerta final de TODOS los caminos
+  (separa bien, saca `#`, descarta bloques pegados y basura, deduplica, conserva el orden y
+  respeta 500 caracteres contados como YouTube: comas + 2 por tag con espacio); (2)
+  `research_tags` hace lo que vidIQ: palabra clave principal validada por el autocompletado
+  de YouTube y que nombre al sujeto del video, tags de los videos que rankean para esa
+  búsqueda (consenso ponderado por vistas), filtros de marcas ajenas, homónimos y juegos
+  (`hannibal lecter`, `world of warships`, `total war`), relevancia contra el guion,
+  casi-duplicados colapsados y la marca propia con lugar reservado. (3) El uploader investiga
+  con el tema y el guion (el Studio los pasa en la metadata), escribe el progreso en el panel
+  y **verifica lo que YouTube guardó** (avisa si difiere). `YOUTUBE_TAG_RESEARCH=0` lo apaga.
+  Cuesta ~101 unidades de cuota por video (1 search + 1 videos.list). Guardas:
+  `test_youtube_tags.py` (26).
+
+- **2026-09-22b** — Fuera la pestaña **Daily Shorts** (`daily_shorts_tab.py`, 141 KB) y
+  `subtitle_style_catalog.py`: no se usaba, se colgaba al cargar ("Loading voices…") y Auto
+  Video Studio cubre todo. `daily_short_pipeline.py` (el CLI y lo que usan los
+  microdocumentales) se queda; `GENERATE_SHORT.bat` sigue funcionando.
+- **2026-09-22** — **Bucle de datos completo (5 capas).** Ver §6b. `performance_feedback.py`
+  (snapshot YT+FB, botón "Rendimiento"), `format_archetype` (ángulo: Bible + combo + prompt +
+  cover + thumbnail), `first_seconds` (regla medida "cifra o pregunta, la fecha después" +
+  `QA DEL GANCHO` en cada render), `trend_report.py` + `anniversaries.json` (botón
+  "Tendencias", temas cargables con un clic), Short vertical autónomo derivado del 16:9
+  (`mode="standalone"`). El Bible pasó a git (`!daily_shorts/channel_strategy_profile.json`) y
+  se le quitó lo que murió (cover words de misterio, "Tunguska Mystery"). `publish_results` en
+  cada proyecto al publicar. Guardas: `test_performance_feedback` (18), `test_publish_record`
+  (10), `test_format_archetypes` (16), `test_first_seconds` (15), `test_trend_report` (15),
+  `test_standalone_short` (5).
 
 - **2026-09-21** — **El perfil editorial seguía pegado al canal viejo.** `select_channel` es global:
   abrir un proyecto de Stunning Revelations lo dejaba activo y cada proyecto nuevo heredaba sus

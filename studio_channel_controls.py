@@ -4,7 +4,8 @@ from pathlib import Path
 
 from PyQt6.QtCore import QThread, pyqtSignal, QTimer
 from PyQt6.QtWidgets import (QComboBox, QDialog, QFileDialog, QHBoxLayout, QLabel,
-                            QMessageBox, QPushButton, QTextEdit, QVBoxLayout, QTabWidget)
+                            QMessageBox, QPushButton, QTextEdit, QVBoxLayout, QTabWidget,
+                            QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView)
 
 from channel_profiles import CHANNELS, DEFAULT_CHANNEL, active_channel, select_channel
 
@@ -12,9 +13,43 @@ from channel_profiles import CHANNELS, DEFAULT_CHANNEL, active_channel, select_c
 def project_channel_config(tab):
     combo = getattr(tab, 'channel_combo', None)
     strategy = getattr(tab, 'format_strategy_combo', None)
+    arche = getattr(tab, 'archetype_combo', None)
     return {"channel_profile": getattr(tab, "_editorial_channel", active_channel()),
             "upload_channel": combo.currentData() if combo else DEFAULT_CHANNEL,
-            "format_strategy": strategy.currentData() if strategy else "traditional"}
+            "format_strategy": strategy.currentData() if strategy else "traditional",
+            "format_archetype": (arche.currentData() if arche else None) or "auto"}
+
+
+def populate_archetype_combo(tab):
+    """'Auto' + los angulos del perfil editorial activo (Bible.format_archetypes)."""
+    combo = getattr(tab, 'archetype_combo', None)
+    if combo is None:
+        return
+    from channel_strategy import get_format_archetypes
+    current = combo.currentData() or "auto"
+    combo.blockSignals(True)
+    combo.clear()
+    combo.addItem('Ángulo: auto (según datos)', 'auto')
+    for a in get_format_archetypes():
+        combo.addItem(a.get('label_es') or a.get('name') or a['id'], a['id'])
+    idx = combo.findData(current)
+    combo.setCurrentIndex(idx if idx >= 0 else 0)
+    combo.blockSignals(False)
+
+
+def resolve_archetype_for_topic(tab, topic, category=""):
+    """Lo que el guion va a usar: el elegido, o el 'auto' resuelto por datos + tema."""
+    from channel_strategy import pick_archetype_auto, archetype_label
+    combo = getattr(tab, 'archetype_combo', None)
+    chosen = (combo.currentData() if combo else None) or "auto"
+    if chosen == "auto":
+        chosen = pick_archetype_auto(topic, category)
+        how = "auto"
+    else:
+        how = "elegido"
+    if chosen and hasattr(tab, 'log'):
+        tab.log(f"Ángulo narrativo ({how}): {archetype_label(chosen)}")
+    return chosen or ""
 
 
 def set_editorial_channel(tab, key, reason=""):
@@ -34,6 +69,7 @@ def set_editorial_channel(tab, key, reason=""):
         from channel_strategy import get_all_category_names
         parent.category_combo.clear()
         parent.category_combo.addItems(get_all_category_names())
+    populate_archetype_combo(tab)
     if changed and hasattr(tab, 'log'):
         tab.log(f"Perfil editorial: {CHANNELS[key]['name']}" + (f" ({reason})" if reason else ""))
     return changed
@@ -74,6 +110,20 @@ def restore_channel_config(tab, config):
         combo.setCurrentIndex(max(0, combo.findData(value)))
         combo.blockSignals(False)
     set_editorial_channel(tab, key, "perfil guardado en el proyecto")
+    arche = getattr(tab, 'archetype_combo', None)
+    if arche is not None:
+        idx = arche.findData(config.get('format_archetype') or 'auto')
+        arche.blockSignals(True)
+        arche.setCurrentIndex(idx if idx >= 0 else 0)
+        arche.blockSignals(False)
+    # Al reabrir un proyecto ya escrito, el angulo activo vuelve a ser el suyo
+    # (cover frame y thumbnail lo leen aunque no se regenere el guion).
+    try:
+        from channel_strategy import set_active_archetype
+        saved = config.get('format_archetype')
+        set_active_archetype(saved if saved and saved != 'auto' else "")
+    except Exception:
+        pass
 
 
 def install_controls(tab, layout):
@@ -90,8 +140,22 @@ def install_controls(tab, layout):
     tab.format_strategy_combo.addItem('Flujo habitual', 'traditional')
     tab.format_strategy_combo.addItem('Microdocumental · 16:9 · 4–5 min', 'micro_documentary')
     row.addWidget(tab.format_strategy_combo)
+    tab.archetype_combo = QComboBox()
+    tab.archetype_combo.setToolTip('Cómo se cuenta el tema. "auto" lo elige por las palabras del tema y lo medido en Rendimiento.')
+    populate_archetype_combo(tab)
+    tab.archetype_combo.currentIndexChanged.connect(
+        lambda _i: hasattr(tab, 'auto_save_project') and tab.auto_save_project('cambio de ángulo'))
+    row.addWidget(tab.archetype_combo)
     button = QPushButton('Preparar / abrir piloto…')
     row.addWidget(button)
+    tab.btn_performance = QPushButton('Rendimiento')
+    tab.btn_performance.setToolTip('Mide YouTube + Facebook (30 dias) y actualiza lo que el guion sabe que funciona')
+    tab.btn_performance.clicked.connect(lambda: refresh_performance(tab))
+    row.addWidget(tab.btn_performance)
+    tab.btn_trends = QPushButton('Tendencias')
+    tab.btn_trends.setToolTip('Shorts de historia mas vistos del mes, Wikipedia y efemerides: temas listos con angulo y fecha')
+    tab.btn_trends.clicked.connect(lambda: open_trends(tab))
+    row.addWidget(tab.btn_trends)
     layout.addLayout(row)
 
     def change_channel():
@@ -265,7 +329,8 @@ class PilotDialog(QDialog):
                 write_json(self.out / 'experiment.json', manifest)
             seconds = min(330, max(210, self.tab.duration_slider.value()))
             provider = self.provider.currentData()
-            self.worker = PilotWorker(lambda: build(self.topic, self.out, channel=self.channel, seconds=seconds, editorial=self.editorial, approve=approve, assemble=assemble, image_provider=provider), self)
+            archetype = resolve_archetype_for_topic(self.tab, self.topic)
+            self.worker = PilotWorker(lambda: build(self.topic, self.out, channel=self.channel, seconds=seconds, editorial=self.editorial, approve=approve, assemble=assemble, image_provider=provider, format_archetype=archetype), self)
             for button in self.buttons:
                 button.setEnabled(False)
             self.editor.setReadOnly(True)
@@ -313,6 +378,180 @@ class PilotDialog(QDialog):
         else:
             self.save_editor_draft()
             super().closeEvent(event)
+
+
+class _PerformanceWorker(QThread):
+    """Corre performance_feedback.run() sin congelar la GUI."""
+    line = pyqtSignal(str)
+    done = pyqtSignal(dict)
+    failed = pyqtSignal(str)
+
+    def __init__(self, days=30, parent=None):
+        super().__init__(parent)
+        self.days = days
+
+    def run(self):
+        try:
+            import performance_feedback as pf
+            snap = pf.run(days=self.days, log=self.line.emit)
+            self.done.emit(snap)
+        except Exception as exc:
+            self.failed.emit(f"{type(exc).__name__}: {exc}")
+
+
+def refresh_performance(tab, days=30):
+    """Boton 'Rendimiento': snapshot YT+FB -> daily_shorts/performance_snapshot.json -> prompt."""
+    worker = getattr(tab, '_performance_worker', None)
+    if worker is not None and worker.isRunning():
+        tab.log("Rendimiento: ya se esta midiendo...")
+        return
+    btn = getattr(tab, 'btn_performance', None)
+    if btn is not None:
+        btn.setEnabled(False)
+        btn.setText('Midiendo…')
+
+    def _done(snap):
+        import performance_feedback as pf
+        for ln in pf.format_summary(snap).splitlines():
+            tab.log(ln)
+        tab.log("Rendimiento: el proximo guion ya lee estas conclusiones (bloque WHAT IS WORKING NOW).")
+        _restore()
+
+    def _failed(msg):
+        tab.log(f"Rendimiento: no se pudo medir ({msg})")
+        _restore()
+
+    def _restore():
+        if btn is not None:
+            btn.setEnabled(True)
+            btn.setText('Rendimiento')
+
+    worker = _PerformanceWorker(days=days, parent=tab)
+    worker.line.connect(tab.log)
+    worker.done.connect(_done)
+    worker.failed.connect(_failed)
+    tab._performance_worker = worker
+    worker.start()
+
+
+class _TrendsWorker(QThread):
+    line = pyqtSignal(str)
+    done = pyqtSignal(dict)
+    failed = pyqtSignal(str)
+
+    def run(self):
+        try:
+            import trend_report
+            self.done.emit(trend_report.build_report(log=self.line.emit))
+        except Exception as exc:
+            self.failed.emit(f"{type(exc).__name__}: {exc}")
+
+
+def apply_proposal_to_studio(tab, proposal):
+    """Carga tema + categoria + angulo de una propuesta en el formulario del Studio."""
+    parent = getattr(tab, 'parent_gui', None)
+    topic_widget = getattr(tab, 'topic_input', None) or getattr(parent, 'topic_input', None)
+    if topic_widget is not None and hasattr(topic_widget, 'setText'):
+        topic_widget.setText(str(proposal.get('topic') or ''))
+    cat = str(proposal.get('category') or '')
+    combo = getattr(parent, 'category_combo', None) if parent is not None else None
+    if cat and combo is not None:
+        idx = combo.findText(cat)
+        if idx >= 0:
+            combo.setCurrentIndex(idx)
+    arche = getattr(tab, 'archetype_combo', None)
+    if arche is not None:
+        idx = arche.findData(proposal.get('archetype') or 'auto')
+        arche.setCurrentIndex(idx if idx >= 0 else 0)
+    if hasattr(tab, 'log'):
+        gancho = f" | gancho: {proposal['hook']}" if proposal.get('hook') else ""
+        tab.log(f"Tendencias: cargado '{proposal.get('topic')}' [{proposal.get('archetype')}]{gancho}")
+
+
+class TrendsDialog(QDialog):
+    COLS = ("Tema", "Angulo", "Categoria", "Fecha", "Por que", "Gancho sugerido")
+
+    def __init__(self, tab, report, parent=None):
+        super().__init__(parent or tab)
+        self.tab = tab
+        self.proposals = list(report.get('proposals') or [])
+        self.setWindowTitle(f"Tendencias ({report.get('generated_at', '')})")
+        self.resize(1100, 520)
+        layout = QVBoxLayout(self)
+        pat = report.get('patterns') or {}
+        resumen = []
+        for a, g in (pat.get('by_archetype') or {}).items():
+            resumen.append(f"{a}: {g['n']} videos / {g['views']:,} vistas")
+        layout.addWidget(QLabel("YouTube nicho (30 dias, top 40): " + " · ".join(resumen[:5]) if resumen else "Sin muestreo de YouTube"))
+        self.table = QTableWidget(len(self.proposals), len(self.COLS))
+        self.table.setHorizontalHeaderLabels(self.COLS)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        for r, p in enumerate(self.proposals):
+            values = (p.get('topic', ''), p.get('archetype', ''), p.get('category', ''), p.get('date') or '',
+                      p.get('why', ''), p.get('hook', ''))
+            for c, v in enumerate(values):
+                self.table.setItem(r, c, QTableWidgetItem(str(v)))
+        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
+        self.table.doubleClicked.connect(lambda _i: self.use_selected())
+        layout.addWidget(self.table)
+        buttons = QHBoxLayout()
+        self.btn_use = QPushButton('Usar tema (tema + categoria + angulo)')
+        self.btn_use.clicked.connect(self.use_selected)
+        buttons.addWidget(self.btn_use)
+        btn_close = QPushButton('Cerrar')
+        btn_close.clicked.connect(self.reject)
+        buttons.addWidget(btn_close)
+        layout.addLayout(buttons)
+
+    def selected_proposal(self):
+        row = self.table.currentRow()
+        return self.proposals[row] if 0 <= row < len(self.proposals) else None
+
+    def use_selected(self):
+        p = self.selected_proposal()
+        if p is None:
+            return
+        apply_proposal_to_studio(self.tab, p)
+        self.accept()
+
+
+def open_trends(tab):
+    """Boton 'Tendencias': informe en un hilo y dialogo con temas cargables."""
+    worker = getattr(tab, '_trends_worker', None)
+    if worker is not None and worker.isRunning():
+        tab.log("Tendencias: ya se esta calculando...")
+        return
+    btn = getattr(tab, 'btn_trends', None)
+    if btn is not None:
+        btn.setEnabled(False)
+        btn.setText('Buscando…')
+
+    def _restore():
+        if btn is not None:
+            btn.setEnabled(True)
+            btn.setText('Tendencias')
+
+    def _done(report):
+        _restore()
+        import trend_report
+        for ln in trend_report.format_report(report).splitlines()[:12]:
+            tab.log(ln)
+        dlg = TrendsDialog(tab, report, parent=tab)
+        tab._trends_dialog = dlg
+        dlg.show()
+
+    def _failed(msg):
+        _restore()
+        tab.log(f"Tendencias: no se pudo calcular ({msg})")
+
+    worker = _TrendsWorker(parent=tab)
+    worker.line.connect(tab.log)
+    worker.done.connect(_done)
+    worker.failed.connect(_failed)
+    tab._trends_worker = worker
+    worker.start()
 
 
 def open_pilot(tab, *, generate=False):

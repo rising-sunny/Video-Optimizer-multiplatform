@@ -4,11 +4,16 @@ import re
 from channel_profiles import CHANNELS
 
 
+def channel_brand(channel):
+    """Nombre de marca del canal, en texto ('Stunning Facts of History')."""
+    return 'Stunning Facts of History' if channel == 'stunning-facts-of-history' else 'Stunning Revelations'
+
+
 def metadata_for_channel(metadata, channel):
     profile = CHANNELS[channel]
     result = copy.deepcopy(metadata)
     handle = profile['name']
-    brand = 'Stunning Facts of History' if channel == 'stunning-facts-of-history' else 'Stunning Revelations'
+    brand = channel_brand(channel)
     tag = 'StunningFactsofHistory' if channel == 'stunning-facts-of-history' else 'StunningRevelations'
     aliases = r'Stunning[\s_-]*(?:Facts[\s_-]*of[\s_-]*History|Revelations)'
     pattern = re.compile(r'(?<!\w)([@#]?)' + aliases + r'(?!\w)', re.I)

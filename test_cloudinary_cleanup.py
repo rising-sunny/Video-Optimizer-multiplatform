@@ -123,7 +123,9 @@ class OrdenDeLosPasos(unittest.TestCase):
     def test_el_codigo_borra_despues_de_obtener_el_permalink(self):
         import inspect
 
-        fuente = inspect.getsource(ig.upload_video)
+        # Desde 2026-09-22 el cuerpo vive en _upload_video_once (upload_video lo envuelve
+        # para la portada, que tambien pasa por Cloudinary).
+        fuente = inspect.getsource(ig._upload_video_once)
         pos_publicar = fuente.index("_publish_reel(")
         pos_media_info = fuente.index("_get_media_info(")
         # Desde 2026-09-15 hay DOS limpiezas: la del `except` (no se publico,
@@ -134,6 +136,14 @@ class OrdenDeLosPasos(unittest.TestCase):
                         "se borra Cloudinary ANTES de publicar el reel")
         self.assertLess(pos_media_info, pos_limpieza,
                         "se borra antes de confirmar el permalink")
+
+    def test_la_portada_se_borra_despues_de_publicar(self):
+        # Meta descarga la portada (cover_url) al procesar el contenedor.
+        import inspect
+
+        fuente = inspect.getsource(ig.upload_video)
+        self.assertLess(fuente.index("_upload_video_once("), fuente.index("_cleanup_cover("))
+        self.assertIn("finally:", fuente, "la copia de la portada se borra tambien si falla")
 
 
 if __name__ == "__main__":

@@ -869,17 +869,10 @@ class VideoOptimizerGUI(QMainWindow, ThumbnailsMixin):
             metadata_error_layout.addWidget(error_label)
             self.tabs.addTab(metadata_error_tab, "Metadata")
 
-        # Tab 5: Daily Shorts Studio (lazy load)
-        def _create_daily_shorts_tab():
-            from daily_shorts_tab import DailyShortsTab
-            tab = DailyShortsTab(self)
-            print(" Daily Shorts Studio inicializado (lazy)")
-            return tab
-        self._daily_shorts_wrapper = LazyTabWrapper(
-            "Daily Shorts Studio", _create_daily_shorts_tab,
-            self, attr_name='daily_shorts_tab'
-        )
-        self.tabs.addTab(self._daily_shorts_wrapper, "Daily Shorts")
+        # La pestana "Daily Shorts" (daily_shorts_tab.py) se retiro el 2026-09-22:
+        # nunca se usaba, se colgaba al cargar ("Loading voices...") y todo lo
+        # que hacia lo cubre Auto Video Studio. El pipeline de abajo
+        # (daily_short_pipeline.py) sigue: lo usan los microdocumentales y el CLI.
 
         # Conectar cambio de pestana para reparar mojibake en la pestana actual
         self.tabs.currentChanged.connect(self._on_tab_changed)

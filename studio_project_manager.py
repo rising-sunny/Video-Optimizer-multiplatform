@@ -50,6 +50,33 @@ class StudioProjectManager:
         except Exception:
             return False
 
+    def record_publish_results(self, results: dict) -> bool:
+        """Deja en el project.json que se publico y con que id (para cruzar metricas).
+
+        Se guarda en memoria (tab.publish_results) y en disco de inmediato: el
+        staging desde el que se publica se borra al terminar, y hasta 2026-09-21
+        el id de YouTube/Facebook no quedaba en ningun lado.
+        """
+        from publish_record import merge_publish_results
+
+        tab = self.studio_tab
+        current = {"publish_results": dict(getattr(tab, "publish_results", None) or {})}
+        merged = merge_publish_results(current, results or {})
+        tab.publish_results = merged["publish_results"]
+        path = getattr(tab, "current_project_path", None)
+        if not path or not os.path.exists(path):
+            return False
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+            data = merge_publish_results(data, results or {})
+            with open(path, "w", encoding="utf-8") as fh:
+                json.dump(data, fh, indent=2, ensure_ascii=False)
+            return True
+        except Exception as exc:
+            print(f"[Project] No se pudo registrar la publicacion: {exc}")
+            return False
+
     def prepare_isolated_project_for_topic(self, topic: str) -> bool:
         """Detach from the current folder when the topic changed or the storyboard is a refusal.
 
@@ -93,6 +120,7 @@ class StudioProjectManager:
             tab.log(f" Proyecto nuevo aislado: {reason}")
         tab.current_project_path = None
         tab._storyboard_just_generated = True
+        tab.publish_results = {}   # el proyecto nuevo no hereda las publicaciones del anterior
         if poisoned:
             tab.last_storyboard_data = None
         self._close_existing_timeline_editor()
@@ -567,6 +595,10 @@ class StudioProjectManager:
                 }
                 project_data['generated_video_data'] = video_data_to_save
 
+            # Donde se publico (ids/urls por red): lo cruza performance_feedback.py
+            if getattr(self.studio_tab, 'publish_results', None):
+                project_data['publish_results'] = dict(self.studio_tab.publish_results)
+
             # Agregar teaser_metadata al proyecto si existe (legacy)
             if teaser_metadata:
                 project_data['teaser_metadata'] = teaser_metadata
@@ -1021,6 +1053,9 @@ class StudioProjectManager:
                         }
                         project_data['generated_video_data'] = video_data_to_save
 
+                    if getattr(self.studio_tab, 'publish_results', None):
+                        project_data['publish_results'] = dict(self.studio_tab.publish_results)
+
                     project_data['progress'] = progress
 
                     project_data = self._persist_selected_music_for_project(
@@ -1394,6 +1429,7 @@ class StudioProjectManager:
             # Restaurar configuraciones
             config = project_data.get('config', {})
             restore_channel_config(self.studio_tab, config)
+            self.studio_tab.publish_results = dict(project_data.get('publish_results') or {})
 
             if hasattr(self.studio_tab, 'parent_gui'):
                 if hasattr(self.studio_tab.parent_gui, 'topic_input') and config.get('topic'):

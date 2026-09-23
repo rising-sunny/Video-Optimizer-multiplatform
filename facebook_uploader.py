@@ -584,7 +584,8 @@ def _finish_reel_upload(page_id: str, video_id: str, page_access_token: str, tit
 
 def save_upload_result(result_path: str, upload_result: dict, title: str = "",
                        description: str = "", video_state: str = "PUBLISHED",
-                       scheduled_publish_time: Optional[str | int | float] = None) -> dict:
+                       scheduled_publish_time: Optional[str | int | float] = None,
+                       extra: Optional[dict] = None) -> dict:
     result_file = Path(result_path)
     result_file.parent.mkdir(parents=True, exist_ok=True)
     normalized_state = _normalize_video_state(video_state, scheduled_publish_time=scheduled_publish_time)
@@ -604,22 +605,177 @@ def save_upload_result(result_path: str, upload_result: dict, title: str = "",
         "scheduled": normalized_state == "SCHEDULED",
         "publish_at": publish_at,
     }
+    for key, value in (extra or {}).items():
+        if value is not None:
+            save_data[key] = value
     _write_json(result_file, save_data)
     _archive_upload_result(result_file, save_data)
     return save_data
 
 
+# ---------------------------------------------------------------------------
+# Miniatura (2026-09-22): la misma que se eligio para YouTube.
+# POST /{video_id}/thumbnails con source=<imagen> e is_preferred=true. Sirve para
+# reels y videos de pagina: los reels de la pagina exponen ese edge con
+# is_preferred (verificado en vivo, solo lectura, el 22-09).
+# ---------------------------------------------------------------------------
+
+THUMBNAIL_RETRY_WAITS = (10, 30, 60)   # el video recien subido puede seguir procesando
+
+
+def _notify(on_status, message: str) -> None:
+    print(f"   [Facebook] {message}")
+    if on_status:
+        try:
+            on_status(message)
+        except Exception:
+            pass
+
+
+def _prepare_thumbnail(image_path: str, on_status=None) -> dict:
+    """JPEG/PNG reales (WebP y otros se convierten). Sin Pillow (VPS) manda JPG/PNG tal cual."""
+    try:
+        from thumbnail_publish import prepare_for_youtube
+    except ImportError:
+        ext = Path(image_path).suffix.lower()
+        if ext in (".jpg", ".jpeg", ".png"):
+            return {"path": str(image_path), "mimetype": "image/png" if ext == ".png" else "image/jpeg",
+                    "converted": False, "warnings": []}
+        raise ValueError(f"formato {ext} no soportado sin Pillow")
+    return prepare_for_youtube(image_path, log=lambda m: _notify(on_status, m.strip()))
+
+
+def classify_thumbnail_error(exc: BaseException) -> tuple[bool, str]:
+    """(reintentar?, explicacion para el panel)."""
+    text = _redact_tokens(str(exc))
+    low = text.lower()
+    m = re.search(r"error (\d+)", text)
+    code = int(m.group(1)) if m else None
+    if code == 190:
+        return False, "token de la pagina vencido o invalido (190)"
+    if code in (10, 200, 283) or "permission" in low:
+        return False, f"la pagina no tiene permiso para cambiar miniaturas ({code})"
+    if code in (4, 17, 32, 613):
+        return False, f"limite de llamadas de Meta ({code}); se puede poner despues en Meta Business Suite"
+    if code == 100 and not any(w in low for w in ("process", "not ready", "encod", "upload")):
+        return False, f"Facebook rechazo la imagen ({text[:160]})"
+    return True, text[:200]
+
+
+def set_video_thumbnail(video_id: str, page_access_token: str, prepared: dict, *,
+                        api_version: Optional[str] = None, sleep=time.sleep,
+                        waits=THUMBNAIL_RETRY_WAITS, on_status=None) -> dict:
+    """Sube la miniatura y la marca preferida, con reintentos. {ok, attempts, error, response}."""
+    attempts, last_error = 0, ""
+    for wait in (0,) + tuple(waits):
+        if wait:
+            _notify(on_status, f"Miniatura: reintento en {wait} s ({last_error[:120]})")
+            sleep(wait)
+        attempts += 1
+        try:
+            with open(prepared["path"], "rb") as fh:
+                resp = _request_json(
+                    "POST",
+                    _graph_api_url(f"{video_id}/thumbnails", api_version=api_version),
+                    data={"is_preferred": "true", "access_token": page_access_token},
+                    files={"source": (Path(prepared["path"]).name, fh, prepared["mimetype"])},
+                    headers={"User-Agent": "VideoOptimizerPro/1.0"},
+                )
+            if resp.get("success", True):
+                return {"ok": True, "attempts": attempts, "error": None, "response": resp}
+            last_error = f"respuesta sin exito: {resp}"
+        except Exception as exc:
+            retry, last_error = classify_thumbnail_error(exc)
+            if not retry:
+                break
+    return {"ok": False, "attempts": attempts, "error": last_error, "response": None}
+
+
+def verify_video_thumbnail(video_id: str, page_access_token: str, local_path: str, *,
+                           api_version: Optional[str] = None, fetch=None) -> dict:
+    """Compara la miniatura PREFERIDA que Facebook guardo con el archivo local."""
+    try:
+        import io as _io
+        from PIL import Image
+        from thumbnail_publish import served_matches_local
+    except ImportError:
+        return {"checked": False, "match": None, "reason": "sin Pillow para comparar"}
+    if fetch is None:
+        def fetch(url):
+            r = requests.get(url, timeout=REQUEST_TIMEOUT)
+            return r.content if r.status_code == 200 else None
+    data = _request_json(
+        "GET", _graph_api_url(f"{video_id}/thumbnails", api_version=api_version),
+        params={"fields": "uri,is_preferred,width,height", "access_token": page_access_token},
+    )
+    preferred = next((t for t in data.get("data") or [] if t.get("is_preferred")), None)
+    if not preferred or not preferred.get("uri"):
+        return {"checked": True, "match": False, "reason": "Facebook no tiene ninguna miniatura marcada como preferida"}
+    raw = fetch(preferred["uri"])
+    if not raw:
+        return {"checked": False, "match": None, "reason": "no se pudo bajar la miniatura preferida"}
+    served = Image.open(_io.BytesIO(raw)).convert("RGB")
+    with Image.open(local_path) as im:
+        ok, d = served_matches_local(served, im.convert("RGB"))
+    return {"checked": True, "match": ok, "distance": d,
+            "reason": "coincide con la local" if ok else "la preferida es otra imagen"}
+
+
+def apply_thumbnail(video_id: str, page_access_token: str, thumbnail_path: Optional[str], *,
+                    api_version: Optional[str] = None, on_status=None, sleep=time.sleep,
+                    waits=THUMBNAIL_RETRY_WAITS, verify: bool = True) -> dict:
+    """Prepara, sube, verifica e informa. Nunca lanza: un fallo de miniatura no tumba la publicacion."""
+    if not thumbnail_path:
+        _notify(on_status, "sin miniatura seleccionada: Facebook usa un fotograma")
+        return {"thumbnail_sent": None, "thumbnail_set": False, "thumbnail_error": None}
+    out = {"thumbnail_sent": str(thumbnail_path), "thumbnail_set": False, "thumbnail_error": None}
+    try:
+        prepared = _prepare_thumbnail(str(thumbnail_path), on_status=on_status)
+    except Exception as exc:
+        out["thumbnail_error"] = f"la miniatura no se pudo preparar ({exc})"
+        _notify(on_status, f"ATENCION: {out['thumbnail_error']}")
+        return out
+    _notify(on_status, f"Miniatura: subiendo {Path(thumbnail_path).name}...")
+    res = set_video_thumbnail(video_id, page_access_token, prepared, api_version=api_version,
+                              sleep=sleep, waits=waits, on_status=on_status)
+    if not res["ok"]:
+        out["thumbnail_error"] = res["error"]
+        _notify(on_status, f"ATENCION: la miniatura NO se puso ({res['error']}). "
+                           "Se puede cambiar a mano en Meta Business Suite.")
+        return out
+    out["thumbnail_set"] = True
+    if verify:
+        try:
+            out["thumbnail_verify"] = verify_video_thumbnail(video_id, page_access_token, prepared["path"],
+                                                             api_version=api_version)
+        except Exception as exc:
+            out["thumbnail_verify"] = {"checked": False, "match": None, "reason": f"{type(exc).__name__}: {exc}"}
+        v = out["thumbnail_verify"]
+        if v.get("match") is False:
+            _notify(on_status, f"ATENCION: la miniatura se envio pero {v['reason']}.")
+        else:
+            _notify(on_status, "Miniatura puesta" + (" y verificada" if v.get("match") else "") + ".")
+    else:
+        _notify(on_status, "Miniatura puesta.")
+    return out
+
+
+def _page_context(api_version: Optional[str] = None) -> tuple[str, str, dict]:
+    page_access_token, page_id = _resolve_page_access_token(api_version=api_version)
+    page_info = _get_page_identity(page_access_token, api_version=api_version)
+    return page_access_token, str(page_info.get("id") or page_id).strip(), page_info
+
+
 def upload_video(video_path: str, title: str, description: str = "",
                  video_state: str = "PUBLISHED", on_progress=None,
                  scheduled_publish_time: Optional[str | int | float] = None,
-                 api_version: Optional[str] = None) -> dict:
+                 api_version: Optional[str] = None, thumbnail_path: Optional[str] = None,
+                 on_status=None, page_context: Optional[tuple] = None) -> dict:
     video_file = Path(video_path)
     if not video_file.exists():
         raise FileNotFoundError(f"Video not found: {video_file}")
 
-    page_access_token, page_id = _resolve_page_access_token(api_version=api_version)
-    page_info = _get_page_identity(page_access_token, api_version=api_version)
-    final_page_id = str(page_info.get("id") or page_id).strip()
+    page_access_token, final_page_id, page_info = page_context or _page_context(api_version)
 
     start_data = _start_reel_upload(final_page_id, page_access_token, api_version=api_version)
     video_id = str(start_data.get("video_id") or "").strip()
@@ -675,6 +831,9 @@ def upload_video(video_path: str, title: str, description: str = "",
         "response": publish_response,
         "status_response": latest_state,
     }
+    if thumbnail_path is not None:
+        result.update(apply_thumbnail(video_id, page_access_token, thumbnail_path,
+                                      api_version=api_version, on_status=on_status))
     return result
 
 
@@ -760,16 +919,15 @@ def _finish_video_post_upload(page_id: str, video_id: str, upload_session_id: st
 def upload_video_post(video_path: str, title: str, description: str = "",
                       video_state: str = "PUBLISHED", on_progress=None,
                       scheduled_publish_time: Optional[str | int | float] = None,
-                      api_version: Optional[str] = None) -> dict:
+                      api_version: Optional[str] = None, thumbnail_path: Optional[str] = None,
+                      on_status=None, page_context: Optional[tuple] = None) -> dict:
     """Upload a long-form video as a regular Facebook Page video post (not a Reel)."""
     video_file = Path(video_path)
     if not video_file.exists():
         raise FileNotFoundError(f"Video not found: {video_file}")
 
     file_size = os.path.getsize(video_path)
-    page_access_token, page_id = _resolve_page_access_token(api_version=api_version)
-    page_info = _get_page_identity(page_access_token, api_version=api_version)
-    final_page_id = str(page_info.get("id") or page_id).strip()
+    page_access_token, final_page_id, page_info = page_context or _page_context(api_version)
 
     if on_progress:
         on_progress(0, file_size)
@@ -817,7 +975,7 @@ def upload_video_post(video_path: str, title: str, description: str = "",
     final_state = _normalize_video_state(video_state, scheduled_publish_time=scheduled_publish_time)
     permalink_url = f"https://www.facebook.com/video/{video_id}"
 
-    return {
+    result = {
         "video_id": video_id,
         "url": permalink_url if final_state == "PUBLISHED" else None,
         "permalink_url": permalink_url,
@@ -827,14 +985,37 @@ def upload_video_post(video_path: str, title: str, description: str = "",
         "page_name": str(page_info.get("name") or "").strip() or None,
         "response": finish_data,
     }
+    if thumbnail_path is not None:
+        result.update(apply_thumbnail(video_id, page_access_token, thumbnail_path,
+                                      api_version=api_version, on_status=on_status))
+    return result
+
+
+def _find_thumbnail(output_dir: Path) -> Optional[Path]:
+    try:
+        from thumbnail_publish import find_staged_thumbnail
+        return find_staged_thumbnail(output_dir)
+    except ImportError:                       # VPS sin el modulo: los nombres de siempre
+        for name in ("thumbnail.jpg", "thumbnail.jpeg", "thumbnail.png"):
+            if (output_dir / name).is_file():
+                return output_dir / name
+        return None
+
+
+def _seo_enabled() -> bool:
+    return str(os.getenv("FACEBOOK_SEO", "1")).strip().lower() not in ("0", "false", "no", "off")
 
 
 def upload_from_metadata(output_dir: str, video_state: str = "PUBLISHED", on_progress=None,
                          scheduled_publish_time: Optional[str | int | float] = None,
-                         upload_type: str = "reel") -> dict:
+                         upload_type: str = "reel", on_status=None, optimize: bool = True,
+                         thumbnail: bool = True) -> dict:
     """Upload a video to Facebook from a directory containing a video file and metadata JSON.
 
     upload_type: 'reel' (default, short vertical video) or 'video' (long-form page video post).
+    optimize: titulo/descripcion/hashtags con la investigacion de YouTube (facebook_metadata);
+              FACEBOOK_SEO=0 en .env lo apaga.
+    thumbnail: pone la miniatura de la carpeta (la misma que usa YouTube: thumbnail.*).
     """
     output_dir = Path(output_dir)
     metadata = _load_upload_metadata(output_dir)
@@ -847,7 +1028,24 @@ def upload_from_metadata(output_dir: str, video_state: str = "PUBLISHED", on_pro
 
     title = metadata.get("title") or output_dir.name
     description = metadata.get("description") or ""
+    page_context = _page_context()
+    page_name = str(page_context[2].get("name") or "").strip()
 
+    seo = None
+    if optimize and _seo_enabled():
+        try:
+            from facebook_metadata import prepare_facebook_metadata
+            seo = prepare_facebook_metadata(metadata, brand=page_name, is_long=upload_type == "video",
+                                            log=lambda m: _notify(on_status, str(m).strip()))
+            title = seo["title"] or title
+            description = seo["description"] or description
+            _notify(on_status, seo["summary"])
+        except ImportError:
+            pass
+        except Exception as exc:
+            _notify(on_status, f"optimizacion no disponible ({type(exc).__name__}: {exc}); se usa la metadata tal cual")
+
+    thumb = _find_thumbnail(output_dir) if thumbnail else None
     uploader = upload_video_post if upload_type == "video" else upload_video
     result = uploader(
         video_path=str(video_path),
@@ -856,7 +1054,18 @@ def upload_from_metadata(output_dir: str, video_state: str = "PUBLISHED", on_pro
         video_state=video_state,
         on_progress=on_progress,
         scheduled_publish_time=scheduled_publish_time,
+        thumbnail_path=str(thumb) if thumb else ("" if thumbnail else None),
+        on_status=on_status,
+        page_context=page_context,
     )
+    result["title_sent"] = title
+    result["title_original"] = metadata.get("title") or None
+    if seo:
+        result["hashtags_sent"] = seo["hashtags"]
+        if seo.get("research"):
+            result["research_used"] = seo["research"]      # Instagram la reusa (misma tanda)
+        result["facebook_seo"] = {k: seo.get(k) for k in ("summary", "keyword", "hook_added", "lead_repaired",
+                                                         "hashtags_dropped", "source")}
     save_upload_result(
         result_path=output_dir / "facebook_upload_result.json",
         upload_result=result,
@@ -864,6 +1073,8 @@ def upload_from_metadata(output_dir: str, video_state: str = "PUBLISHED", on_pro
         description=description,
         video_state=video_state,
         scheduled_publish_time=scheduled_publish_time,
+        extra={k: result.get(k) for k in ("title_original", "hashtags_sent", "facebook_seo", "thumbnail_sent",
+                                          "thumbnail_set", "thumbnail_error", "thumbnail_verify")},
     )
     return result
 

@@ -171,9 +171,18 @@ def packaging_digest(manifest):
     return hashlib.sha256(json.dumps({k: manifest[k] for k in keys}, sort_keys=True).encode()).hexdigest()
 
 
-def prepare(topic, out, *, channel=None, seconds=270, editorial=None, client=None):
+def prepare(topic, out, *, channel=None, seconds=270, editorial=None, client=None, format_archetype=None):
     channel = channel or active_channel()
     profile = load_profile(channel)
+    # Angulo narrativo: si viene, manda en el packaging (gancho, titulos, thumbnail).
+    angle_block = ""
+    try:
+        from channel_strategy import set_active_archetype, build_archetype_prompt_instructions
+        if format_archetype:
+            set_active_archetype(format_archetype)
+        angle_block = build_archetype_prompt_instructions()
+    except Exception:
+        angle_block = ""
     plan = runtime_plan(seconds, profile.get("micro_documentary", {}).get("effective_wpm", 120))
     if not topic.strip():
         raise ValueError("Topic is required")
@@ -192,7 +201,8 @@ Use reliable identifiable historical sources; never invent a citation. Unknown e
 Do not convert hypotheses into facts. No generic introduction or channel logo.
 Thumbnail: one dominant subject, restrained historical editorial composition, silhouette/focal contrast,
 legible small, 0–4 words; no clutter, fantasy lighting, exaggerated faces or generic epic movie poster.
-The click promise and hook must be supported by the claims. Do not write the full script yet."""
+The click promise and hook must be supported by the claims. Do not write the full script yet.
+{angle_block}"""
     data = _json_generate(client, prompt)
     errors = validate_packaging(data, plan["effective_wpm"])
     if errors:
@@ -319,7 +329,7 @@ Later visual_class can also be orientation. Deliver a complete ending; never pad
             "status": "storyboard_ready", "experiment_id": manifest['experiment_id']}
 
 
-def build(topic, out, *, channel=None, seconds=270, editorial=None, approve=False, assemble=False, client=None, image_provider=None):
+def build(topic, out, *, channel=None, seconds=270, editorial=None, approve=False, assemble=False, client=None, image_provider=None, format_archetype=None):
     out = Path(out).resolve()
     path = out / "experiment.json"
     channel = channel or active_channel()
@@ -335,7 +345,7 @@ def build(topic, out, *, channel=None, seconds=270, editorial=None, approve=Fals
                                 and not (existing_project.get('storyboard') or {}).get('segments'))
         if (out / 'storyboard.json').exists() or (existing_project_path.exists() and not matching_empty_draft):
             raise ValueError('This folder already contains another project; choose an empty pilot folder')
-        manifest = prepare(topic, out, channel=channel, seconds=seconds, editorial=editorial, client=client)
+        manifest = prepare(topic, out, channel=channel, seconds=seconds, editorial=editorial, client=client, format_archetype=format_archetype)
         # Approval must refer to packaging the user has already seen.
         return {"status": "awaiting_editorial_review", "output_dir": str(out), "manifest": manifest}
     if not approve:
@@ -367,7 +377,8 @@ def build(topic, out, *, channel=None, seconds=270, editorial=None, approve=Fals
     manifest.update(script_word_count=len(sb['script'].split()), estimated_runtime_seconds=estimate(sb['script'], manifest['effective_wpm']), status="storyboard_ready")
     write_json(path, manifest)
     write_json(out / "storyboard.json", sb)
-    metadata = {"title": manifest['selected_title'], "description": sb['script'], "tags": ["history", "documentary"], "is_short": False, "channel_profile": channel}
+    metadata = {"title": manifest['selected_title'], "description": sb['script'], "tags": [topic],
+                "topic": topic, "script_excerpt": sb['script'][:4000], "is_short": False, "channel_profile": channel}
     write_json(out / "youtube_metadata.json", metadata)
     write_json(out / "metadata.json", metadata)
     project.setdefault('config', {}).update({"topic": topic, "channel_profile": channel, "format_strategy": "micro_documentary", "platform_key": "youtube", "video_format": "16:9", "duration": round(manifest['target_runtime_seconds']), "language": "en"})

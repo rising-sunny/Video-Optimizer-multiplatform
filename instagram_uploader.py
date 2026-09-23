@@ -264,17 +264,21 @@ def _content_publishing_limit(ig_user_id: str, access_token: str, api_version: O
 
 
 def _create_reel_container(ig_user_id: str, access_token: str, video_url: str, caption: str,
-                           share_to_feed: bool = True, api_version: Optional[str] = None) -> dict:
+                           share_to_feed: bool = True, api_version: Optional[str] = None,
+                           cover_url: Optional[str] = None) -> dict:
+    params = {
+        "media_type": "REELS",
+        "video_url": video_url,
+        "caption": caption,
+        "share_to_feed": str(bool(share_to_feed)).lower(),
+        "access_token": access_token,
+    }
+    if cover_url:
+        params["cover_url"] = cover_url
     return _request_json(
         "POST",
         _graph_api_url(f"{ig_user_id}/media", api_version=api_version),
-        params={
-            "media_type": "REELS",
-            "video_url": video_url,
-            "caption": caption,
-            "share_to_feed": str(bool(share_to_feed)).lower(),
-            "access_token": access_token,
-        },
+        params=params,
         headers={"User-Agent": "VideoOptimizerPro/1.0"},
     )
 
@@ -327,7 +331,8 @@ def is_transient_container_error(message) -> bool:
 
 def _create_container_with_retries(ig_user_id: str, access_token: str, video_url: str, caption: str,
                                    share_to_feed: bool, api_version: Optional[str] = None,
-                                   attempts: Optional[int] = None, sleep=time.sleep, on_status=None) -> tuple:
+                                   attempts: Optional[int] = None, sleep=time.sleep, on_status=None,
+                                   cover_url: Optional[str] = None) -> tuple:
     """Crea el contenedor y espera a que este listo; reintenta si Meta falla de su lado.
 
     Reusa la MISMA URL de Cloudinary: el video ya esta publico, no hace falta
@@ -338,6 +343,7 @@ def _create_container_with_retries(ig_user_id: str, access_token: str, video_url
         container = _create_reel_container(
             ig_user_id=ig_user_id, access_token=access_token, video_url=video_url,
             caption=caption, share_to_feed=share_to_feed, api_version=api_version,
+            **({"cover_url": cover_url} if cover_url else {}),
         )
         container_id = str(container.get("id") or "").strip()
         if not container_id:
@@ -358,18 +364,22 @@ def _create_container_with_retries(ig_user_id: str, access_token: str, video_url
 
 
 def _create_resumable_container(ig_user_id: str, access_token: str, caption: str,
-                                share_to_feed: bool = True, api_version: Optional[str] = None) -> dict:
+                                share_to_feed: bool = True, api_version: Optional[str] = None,
+                                cover_url: Optional[str] = None) -> dict:
     """Contenedor de reel que espera el binario por POST (no una URL)."""
+    params = {
+        "media_type": "REELS",
+        "upload_type": "resumable",
+        "caption": caption,
+        "share_to_feed": str(bool(share_to_feed)).lower(),
+        "access_token": access_token,
+    }
+    if cover_url:
+        params["cover_url"] = cover_url
     return _request_json(
         "POST",
         _graph_api_url(f"{ig_user_id}/media", api_version=api_version),
-        params={
-            "media_type": "REELS",
-            "upload_type": "resumable",
-            "caption": caption,
-            "share_to_feed": str(bool(share_to_feed)).lower(),
-            "access_token": access_token,
-        },
+        params=params,
         headers={"User-Agent": "VideoOptimizerPro/1.0"},
     )
 
@@ -452,10 +462,11 @@ def _upload_binary_resumable(upload_uri: str, access_token: str, video_path: str
 
 def _publish_via_resumable(ig_user_id: str, access_token: str, video_path: str, caption: str,
                            share_to_feed: bool, api_version: Optional[str] = None,
-                           on_progress=None, on_status=None) -> tuple:
+                           on_progress=None, on_status=None, cover_url: Optional[str] = None) -> tuple:
     """Contenedor resumable + binario + espera. Devuelve (container_id, estado)."""
     container = _create_resumable_container(ig_user_id, access_token, caption,
-                                            share_to_feed=share_to_feed, api_version=api_version)
+                                            share_to_feed=share_to_feed, api_version=api_version,
+                                            **({"cover_url": cover_url} if cover_url else {}))
     container_id = str(container.get("id") or "").strip()
     if not container_id:
         raise RuntimeError(f"Instagram did not return a media container id: {container}")
@@ -494,7 +505,7 @@ def _get_media_info(media_id: str, access_token: str, api_version: Optional[str]
 
 
 def save_upload_result(result_path: str, upload_result: dict, title: str = "",
-                       description: str = "", caption: str = "") -> dict:
+                       description: str = "", caption: str = "", extra: Optional[dict] = None) -> dict:
     result_file = Path(result_path)
     result_file.parent.mkdir(parents=True, exist_ok=True)
     save_data = {
@@ -515,6 +526,9 @@ def save_upload_result(result_path: str, upload_result: dict, title: str = "",
         "cloudinary_url": upload_result.get("cloudinary_url"),
         "cloudinary_public_id": upload_result.get("cloudinary_public_id"),
     }
+    for key, value in (extra or {}).items():
+        if value is not None:
+            save_data[key] = value
     _write_json(result_file, save_data)
     _archive_upload_result(result_file, save_data)
     return save_data
@@ -551,13 +565,135 @@ def _cleanup_cloudinary(public_id: Optional[str]) -> dict:
         return {"deleted": False, "error": str(e)[:200]}
 
 
+# ---------------------------------------------------------------------------
+# Portada (2026-09-22): la misma miniatura que YouTube y Facebook. La API solo la
+# acepta al crear el contenedor, como cover_url (URL publica, JPEG): se sube la
+# imagen a Cloudinary, Meta la descarga al procesar y despues se borra. Despues de
+# publicado ya no se puede cambiar por API (si, a mano en la app de Instagram).
+# ---------------------------------------------------------------------------
+
+COVER_MAX_BYTES = 8 * 1024 * 1024
+
+
+def _prepare_cover(cover_path: str, on_status=None) -> dict:
+    """JPEG <= 8 MB subido a Cloudinary. Devuelve {url, public_id, local}. Lanza si falla."""
+    from cloudinary_uploader import upload_image
+    try:
+        from thumbnail_publish import prepare_for_youtube
+        prepared = prepare_for_youtube(cover_path, max_bytes=COVER_MAX_BYTES, jpeg_only=True,
+                                       log=lambda m: _status(on_status, m.strip()))
+        local = prepared["path"]
+    except ImportError:                                   # VPS sin Pillow: solo JPEG tal cual
+        if Path(cover_path).suffix.lower() not in (".jpg", ".jpeg"):
+            raise ValueError("la portada tiene que ser JPEG y no hay Pillow para convertirla")
+        local = str(cover_path)
+    _status(on_status, f"Portada: subiendo {Path(cover_path).name} a Cloudinary (Instagram pide una URL)...")
+    payload = upload_image(local, folder=_env("CLOUDINARY_UPLOAD_FOLDER", "video_optimizer/instagram"),
+                           tags=["video-optimizer", "instagram", "cover"])
+    return {"url": str(payload.get("secure_url") or "").strip(), "public_id": payload.get("public_id"),
+            "local": local}
+
+
+def _cleanup_cover(public_id: Optional[str]) -> None:
+    if not public_id:
+        return
+    try:
+        from cloudinary_uploader import delete_video
+        delete_video(str(public_id), resource_type="image")
+    except Exception as exc:
+        print(f"   [Cloudinary] No se pudo borrar la portada {public_id}: {exc}")
+
+
+def cover_rejected(exc: BaseException) -> bool:
+    """El error habla de la portada (no del video): se reintenta sin ella."""
+    low = str(exc).lower()
+    return any(w in low for w in ("cover", "thumbnail", "thumb_offset", "image"))
+
+
+def verify_cover(media_id: str, access_token: str, local_path: str, api_version: Optional[str] = None,
+                 fetch=None) -> dict:
+    """Compara la portada que muestra Instagram (thumbnail_url) con la local."""
+    try:
+        import io as _io
+        from PIL import Image
+        from thumbnail_publish import served_matches_local
+    except ImportError:
+        return {"checked": False, "match": None, "reason": "sin Pillow para comparar"}
+    info = _request_json("GET", _graph_api_url(media_id, api_version=api_version),
+                         params={"fields": "thumbnail_url", "access_token": access_token},
+                         headers={"User-Agent": "VideoOptimizerPro/1.0"})
+    url = str(info.get("thumbnail_url") or "").strip()
+    if not url:
+        return {"checked": False, "match": None, "reason": "Instagram no devolvio thumbnail_url"}
+    if fetch is None:
+        def fetch(u):
+            r = requests.get(u, timeout=REQUEST_TIMEOUT)
+            return r.content if r.status_code == 200 else None
+    raw = fetch(url)
+    if not raw:
+        return {"checked": False, "match": None, "reason": "no se pudo bajar la portada"}
+    served = Image.open(_io.BytesIO(raw)).convert("RGB")
+    with Image.open(local_path) as im:
+        ok, d = served_matches_local(served, im.convert("RGB"))
+    return {"checked": True, "match": ok, "distance": d,
+            "reason": "coincide con la local" if ok else "Instagram muestra otra imagen"}
+
+
 def upload_video(video_path: str, title: str, description: str = "", share_to_feed: Optional[bool] = None,
-                 on_progress=None, api_version: Optional[str] = None, on_status=None) -> dict:
+                 on_progress=None, api_version: Optional[str] = None, on_status=None,
+                 cover_path: Optional[str] = None, identity: Optional[dict] = None) -> dict:
+    """Publica el reel. cover_path: None = sin portada (como antes); '' = no habia miniatura."""
+    thumb = {"thumbnail_sent": str(cover_path) if cover_path else None, "thumbnail_set": False,
+             "thumbnail_error": None}
+    cover = {}
+    if cover_path:
+        try:
+            cover = _prepare_cover(str(cover_path), on_status=on_status)
+        except Exception as exc:
+            thumb["thumbnail_error"] = f"la portada no se pudo preparar ({exc})"
+            _status(on_status, f"ATENCION: {thumb['thumbnail_error']}; Instagram elige la portada")
+    elif cover_path is not None:
+        _status(on_status, "sin miniatura seleccionada: Instagram elige la portada")
+    try:
+        try:
+            result = _upload_video_once(video_path, title, description, share_to_feed, on_progress,
+                                        api_version, on_status, cover.get("url"), identity)
+        except Exception as exc:
+            if not (cover.get("url") and cover_rejected(exc)):
+                raise
+            thumb["thumbnail_error"] = f"Meta rechazo la portada ({str(exc)[:160]})"
+            _status(on_status, f"ATENCION: {thumb['thumbnail_error']}; se publica sin ella")
+            cover = dict(cover, url=None)
+            result = _upload_video_once(video_path, title, description, share_to_feed, on_progress,
+                                        api_version, on_status, None, identity)
+    finally:
+        _cleanup_cover(cover.get("public_id"))
+    if cover.get("url"):
+        thumb["thumbnail_set"] = True
+        try:
+            thumb["thumbnail_verify"] = verify_cover(result["media_id"], result.get("_access_token") or "",
+                                                     cover["local"], api_version=api_version)
+        except Exception as exc:
+            thumb["thumbnail_verify"] = {"checked": False, "match": None, "reason": f"{type(exc).__name__}: {exc}"}
+        v = thumb["thumbnail_verify"]
+        if v.get("match") is False:
+            _status(on_status, f"ATENCION: la portada se envio pero {v['reason']}.")
+        else:
+            _status(on_status, "Portada puesta" + (" y verificada." if v.get("match") else "."))
+    result.pop("_access_token", None)
+    if cover_path is not None:
+        result.update(thumb)
+    return result
+
+
+def _upload_video_once(video_path: str, title: str, description: str, share_to_feed: Optional[bool],
+                       on_progress, api_version: Optional[str], on_status, cover_url: Optional[str],
+                       identity: Optional[dict]) -> dict:
     video_file = Path(video_path)
     if not video_file.exists():
         raise FileNotFoundError(f"Video not found: {video_file}")
 
-    identity = _resolve_instagram_identity(api_version=api_version)
+    identity = identity or _resolve_instagram_identity(api_version=api_version)
     access_token = str(identity.get("access_token") or "").strip()
     ig_user_id = str(identity.get("ig_user_id") or "").strip()
     if not ig_user_id:
@@ -575,8 +711,11 @@ def upload_video(video_path: str, title: str, description: str = "", share_to_fe
             container_id, container_status = _publish_via_resumable(
                 ig_user_id, access_token, str(video_file), caption, publish_to_feed,
                 api_version=api_version, on_progress=on_progress, on_status=on_status,
+                **({"cover_url": cover_url} if cover_url else {}),
             )
         except Exception as exc:
+            if cover_url and cover_rejected(exc):
+                raise                                   # upload_video reintenta sin portada
             _status(on_status, f"Subida directa fallo ({exc}); probando el camino por URL (Cloudinary)...")
             container_id = None
 
@@ -606,6 +745,7 @@ def upload_video(video_path: str, title: str, description: str = "", share_to_fe
                 share_to_feed=publish_to_feed,
                 api_version=api_version,
                 on_status=on_status,
+                **({"cover_url": cover_url} if cover_url else {}),
             )
         _status(on_status, "Reel procesado; publicando...")
         publish_response = _publish_reel(
@@ -652,11 +792,33 @@ def upload_video(video_path: str, title: str, description: str = "", share_to_fe
         "publish_response": publish_response,
         "media_info": media_info,
         "share_to_feed": publish_to_feed,
+        "_access_token": access_token,            # solo para verificar la portada; se quita antes de devolver
     }
 
 
+def _find_cover(output_dir: Path) -> Optional[Path]:
+    try:
+        from thumbnail_publish import find_staged_thumbnail
+        return find_staged_thumbnail(output_dir)
+    except ImportError:
+        for name in ("thumbnail.jpg", "thumbnail.jpeg"):
+            if (output_dir / name).is_file():
+                return output_dir / name
+        return None
+
+
+def _seo_enabled() -> bool:
+    return str(os.getenv("INSTAGRAM_SEO", "1")).strip().lower() not in ("0", "false", "no", "off")
+
+
 def upload_from_metadata(output_dir: str, share_to_feed: Optional[bool] = None, on_progress=None,
-                         on_status=None) -> dict:
+                         on_status=None, optimize: bool = True, thumbnail: bool = True) -> dict:
+    """Publica el reel de una carpeta con video + metadata.
+
+    optimize: primera linea (= titulo), cuerpo y hashtags con la investigacion de YouTube
+              (facebook_metadata.prepare_instagram_metadata); INSTAGRAM_SEO=0 lo apaga.
+    thumbnail: la miniatura de la carpeta (thumbnail.*) como portada del reel.
+    """
     output_dir = Path(output_dir)
     metadata = _load_upload_metadata(output_dir)
 
@@ -668,6 +830,23 @@ def upload_from_metadata(output_dir: str, share_to_feed: Optional[bool] = None, 
 
     title = metadata.get("title") or output_dir.name
     description = metadata.get("description") or ""
+    identity = _resolve_instagram_identity()
+    brand = identity.get("instagram_name") or identity.get("page_name") or ""
+
+    seo = None
+    if optimize and _seo_enabled():
+        try:
+            from facebook_metadata import prepare_instagram_metadata
+            seo = prepare_instagram_metadata(metadata, brand=brand, log=lambda m: _status(on_status, str(m).strip()))
+            title = seo["title"] or title
+            description = seo["description"] or description
+            _status(on_status, seo["summary"])
+        except ImportError:
+            pass
+        except Exception as exc:
+            _status(on_status, f"optimizacion no disponible ({type(exc).__name__}: {exc}); se usa la metadata tal cual")
+
+    cover = _find_cover(output_dir) if thumbnail else None
     result = upload_video(
         video_path=str(video_path),
         title=title,
@@ -675,13 +854,23 @@ def upload_from_metadata(output_dir: str, share_to_feed: Optional[bool] = None, 
         share_to_feed=share_to_feed,
         on_progress=on_progress,
         on_status=on_status,
+        cover_path=str(cover) if cover else ("" if thumbnail else None),
+        identity=identity,
     )
+    result["title_sent"] = title
+    result["title_original"] = metadata.get("title") or None
+    if seo:
+        result["hashtags_sent"] = seo["hashtags"]
+        result["instagram_seo"] = {k: seo.get(k) for k in ("summary", "keyword", "lead_repaired",
+                                                          "hashtags_dropped", "source")}
     save_upload_result(
         result_path=output_dir / "instagram_upload_result.json",
         upload_result=result,
         title=title,
         description=description,
         caption=_compose_caption(title, description),
+        extra={k: result.get(k) for k in ("title_original", "hashtags_sent", "instagram_seo", "thumbnail_sent",
+                                          "thumbnail_set", "thumbnail_error", "thumbnail_verify")},
     )
     return result
 

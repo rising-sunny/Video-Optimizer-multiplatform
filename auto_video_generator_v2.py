@@ -922,19 +922,22 @@ Reglas:
                                  style: str = "Estilo Realista / Cinematografico",
                                  language: str = 'es',
                                  rate: str = "+0%",
-                                 pre_research_snippets: list = None):
+                                 pre_research_snippets: list = None,
+                                 format_archetype: str = ""):
         """Delega a StoryboardGenerator si esta disponible"""
         if self.storyboard_generator:
             return self.storyboard_generator.generate_storyboard_data(
                 topic, category, platform, custom_duration, voice_id, find_auto_music, style, language,
-                rate=rate, pre_research_snippets=pre_research_snippets
+                rate=rate, pre_research_snippets=pre_research_snippets,
+                format_archetype=format_archetype,
             )
         self.log("âš ï¸ StoryboardGenerator no disponible, usando fallback bÃ¡sico")
         return None
 
     def generate_short_teaser_from_long_video(self, long_video_storyboard, language='es', voice_id=None,
                                                disable_wikimedia=False, existing_teaser_storyboard=None,
-                                               rate="+0%"):
+                                               rate="+0%",
+                                               mode='standalone'):
         """
         Genera un Short teaser (30-60 segundos) en formato vertical 9:16 a partir de un video largo.
         El teaser incluye un hook, resumen del contenido y CTA al final.
@@ -964,7 +967,7 @@ Reglas:
         if self.storyboard_generator:
             return self.storyboard_generator.generate_short_teaser_from_long_video(
                 long_video_storyboard, language, voice_id, disable_wikimedia, existing_teaser_storyboard,
-                rate=rate
+                rate=rate, mode=mode
             )
         # Fallback: implementaciÃ³n bÃ¡sica (no recomendado)
         self.log("âš ï¸ StoryboardGenerator no disponible, usando fallback bÃ¡sico")
@@ -1261,10 +1264,45 @@ Reglas:
         except Exception:
             return 0.0
 
+    def log_hook_qa(self, storyboard_data=None):
+        """QA DEL GANCHO: la primera frase hablada contra la regla medida (cifra o pregunta, la fecha despues)."""
+        sb = storyboard_data if isinstance(storyboard_data, dict) else (getattr(self, '_current_storyboard_data', None) or {})
+        segments = (sb.get('storyboard') or {}).get('segments') if isinstance(sb.get('storyboard'), dict) else sb.get('segments')
+        segments = segments or []
+        if not segments:
+            return []
+        seg0 = segments[0] if isinstance(segments[0], dict) else {}
+        text = ''
+        for key in ('narration', 'narration_text', 'text', 'voiceover', 'script'):
+            if seg0.get(key):
+                text = str(seg0[key]); break
+        if not text.strip():
+            return []
+        try:
+            from channel_strategy import hook_report, first_sentence
+            ok, verdicts = hook_report(text)
+            sentence = first_sentence(text)
+        except Exception as exc:
+            self.log(f"  [--] QA del gancho no disponible: {exc}")
+            return []
+        self.log("")
+        self.log("=" * 60)
+        self.log("QA DEL GANCHO (primeros segundos)")
+        self.log("=" * 60)
+        self.log(f"  Primera frase: \"{sentence[:120]}\"")
+        for v in verdicts:
+            self.log(f"  {v}")
+        return [v for v in verdicts if v.startswith('[FAIL]') or v.startswith('[WARN]')]
+
     def log_audio_qa(self, video_path=None, audio_path=None, subtitle_sync=None):
         """Imprime el resumen de QA de audio/sync y devuelve los problemas."""
         qa = dict(getattr(self, '_audio_qa', None) or {})
         problems = []
+        try:
+            hook_problems = self.log_hook_qa()
+            problems.extend(f"gancho: {h}" for h in hook_problems if h.startswith('[FAIL]'))
+        except Exception:
+            pass
         lines = ["", "=" * 60, "QA DE AUDIO / SINCRONIA", "=" * 60]
 
         # 1. Auto-ducking: si falla, la musica se come la voz.
@@ -2325,6 +2363,7 @@ Reglas:
         
         self.log(f"\nðŸš€ ENSAMBLANDO VIDEO (Modo: {assembly_mode} / {visual_mode})...")
         self.log(f"   Transicion seleccionada: {transition_type} ({transition_duration}s)")
+        self._current_storyboard_data = storyboard_data
         if enable_transition_sfx is None:
             enable_transition_sfx = storyboard_data.get('_enable_transition_sfx')
         if enable_transition_sfx is None:

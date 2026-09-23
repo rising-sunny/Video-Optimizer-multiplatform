@@ -186,6 +186,12 @@ def upload_video(
     is_short: bool = True,
     on_progress=None,
     channel_profile=None,
+    tag_research: bool = True,
+    research_topic: str = None,
+    research_script: str = None,
+    on_status=None,
+    title_mode: str = None,
+    archetype: str = None,
 ) -> dict:
     """
     Upload a video to YouTube.
@@ -221,10 +227,69 @@ def upload_video(
     adapted = metadata_for_channel({'title': title, 'description': description, 'tags': tags}, channel_profile)
     title, description, tags = adapted['title'], adapted['description'], adapted['tags']
 
-    # Ensure #Shorts tag for Shorts
-    tags = list(tags or [])
-    if is_short and "Shorts" not in tags and "shorts" not in tags:
-        tags.insert(0, "Shorts")
+    # TAGS (2026-09-22). Antes: 'Shorts' insertado primero (YouTube lo ignora como tag;
+    # el #Shorts va en titulo/descripcion) y el recorte era a 500 TAGS (slice de la lista)
+    # en vez de 500 caracteres. Ahora: investigacion (autocompletado + competencia, ver
+    # youtube_tags.py) y una puerta final que limpia y respeta el presupuesto real.
+    from upload_metadata import channel_brand
+    from youtube_tags import finalize_youtube_tags, counted_length, research_tags
+
+    def _status(msg):
+        print(f"   [Tags] {msg}")
+        if on_status:
+            try:
+                on_status(f"   Tags: {msg}")
+            except Exception:
+                pass
+
+    tag_report = None
+    title_report = None
+    original_title = title
+    research_on = tag_research and str(os.getenv("YOUTUBE_TAG_RESEARCH", "1")).strip().lower() not in ("0", "false", "no", "off")
+    # Titulo: 'optimize' lo cambia si el investigado gana por 5+ puntos; 'suggest' deja el
+    # del usuario y reporta la mejor alternativa; 'off' no hace nada. Por defecto 'suggest':
+    # el Studio pide 'optimize' solo cuando el titulo lo invento el LLM, no el usuario.
+    title_mode = str(os.getenv("YOUTUBE_TITLE_MODE") or title_mode or "suggest").strip().lower()
+    research = None
+    if research_on or title_mode in ("optimize", "suggest"):
+        try:
+            from youtube_tags import gather_research
+            _status("investigando (autocompletado de YouTube + videos que rankean)...")
+            research = gather_research(research_topic or title, title, research_script or description, log=_status)
+        except Exception as exc:
+            _status(f"investigacion no disponible ({exc})")
+    if research is not None and title_mode in ("optimize", "suggest"):
+        try:
+            from youtube_titles import optimize_title
+            title_report = optimize_title(research_topic or title, research_script or description, title,
+                                          research=research, is_short=is_short, archetype=archetype or "",
+                                          mode=title_mode, log=lambda m: _status(m.strip()))
+            if title_report["changed"] and title_report["title"]:
+                title = title_report["title"]
+            if on_status:
+                try:
+                    on_status(f"   Titulo: {title_report['summary']}")
+                except Exception:
+                    pass
+            print(f"   [Titulo] {title_report['summary']}")
+        except Exception as exc:
+            _status(f"optimizacion de titulo no disponible ({exc}); se usa el borrador")
+    if research is not None and research_on:
+        try:
+            tag_report = research_tags(
+                research_topic or title, title, research_script or description, draft_tags=tags,
+                brand_tag=channel_brand(channel_profile).lower(),
+                own_channel_names=[channel_brand(channel_profile), CHANNELS[channel_profile]['name']],
+                log=_status, research=research,
+            )
+            if tag_report["tags"]:
+                tags = tag_report["tags"]
+            _status(tag_report["summary"])
+        except Exception as exc:
+            _status(f"investigacion no disponible ({exc}); se usan los tags del borrador")
+    tags = finalize_youtube_tags(tags)
+    if not tags:
+        _status("ATENCION: el video sale sin tags (ni investigacion ni borrador aportaron alguno)")
 
     # Truncate title/description to YouTube limits
     title = title[:100]
@@ -240,7 +305,7 @@ def upload_video(
         "snippet": {
             "title": title,
             "description": description,
-            "tags": tags[:500],  # YouTube limit
+            "tags": tags,  # ya cortados a 500 caracteres contados como YouTube (youtube_tags)
             "categoryId": category_id,
         },
         "status": {
@@ -281,32 +346,70 @@ def upload_video(
         "scheduled": bool(publish_at),
         "publish_at": publish_at,
         "response": response,
+        "title_sent": title,
+        "title_original": original_title,
+        "title_research": ({"summary": title_report["summary"], "score": title_report["score"],
+                            "original_score": title_report["original_score"], "keyword": title_report["keyword"],
+                            "candidates": [{"title": c["title"], "score": c["score"], "valid": c["valid"]}
+                                           for c in title_report["candidates"][:6]]}
+                           if title_report else None),
+        "tags_sent": list(tags),
+        "tags_counted_chars": counted_length(tags),
+        # Facebook reusa esta investigacion (facebook_metadata.research_from_youtube).
+        "research_subject": (research or {}).get("subject") or None,
+        "tag_research": ({k: tag_report[k] for k in ("main_keyword", "summary", "evidence", "sources_ok")}
+                         if tag_report else None),
     }
+    # Lo que YouTube GUARDO (no lo que se mando): si difiere, se avisa en vez de
+    # descubrirlo semanas despues mirando el video.
+    try:
+        stored = youtube.videos().list(part="snippet", id=video_id).execute().get("items", [])
+        stored_tags = (stored[0]["snippet"].get("tags") or []) if stored else []
+        result["tags_stored"] = stored_tags
+        if tags and len(stored_tags) < len(tags):
+            _status(f"ATENCION: se mandaron {len(tags)} tags y YouTube guardo {len(stored_tags)}")
+        elif tags:
+            _status(f"verificado: YouTube guardo los {len(stored_tags)} tags")
+    except Exception as exc:
+        _status(f"no se pudo verificar lo guardado ({exc})")
 
-    # Set custom thumbnail
+    # Miniatura (thumbnail_publish): formato real por contenido (WebP -> JPEG), <= 2 MB,
+    # reintentos ante errores transitorios, y el resultado al PANEL, no solo a la consola.
+    # El video YA esta subido: una falla de la miniatura nunca tumba la publicacion.
+    def _thumb_status(msg):
+        print(f"   [Miniatura] {msg}")
+        if on_status:
+            try:
+                on_status(f"   Miniatura: {msg}")
+            except Exception:
+                pass
+
     if thumbnail_path and Path(thumbnail_path).exists():
+        from thumbnail_publish import prepare_for_youtube, set_thumbnail_with_retry
         try:
-            # La API corta en 2 MB y un PNG vertical de 1080x1920 pesa ~2.7 MB:
-            # sin esto el video quedaba subido pero SIN miniatura, con el error
-            # "Media larger than: 2097152".
-            from thumbnail_compositor import fit_for_youtube_api
-
-            envio_path, envio_mime = fit_for_youtube_api(thumbnail_path, log=print)
-            youtube.thumbnails().set(
-                videoId=video_id,
-                media_body=MediaFileUpload(str(envio_path), mimetype=envio_mime),
-            ).execute()
-            result["thumbnail_set"] = True
-            result["thumbnail_uploaded_path"] = str(envio_path)
+            prepared = prepare_for_youtube(thumbnail_path, log=lambda m: _thumb_status(m.strip()))
+            for w in prepared["warnings"]:
+                _thumb_status(f"ATENCION: {w}")
+            outcome = set_thumbnail_with_retry(youtube, video_id, prepared, on_status=lambda m: _thumb_status(m))
         except Exception as e:
-            # El video YA esta subido: perder la miniatura no puede tumbar la
-            # publicacion entera. Antes solo se atrapaba HttpError, asi que
-            # cualquier otro fallo de la miniatura propagaba y la GUI reportaba
-            # "Youtube fallo" con el video igual publicado.
-            result["thumbnail_set"] = False
-            result["thumbnail_error"] = f"{type(e).__name__}: {e}"
-            print(f"   [WARN] No se pudo poner la miniatura: {result['thumbnail_error']}")
-            print(f"          El video quedo subido igual: {result['url']}")
+            outcome = {"ok": False, "attempts": 0, "error": f"{type(e).__name__}: {e}"}
+            prepared = {"path": str(thumbnail_path)}
+        result["thumbnail_set"] = bool(outcome["ok"])
+        result["thumbnail_sent"] = str(thumbnail_path)
+        result["thumbnail_uploaded_path"] = prepared.get("path")
+        if outcome["ok"]:
+            _thumb_status(f"subida ({Path(thumbnail_path).name}"
+                          + (f", {outcome['attempts']} intentos" if outcome["attempts"] > 1 else "") + ")"
+                          + (" -- en Shorts YouTube la muestra en canal y busqueda, no en el feed" if is_short else ""))
+        else:
+            result["thumbnail_error"] = outcome["error"]
+            _thumb_status(f"NO SE PUSO: {outcome['error']} -- el video quedo publicado: {result['url']}")
+    else:
+        result["thumbnail_set"] = False
+        if thumbnail_path:
+            _thumb_status(f"el archivo no existe: {thumbnail_path}")
+        else:
+            _thumb_status("este video sale sin miniatura personalizada (no hay una seleccionada)")
 
     return result
 
@@ -344,6 +447,7 @@ def upload_from_metadata(
     privacy_status: str = "private",
     publish_at: str = None,
     on_progress=None,
+    on_status=None,
 ) -> dict:
     """
     Upload a video using the metadata.json generated by the pipeline.
@@ -381,19 +485,9 @@ def upload_from_metadata(
         raise FileNotFoundError(f"No se encontró video en {output_dir}")
     video_path = Path(video_path)
 
-    # Find thumbnail
-    thumbnail_path = None
-    for ext in ["*.png", "*.jpg", "*.jpeg"]:
-        thumbs = list(output_dir.glob(f"thumbnail{ext}")) or list(output_dir.glob(f"thumb{ext}"))
-        if thumbs:
-            thumbnail_path = thumbs[0]
-            break
-    # Also check for any image that looks like a thumbnail
-    if not thumbnail_path:
-        for img in output_dir.glob("*.png"):
-            if "thumbnail" in img.stem.lower() or "thumb" in img.stem.lower():
-                thumbnail_path = img
-                break
+    # Miniatura: cualquier formato que acepte el selector (antes .webp quedaba afuera).
+    from thumbnail_publish import find_staged_thumbnail
+    thumbnail_path = find_staged_thumbnail(output_dir)
 
     # Respect the metadata's is_short flag (set by the pipeline: True for Shorts,
     # False for long-form documentaries). When absent, infer from the video so a
@@ -414,6 +508,11 @@ def upload_from_metadata(
         is_short=bool(is_short),
         on_progress=on_progress,
         channel_profile=project_channel,
+        research_topic=metadata.get("topic"),
+        research_script=metadata.get("script_excerpt") or metadata.get("script"),
+        on_status=on_status,
+        title_mode=metadata.get("title_mode"),
+        archetype=metadata.get("format_archetype"),
     )
 
     # Save upload result

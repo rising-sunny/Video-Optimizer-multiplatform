@@ -83,6 +83,18 @@ def select_cover_text(topic: str, category: str, storyboard: Optional[dict] = No
     config = _get_cover_frame_config()
     examples = config.get("word_examples", ["VANISHED", "ERASED", "THE BLAST"])
 
+    # Con angulo elegido, sus cover_words mandan: 'HOW?' para un mecanismo,
+    # 'FOUND' para un hallazgo. Antes salia 'THE CURSE' o 'NO SURVIVORS' por
+    # una palabra suelta del tema, que es justo el encuadre que murio.
+    try:
+        from channel_strategy import archetype_cover_words, get_active_archetype
+        arche = (storyboard or {}).get("format_archetype") if isinstance(storyboard, dict) else None
+        words = archetype_cover_words(arche or get_active_archetype() or None) if (arche or get_active_archetype()) else []
+        if words:
+            return random.choice(words).upper()
+    except Exception:
+        pass
+
     lower_topic = (topic or "").lower()
     lower_cat = (category or "").lower()
 

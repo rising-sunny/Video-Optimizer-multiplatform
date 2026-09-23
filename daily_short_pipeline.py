@@ -1757,13 +1757,16 @@ Respond ONLY with valid JSON, no markdown."""
 
 
 def _facebook_metadata_fallback(storyboard: dict, youtube_metadata: dict | None = None) -> dict:
+    # Los hashtags investigados y la marca de la pagina los agrega facebook_uploader al
+    # publicar (facebook_metadata); aca no va '#Mystery' ni una marca fija.
+    from facebook_metadata import trim_at_boundary
     topic = storyboard.get("topic", get_channel_name())
     script = str(storyboard.get("script") or "").strip()
-    preview = script[:260].strip()
+    preview = trim_at_boundary(script, 260)
     description = (
-        f"{preview}\n\nWhat do you think really happened?\n\n#History #Mystery #StunningRevelations"
+        f"{preview}\n\nWhat do you think really happened?\n\n#History"
         if preview
-        else f"The real story behind {topic} is stranger than most people realize.\n\nWhat do you think really happened?\n\n#History #Mystery #StunningRevelations"
+        else f"The real story behind {topic} is stranger than most people realize.\n\nWhat do you think really happened?\n\n#History"
     )
     return {
         "title": str((youtube_metadata or {}).get("title") or topic).strip()[:255],
@@ -1773,13 +1776,15 @@ def _facebook_metadata_fallback(storyboard: dict, youtube_metadata: dict | None 
 
 def _instagram_metadata_fallback(storyboard: dict, youtube_metadata: dict | None = None,
                                  facebook_metadata: dict | None = None) -> dict:
+    # Hashtags investigados y marca de la cuenta: los agrega instagram_uploader al publicar.
+    from facebook_metadata import trim_at_boundary
     topic = storyboard.get("topic", get_channel_name())
     script = str(storyboard.get("script") or "").strip()
-    preview = script[:320].strip()
+    preview = trim_at_boundary(script, 320)
     description = (
-        f"{preview}\n\nWhat do you think really happened?\n\n#stunningrevelations #history #mystery #reels #facts"
+        f"{preview}\n\nWhat do you think really happened?\n\n#History"
         if preview
-        else f"The real story behind {topic} is stranger than most people realize.\n\nWhat do you think really happened?\n\n#stunningrevelations #history #mystery #reels #facts"
+        else f"The real story behind {topic} is stranger than most people realize.\n\nWhat do you think really happened?\n\n#History"
     )
     return {
         "title": str(

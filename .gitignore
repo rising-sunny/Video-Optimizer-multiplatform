@@ -34,7 +34,9 @@ env/
 # --- Generated media (heavy, regenerable) ---
 auto_videos/
 generated_media/
-daily_shorts/
+daily_shorts/*
+# El Channel Bible es estrategia, no media: va a git (el resto de daily_shorts/ no)
+!daily_shorts/channel_strategy_profile.json
 projects/
 long_form/
 project_media/

@@ -176,6 +176,43 @@ def delete_video(public_id: str, resource_type: str = "video") -> dict:
         return {"deleted": False, "public_id": pid, "error": str(e)[:200]}
 
 
+def upload_image(image_path: str, folder: Optional[str] = None, tags: Optional[list[str]] = None) -> dict:
+    """Sube una imagen (la portada del reel: Instagram pide cover_url, una URL publica).
+    Devuelve el payload de Cloudinary (secure_url, public_id). Borrar con
+    delete_video(public_id, resource_type="image")."""
+    image_file = Path(image_path)
+    if not image_file.exists():
+        raise FileNotFoundError(f"Image not found: {image_file}")
+    _cloud_name, api_key, api_secret, _upload_prefix = _resolve_config()
+    data = {
+        "folder": str(folder or _env("CLOUDINARY_UPLOAD_FOLDER", "video_optimizer/instagram") or "").strip(),
+        "use_filename": "true",
+        "unique_filename": "true",
+        "overwrite": "false",
+    }
+    if tags:
+        data["tags"] = ",".join(str(t).strip() for t in tags if str(t).strip())
+    with open(image_file, "rb") as handle:
+        response = requests.post(
+            _upload_url("image"),
+            auth=(api_key, api_secret),
+            data=data,
+            files={"file": (image_file.name, handle, "image/jpeg")},
+            timeout=REQUEST_TIMEOUT,
+            headers={"User-Agent": "VideoOptimizerPro/1.0"},
+        )
+    if response.status_code >= 400:
+        try:
+            message = str(((response.json() or {}).get("error") or {}).get("message") or response.text)
+        except Exception:
+            message = response.text
+        raise RuntimeError(f"Cloudinary image upload failed: {message[:200]}")
+    payload = response.json() if response.text.strip() else {}
+    if not str(payload.get("secure_url") or "").strip():
+        raise RuntimeError(f"Cloudinary did not return a secure_url: {payload}")
+    return payload
+
+
 def upload_video(video_path: str, folder: Optional[str] = None, public_id: Optional[str] = None,
                  tags: Optional[list[str]] = None, on_progress=None) -> dict:
     video_file = Path(video_path)

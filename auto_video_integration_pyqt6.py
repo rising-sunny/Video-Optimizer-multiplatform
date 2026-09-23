@@ -1318,6 +1318,11 @@ class AutoVideoStudioTab(QWidget):
         youtube_meta = None
         facebook_meta = None
         instagram_meta = None
+        # 'suggest' si el titulo lo eligio el usuario (Metadata Studio / piloto aprobado);
+        # 'optimize' si lo invento el LLM al publicar. Ver youtube_titles.
+        title_mode = "optimize"
+        fb_title_mode = "optimize"      # idem para Facebook (facebook_metadata)
+        ig_title_mode = "optimize"      # idem para Instagram
         try:
             main_window = self.window()
             mt = getattr(main_window, 'metadata_tab', None)
@@ -1326,17 +1331,23 @@ class AutoVideoStudioTab(QWidget):
                 yt_desc = mt.yt_description.toPlainText().strip()
                 yt_tags_raw = mt.yt_tags.toPlainText().strip()
                 if yt_title or yt_desc:
-                    tags = [t.strip() for t in yt_tags_raw.replace('\n', ',').split(',') if t.strip()]
+                    from youtube_tags import split_tag_field
+                    tags = split_tag_field(yt_tags_raw)
                     youtube_meta = {"title": yt_title, "description": yt_desc, "tags": tags}
+                    title_mode = "suggest"
                     self.log(f" ✅ Usando metadata del Metadata Studio: {yt_title}")
                 fb_title = mt.fb_title.text().strip()
                 fb_desc = mt.fb_description.toPlainText().strip()
                 if fb_title or fb_desc:
                     facebook_meta = {"title": fb_title, "description": fb_desc}
+                    if fb_title:
+                        fb_title_mode = "suggest"
                 ig_title = mt.ig_title.text().strip()
                 ig_desc = mt.ig_description.toPlainText().strip()
                 if ig_title or ig_desc:
                     instagram_meta = {"title": ig_title, "description": ig_desc}
+                    if ig_title:
+                        ig_title_mode = "suggest"
         except Exception as _e_mt:
             self.log(f" ⚠️ No se pudo leer del Metadata Studio: {_e_mt}")
 
@@ -1347,6 +1358,7 @@ class AutoVideoStudioTab(QWidget):
             if pilot_metadata.exists():
                 import json
                 youtube_meta = json.loads(pilot_metadata.read_text(encoding='utf-8'))
+                title_mode = "suggest"
 
         if youtube_meta:
             self.log(" ✅ Metadata del Metadata Studio lista para publicar.")
@@ -1401,30 +1413,36 @@ Respond ONLY with valid JSON."""
                 self.log(f" Título generado: {youtube_meta.get('title')}")
             except Exception as e:
                 self.log(f" Usando metadatos de respaldo ({e}).")
+            from upload_metadata import channel_brand as _channel_brand
+            _brand_tag = _channel_brand(upload_channel).replace(' ', '')
             if not youtube_meta or not isinstance(youtube_meta, dict):
                 youtube_meta = {
                     "title": topic,
                     "description": (
-                        f"{preview}\n\n#history #mystery #documentary" if is_long
-                        else f"{preview}\n\n#history #mystery #shorts"
+                        f"{preview}\n\n#history #documentary" if is_long
+                        else f"{preview}\n\n#history #shorts"
                     ),
-                    "tags": ["history", "mystery", "documentary", "history channel", "StunningRevelations"] if is_long else ["history", "mystery", "conspiracy", "shorts", "StunningRevelations"],
+                    "tags": [topic],  # la investigacion (youtube_tags) completa al subir
                 }
+            from facebook_metadata import trim_at_boundary
             if not facebook_meta:
+                _fb_preview = trim_at_boundary(script or preview, 260)
                 fb_description = (
-                    f"{preview[:260]}\n\nWhat do you think really happened?\n\n#History #Mystery #StunningRevelations"
-                    if preview else
-                    f"The real story behind {topic}.\n\nWhat do you think really happened?\n\n#History #Mystery #StunningRevelations"
+                    f"{_fb_preview}\n\nWhat do you think really happened?\n\n#History"
+                    if _fb_preview else
+                    f"The real story behind {topic}.\n\nWhat do you think really happened?\n\n#History"
                 )
                 facebook_meta = {
                     "title": topic[:255],
                     "description": fb_description[:2200],
                 }
             if not instagram_meta:
+                # Hashtags investigados y la marca de la cuenta real los pone instagram_uploader.
+                _ig_preview = trim_at_boundary(script or preview, 320)
                 ig_description = (
-                    f"{preview[:320]}\n\nWhat do you think really happened?\n\n#stunningrevelations #history #mystery #reels #facts"
-                    if preview else
-                    f"The real story behind {topic}.\n\n#stunningrevelations #history #mystery #reels #facts"
+                    f"{_ig_preview}\n\nWhat do you think really happened?\n\n#History"
+                    if _ig_preview else
+                    f"The real story behind {topic}.\n\n#History"
                 )
                 instagram_meta = {
                     "title": topic[:120],
@@ -1448,16 +1466,36 @@ Respond ONLY with valid JSON."""
         from studio_channel_controls import project_channel_config
         from upload_metadata import metadata_for_channel
         youtube_meta = metadata_for_channel(youtube_meta, upload_channel)
+        # Contexto para investigar tags contra el guion real (youtube_tags.research_tags).
+        youtube_meta.setdefault('topic', topic)
+        youtube_meta.setdefault('script_excerpt', (script or preview or '')[:4000])
+        youtube_meta.setdefault('title_mode', title_mode)
+        youtube_meta.setdefault('format_archetype', storyboard.get('format_archetype') or '')
         self.log(f" Canal de YouTube seleccionado: {youtube_meta['upload_channel']}")
         _youtube_meta = youtube_meta
         # Si el Metadata Studio no tiene campos propios de una red, se cae a
         # los de YouTube. Antes se guardaba None, `json.dump` escribia el
         # literal `null` en el archivo y el uploader reventaba con
         # "'NoneType' object has no attribute 'get'" (2026-09-09).
-        _facebook_meta = facebook_meta or youtube_meta or {}
-        _instagram_meta = instagram_meta or facebook_meta or youtube_meta or {}
+        _facebook_meta = dict(facebook_meta or youtube_meta or {})
+        _facebook_meta['title_mode'] = fb_title_mode
+        _facebook_meta['topic'] = topic
+        _facebook_meta['script_excerpt'] = (script or preview or '')[:4000]
+        _facebook_meta['format_archetype'] = storyboard.get('format_archetype') or ''
+        _instagram_meta = dict(instagram_meta or facebook_meta or youtube_meta or {})
+        _instagram_meta['title_mode'] = (ig_title_mode if instagram_meta else
+                                         fb_title_mode if facebook_meta else title_mode)
+        _instagram_meta['topic'] = topic
+        _instagram_meta['script_excerpt'] = (script or preview or '')[:4000]
+        _instagram_meta['format_archetype'] = storyboard.get('format_archetype') or ''
         _x_meta = instagram_meta or facebook_meta or youtube_meta or {}
         _thumbnail_path = getattr(self, 'selected_thumbnail_path', None)
+        if _thumbnail_path and os.path.exists(_thumbnail_path):
+            self.log(f" Miniatura a publicar: {os.path.basename(_thumbnail_path)}")
+        elif _thumbnail_path:
+            self.log(f" ATENCION: la miniatura seleccionada ya no existe ({_thumbnail_path}); el video sale sin ella.")
+        else:
+            self.log(" ATENCION: no hay miniatura seleccionada; YouTube usara un fotograma.")
         _is_long = is_long
         _publish_at_youtube = publish_at_youtube
         _publish_at_facebook = publish_at_facebook
@@ -1510,6 +1548,7 @@ Respond ONLY with valid JSON."""
                             output_dir=str(staging),
                             privacy_status=priv,
                             publish_at=_publish_at_youtube,
+                            on_status=self._publish_log_signal.emit,
                         )
                     except Exception as yt_err:
                         self.log(f"️ YouTube error: {yt_err}")
@@ -1522,6 +1561,16 @@ Respond ONLY with valid JSON."""
                 if do_facebook:
                     self.log(" Subiendo a Facebook...")
                     try:
+                        # Mismo titulo y palabra clave que YouTube, sin volver a investigar.
+                        from facebook_metadata import research_from_youtube
+                        _fb_research = research_from_youtube(results.get('youtube'))
+                        if _fb_research:
+                            _facebook_meta['research'] = _fb_research
+                            with open(staging / "facebook_metadata.json", "w", encoding="utf-8") as f:
+                                json.dump(_facebook_meta, f, ensure_ascii=False, indent=2)
+                    except Exception as fb_seo_err:
+                        self.log(f"   Facebook: no se pudo reusar la investigacion de YouTube ({fb_seo_err})")
+                    try:
                         results['facebook'] = self._upload_facebook_via_vps(
                             staging, _video_path, _facebook_meta, is_long=_is_long, publish_at=_publish_at_facebook
                         )
@@ -1530,6 +1579,16 @@ Respond ONLY with valid JSON."""
                         results['facebook'] = None
                 if do_instagram:
                     self.log(" Subiendo a Instagram...")
+                    try:
+                        # La investigacion ya hecha en esta tanda (YouTube o, si no, Facebook).
+                        from facebook_metadata import research_for_next_platform
+                        _ig_research = research_for_next_platform(results.get('youtube'), results.get('facebook'))
+                        if _ig_research:
+                            _instagram_meta['research'] = _ig_research
+                            with open(staging / "instagram_metadata.json", "w", encoding="utf-8") as f:
+                                json.dump(_instagram_meta, f, ensure_ascii=False, indent=2)
+                    except Exception as ig_seo_err:
+                        self.log(f"   Instagram: no se pudo reusar la investigacion ({ig_seo_err})")
                     try:
                         results['instagram'] = self._upload_instagram_via_vps(
                             staging, _video_path, _instagram_meta
@@ -1605,6 +1664,9 @@ Respond ONLY with valid JSON."""
         # Scripts to ship alongside the video so the VPS doesn't need a pre-installed deploy
         local_scripts = [
             os.path.join(os.getcwd(), 'facebook_uploader.py'),
+            os.path.join(os.getcwd(), 'facebook_metadata.py'),
+            os.path.join(os.getcwd(), 'thumbnail_publish.py'),
+            os.path.join(os.getcwd(), 'output_video_locator.py'),
             os.path.join(os.getcwd(), 'instagram_uploader.py'),
             os.path.join(os.getcwd(), 'cloudinary_uploader.py'),
             os.path.join(os.getcwd(), 'env_loader.py'),
@@ -1719,12 +1781,14 @@ Respond ONLY with valid JSON."""
         def _local_fallback():
             from facebook_uploader import upload_from_metadata
             from upload_progress import make_byte_progress_reporter
+            notify = self._publish_log_signal.emit
             return upload_from_metadata(
                 output_dir=str(staging_dir),
                 video_state='PUBLISHED',
                 upload_type=upload_type,
                 scheduled_publish_time=publish_at,
-                on_progress=make_byte_progress_reporter("   Facebook: subiendo", self._publish_log_signal.emit),
+                on_progress=make_byte_progress_reporter("   Facebook: subiendo", notify),
+                on_status=lambda msg: notify(f"   Facebook: {msg}"),
             )
 
         return self._upload_via_vps(
@@ -1766,10 +1830,20 @@ Respond ONLY with valid JSON."""
         """Callback cuando terminan los uploads."""
         self.btn_publish.setEnabled(True)
         self.btn_publish.setText("Publicar video")
+        try:
+            if hasattr(self, 'project_manager') and self.project_manager.record_publish_results(results):
+                self.log(" Publicacion registrada en el proyecto (ids por red).")
+        except Exception as exc:
+            self.log(f" No se pudo registrar la publicacion en el proyecto: {exc}")
         for platform, result in results.items():
             if result:
                 url = result.get('url') or result.get('permalink_url') or ''
                 self.log(f" {platform.capitalize()} publicado{': ' + url if url else '.'}")
+                if result.get('thumbnail_error'):
+                    donde = {"youtube": "YouTube Studio",
+                             "instagram": "la app de Instagram (Editar > portada)"}.get(platform, "Meta Business Suite")
+                    self.log(f"   ATENCION: la miniatura NO se puso ({result['thumbnail_error']}). "
+                             f"Se puede subir a mano en {donde}.")
             else:
                 self.log(f"️ {platform.capitalize()} falló.")
 
@@ -2688,7 +2762,7 @@ Respond ONLY with valid JSON."""
         layout.addWidget(self.btn_assemble)
 
         # Boton adicional: generar teaser corto
-        self.btn_generate_teaser = QPushButton("Generar teaser corto")
+        self.btn_generate_teaser = QPushButton("Short vertical (autónomo, 60–90 s)")
         self.btn_generate_teaser.setObjectName("warning")
         self.btn_generate_teaser.setMinimumHeight(50)
         self.btn_generate_teaser.setEnabled(False)
@@ -3438,7 +3512,40 @@ Respond ONLY with valid JSON."""
         self.log(f" Super prompt: formato {fmt.aspect_label}, "
                  f"texto {'dibujado por la IA' if render_text else 'superpuesto despues'}")
 
+        # El angulo del guion manda la composicion del thumbnail (mecanismo ->
+        # el objeto en proceso; hallazgo -> la pieza in situ...).
+        _sb = self.last_storyboard_data if isinstance(getattr(self, 'last_storyboard_data', None), dict) else {}
+        _arche = _sb.get('format_archetype') or ''
+        if not _arche:
+            try:
+                from studio_channel_controls import project_channel_config
+                _cfg_arche = project_channel_config(self).get('format_archetype')
+                _arche = _cfg_arche if _cfg_arche and _cfg_arche != 'auto' else ''
+            except Exception:
+                _arche = ''
+
+        # Investigacion (thumbnail_research): miniaturas que compiten para la palabra clave,
+        # acento de color que las diferencia y un texto que COMPLEMENTA al titulo.
+        _title_for_brief = ""
+        try:
+            _mt = getattr(self.window(), 'metadata_tab', None)
+            _title_for_brief = _mt.yt_title.text().strip() if _mt else ""
+        except Exception:
+            _title_for_brief = ""
+        _title_for_brief = _title_for_brief or str(_sb.get('title') or topic)
+        _script_full = str(_sb.get('script') or script_excerpt or '')
+        _brief_holder = {}
+
         def _run():
+            brief = None
+            if os.getenv("THUMBNAIL_RESEARCH", "1").strip().lower() not in ("0", "false", "no", "off"):
+                try:
+                    from thumbnail_research import build_thumbnail_brief
+                    brief = build_thumbnail_brief(topic, _title_for_brief, _script_full,
+                                                  archetype=_arche or "", log=lambda m: None)
+                except Exception as exc:
+                    brief = {"error": f"{type(exc).__name__}: {exc}"}
+            _brief_holder["brief"] = brief
             return llm_client.generate_thumbnail_super_prompt(
                 topic=topic,
                 script_excerpt=script_excerpt,
@@ -3446,11 +3553,22 @@ Respond ONLY with valid JSON."""
                 language=language,
                 thumbnail_format=fmt,
                 render_text=render_text,
+                format_archetype=_arche or None,
+                research_brief=brief if brief and not brief.get("error") else None,
             )
 
         def _on_done(result):
             self.btn_generate_super_prompt.setEnabled(True)
             self.btn_generate_super_prompt.setText("Generar Super Prompt (IA externa)")
+            _brief = _brief_holder.get("brief") or {}
+            if _brief.get("error"):
+                self.log(f" Miniatura: investigacion no disponible ({_brief['error']}); prompt con valores por defecto.")
+            elif _brief:
+                self.log(f" Miniatura (investigacion): palabra clave '{_brief.get('keyword')}'")
+                for _n in _brief.get("differentiation", []):
+                    self.log(f"   - {_n}")
+                if _brief.get("text_options"):
+                    self.log("   - texto: " + ", ".join(f"{o['text']} ({o['why']})" for o in _brief["text_options"][:4]))
             if not result:
                 QMessageBox.critical(self, "Error", "No se pudo generar el super prompt.")
                 return
@@ -4747,9 +4865,11 @@ Respond ONLY with valid JSON."""
 
         reply = QMessageBox.question(
             self,
-            "Generar teaser corto",
-            "¿Deseas generar un teaser corto (30-60s) en formato vertical 9:16?\n\n"
-            "El teaser se generara a partir del video largo ya ensamblado.",
+            "Short vertical autónomo",
+            "¿Generar un Short vertical 9:16 de 60–90 s que cuente la historia completa?\n\n"
+            "Sale del guion del video 16:9 ya ensamblado, con imágenes nuevas en vertical y las reglas\n"
+            "del canal (cifra o pregunta al abrir, sin 'mirá el video completo'). Es lo que YouTube distribuye;\n"
+            "el 16:9 no tiene feed de Shorts.",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
 
@@ -4788,7 +4908,8 @@ Respond ONLY with valid JSON."""
                 long_video_storyboard=storyboard,
                 language=language,
                 voice_id=voice_id,
-                disable_wikimedia=False
+                disable_wikimedia=False,
+                mode='standalone',
             )
             self._bind_current_worker_to_project()
 

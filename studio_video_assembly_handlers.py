@@ -1419,6 +1419,17 @@ class StudioVideoAssemblyHandlers:
         self.studio_tab.btn_storyboard.setEnabled(True)
         self.studio_tab.btn_assemble.setEnabled(True)
         self.studio_tab.btn_generate_teaser.setEnabled(True)  # Habilitar botón de teaser
+        # Un 16:9 en YouTube no tiene feed de Shorts (Thera: 52K plays en Facebook,
+        # 49 vistas en YouTube). Recordar que el Short vertical autonomo esta a un clic.
+        try:
+            _sb = self.studio_tab.last_storyboard_data or {}
+            _fmt = str((_sb.get('video_format') or _sb.get('storyboard_format') or '')).lower()
+            _platform = str(result.get('platform') or '').lower()
+            if '16' in _fmt or 'long' in _platform or 'long' in _fmt:
+                self.studio_tab.log(" Este video es 16:9: YouTube no lo distribuye en Shorts. "
+                                    "Botón 'Short vertical (autónomo, 60–90 s)' para sacar la versión que sí se distribuye.")
+        except Exception:
+            pass
         if hasattr(self.studio_tab, 'btn_play_video'):
             self.studio_tab.btn_play_video.setEnabled(True)
         if hasattr(self.studio_tab, 'btn_publish'):

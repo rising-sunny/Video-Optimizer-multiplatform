@@ -84,11 +84,14 @@ class LaGuiNoEscribeNull(unittest.TestCase):
                        errors="replace").read()
 
     def test_facebook_cae_a_la_metadata_de_youtube(self):
-        self.assertIn("_facebook_meta = facebook_meta or youtube_meta or {}",
+        # dict(...): copia, porque el Studio le agrega contexto de investigacion a Facebook
+        # (facebook_metadata) sin tocar la metadata de YouTube. Sigue sin poder ser None.
+        self.assertIn("_facebook_meta = dict(facebook_meta or youtube_meta or {})",
                       self._fuente())
 
     def test_instagram_tambien_tiene_respaldo(self):
-        self.assertIn("_instagram_meta = instagram_meta or facebook_meta or youtube_meta or {}",
+        # dict(...): copia, el Studio le agrega el contexto de investigacion (facebook_metadata).
+        self.assertIn("_instagram_meta = dict(instagram_meta or facebook_meta or youtube_meta or {})",
                       self._fuente())
 
     def test_ninguna_red_se_guarda_pelada(self):

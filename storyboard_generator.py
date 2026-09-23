@@ -2545,7 +2545,8 @@ Sin explicaciones antes ni después. Solo JSON válido."""
                                  style: str = "Estilo Realista / Cinematográfico",
                                  language: str = 'es',
                                  pre_research_snippets: list = None,
-                                 rate: str = "+0%"):
+                                 rate: str = "+0%",
+                                 format_archetype: str = ""):
         """
         PASO 1: Genera todos los datos de pre-producción (guion, audio, prompts).
         
@@ -2566,6 +2567,15 @@ Sin explicaciones antes ni después. Solo JSON válido."""
         self.log("\n" + "="*70)
         self.log(f"ðŸŽ¬ INICIANDO PASO 1: GENERACIÃ“N DE STORYBOARD (Idioma: {language.upper()})")
         self.log("="*70)
+        # El ANGULO (como se cuenta el tema) entra a todos los prompts via
+        # build_hook_prompt_instructions y queda estampado en el storyboard.
+        try:
+            from channel_strategy import set_active_archetype, archetype_label
+            _arche = set_active_archetype(format_archetype)
+            if _arche:
+                self.log(f"   Angulo narrativo: {archetype_label(_arche)}")
+        except Exception:
+            _arche = ""
         
         if not self.gemini_client:
             self.log("âŒ Error CrÃ­tico: Cliente Groq no disponible.")
@@ -2668,6 +2678,8 @@ Sin explicaciones antes ni después. Solo JSON válido."""
                 rate=rate,
             )
             if structured_result:
+                if _arche:
+                    structured_result["format_archetype"] = _arche
                 return structured_result
             self.log("   ⚠️ Flujo JSON estructurado (short) falló — usando flujo clásico como fallback")
         else:
@@ -2685,6 +2697,8 @@ Sin explicaciones antes ni después. Solo JSON válido."""
                 rate=rate,
             )
             if structured_result:
+                if _arche:
+                    structured_result["format_archetype"] = _arche
                 return structured_result
             script_error = getattr(self, "_last_script_error", None)
             if script_error in {"ERROR_SCRIPT_REFUSAL", "ERROR_SCRIPT_TOO_SHORT"}:
@@ -3087,7 +3101,7 @@ Sin explicaciones antes ni después. Solo JSON válido."""
     
     def generate_short_teaser_from_long_video(self, long_video_storyboard, language='es', voice_id=None,
                                                disable_wikimedia=False, existing_teaser_storyboard=None,
-                                               rate="+0%"):
+                                               rate="+0%", mode="standalone"):
         """
         Genera un Short teaser (30-60 segundos) en formato vertical 9:16 a partir de un video largo.
         El teaser incluye un hook, resumen del contenido y CTA al final.
@@ -3145,7 +3159,51 @@ Sin explicaciones antes ni después. Solo JSON válido."""
         
         # Obtener mÃ¡s contexto del script completo
         script_context = full_script[:1000] if len(full_script) > 1000 else full_script
-        
+
+        # MODO STANDALONE (2026-09-21): un Short que vale por si solo. El teaser con
+        # CTA "mira el video completo" apunta a un 16:9 que en YouTube no tiene
+        # feed (Thera: 52K plays en Facebook, 49 vistas en YouTube). En YouTube lo
+        # que retiene es la historia entera con cifra al abrir, no un trailer.
+        if mode == "standalone":
+            # Primero el angulo del 16:9 (el bloque NARRATIVE ANGLE sale de ahi), despues las reglas.
+            _arche = long_video_storyboard.get('format_archetype') or ''
+            try:
+                from channel_strategy import set_active_archetype as _saa
+                if _arche:
+                    _saa(_arche)
+            except Exception:
+                pass
+            try:
+                from channel_strategy import build_hook_prompt_instructions as _bhpi, get_shorts_rules as _gsr
+                _rules = _bhpi()
+                _sr = _gsr()
+            except Exception:
+                _rules, _sr = "", {}
+            _min = int(_sr.get('min_duration', 60) or 60)
+            _max = int(_sr.get('max_duration', 95) or 95)
+            _full_ctx = full_script[:2500]
+            standalone_prompt = f"""You write a SELF-CONTAINED vertical Short ({_min}-{_max} seconds, ~150-230 words) for a
+documented-history channel, derived from the full script below. It is NOT a trailer: no "watch the full video",
+no "subscribe", no cliffhanger that only the long video resolves. Tell the strongest single thread of the story,
+complete, with its documented numbers, names and consequence.
+
+{_rules}
+
+Topic: {topic}
+Full script (source of facts -- do not add facts that are not here):
+{_full_ctx}
+
+RULES:
+- Language: {'English' if language == 'en' else 'Spanish'} only.
+- First spoken sentence: a concrete number/scale or a HOW/WHY question. The date comes later.
+- Second and third concrete facts before second 20. Close on the documented consequence.
+- Plain narration only: no brackets, no stage directions, no headings, no emojis.
+
+NOW WRITE THE SHORT:
+"""
+        else:
+            standalone_prompt = None
+
         teaser_prompt = f"""
         Role: EXPERT TRAILER SCRIPTWRITER for YouTube Shorts.
         Task: Create an EXTREMELY COMPELLING and CINEMATIC TRAILER script (45-60 seconds) for a longer video about "{topic}".
@@ -3194,7 +3252,7 @@ Sin explicaciones antes ni después. Solo JSON válido."""
         NOW CREATE THE TRAILER SCRIPT:
         """
         
-        teaser_script = self.gemini_client._generate(teaser_prompt)
+        teaser_script = self.gemini_client._generate(standalone_prompt or teaser_prompt)
         
         # Verificar si la generaciÃ³n fue exitosa
         if not teaser_script:
@@ -3322,12 +3380,17 @@ Sin explicaciones antes ni después. Solo JSON válido."""
 
         # Crear storyboard para el teaser
         teaser_storyboard = {
-            "topic": f"{topic} - Teaser",
+            # El Short autonomo lleva el tema tal cual (nombre de archivo con el tema);
+            # el teaser legado conserva el sufijo.
+            "topic": topic if mode == "standalone" else f"{topic} - Teaser",
             "category": category,
             "script": teaser_script,
             "audio_path": teaser_audio_path,
             "segments": teaser_visual_segments,
-            "music_data": long_video_storyboard.get('music_data')  # Fallback si no hay archivo local
+            "music_data": long_video_storyboard.get('music_data'),  # Fallback si no hay archivo local
+            "format_archetype": long_video_storyboard.get('format_archetype') or '',
+            "derived_from_long": True,
+            "derivation_mode": mode,
         }
 
         # Verificar que tenemos el callback para ensamblar
