@@ -274,6 +274,14 @@ concreta + sujeto nombrado**, duración corta. Ej: "72 Seconds: The Wow! Signal"
 
 ## Changelog
 
+- **2026-09-25e** — **`GENERATE_SHORT.bat` usa el `.venv`, y `SETUP_OTRA_PC.md` al día.**
+  - **`.bat`:** buscaba Python en `%LOCALAPPDATA%\venvs\video_optimizer_*`, de antes del `.venv`;
+    en una PC nueva no arrancaba (el "sigue funcionando" de 2026-09-22b solo valía donde quedaba
+    ese venv viejo). Ahora usa `.venv\Scripts\python.exe`, igual que `RUN.bat`.
+  - **`SETUP_OTRA_PC.md`** (de junio) suma lo que faltaba: `client_secrets.json`/`token.json`,
+    `.env.txt`, `transition_overlays/`, renombrar `daily_shorts`/`long_form` antes del `mklink`,
+    `VPS_UPLOAD_ENABLED=0` sin SSH al VPS y Claude Code opcional; saca la referencia a
+    `project_whisper_vps.md`, que no está en el repo.
 - **2026-09-25d** — **El título del video también se verifica, y los gentilicios sirven de gancho.**
   - **Título:** Cannae quedó con el título "86,000 Dead" mientras el guion corregido decía que 86.000
     pelearon. Ahora `fact_check_scenes(title=...)` juzga el título como un ítem más ("VIDEO TITLE") y lo
