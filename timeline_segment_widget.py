@@ -92,6 +92,7 @@ class TimelineSegment(QFrame):
     local_video_dropped = pyqtSignal(int, str)  # Emite cuando se suelta un video local sobre el segmento
     regenerate_text_requested = pyqtSignal(int)  # Emite cuando se solicita regenerar texto narrativo del segmento
     recraft_prompts_copy_requested = pyqtSignal(int)  # Emite cuando se solicita copiar los prompts Recraft
+    video_prompt_copy_requested = pyqtSignal(int)     # copiar el prompt de video (IA de video externa)
     generate_fal_image_requested = pyqtSignal(int)   # Generar imagen con FAL.AI (boton directo)
     animate_fal_video_requested = pyqtSignal(int)    # Animar imagen a video con FAL.AI I2V
 
@@ -204,6 +205,13 @@ class TimelineSegment(QFrame):
         
         layout.addLayout(header_layout)
         
+        # Texto de gancho de la escena 1 (video_opening): se ve en el timeline sin abrir el editor.
+        self.hook_label = QLabel()
+        self.hook_label.setWordWrap(True)
+        self.hook_label.setStyleSheet("color: #0b6e7a; font-weight: 600; font-size: 9pt;")
+        self.hook_label.setVisible(False)
+        layout.addWidget(self.hook_label)
+
         # Texto del segmento (preview)
         self.text_label = QLabel()
         self.text_label.setWordWrap(True)
@@ -241,16 +249,28 @@ class TimelineSegment(QFrame):
         prompt_buttons_layout.setContentsMargins(0, 0, 0, 0)
         prompt_buttons_layout.setSpacing(4)
 
-        self.btn_copy_recraft_prompts = QPushButton("Copiar Prompts")
+        self.btn_copy_recraft_prompts = QPushButton("Copiar prompt imagen")
         self.btn_copy_recraft_prompts.setCursor(QCursor(Qt.CursorShape.ArrowCursor))
         self.btn_copy_recraft_prompts.setToolTip(
-            "Copia el prompt y negative prompt de este segmento, "
-            "incluyendo el formato de imagen de la GUI (16:9, 9:16 o 1:1)."
+            "Copia el prompt de imagen (y negative prompt) de este segmento para una IA de imagen, "
+            "con el formato de la GUI (16:9, 9:16 o 1:1)."
         )
         self.btn_copy_recraft_prompts.setMinimumHeight(24)
 
         self.btn_copy_recraft_prompts.clicked.connect(self._on_copy_recraft_prompts_clicked)
         prompt_buttons_layout.addWidget(self.btn_copy_recraft_prompts)
+
+        # Prompt de video para una IA de video externa (Kling, Runway, Veo, Sora...):
+        # arranca del mismo cuadro que el prompt de imagen (visual_art_direction).
+        self.btn_copy_video_prompt = QPushButton("Copiar prompt video")
+        self.btn_copy_video_prompt.setCursor(QCursor(Qt.CursorShape.ArrowCursor))
+        self.btn_copy_video_prompt.setToolTip(
+            "Copia el prompt de video de este segmento: movimiento de camara, del sujeto y del ambiente, "
+            "duracion del segmento y sonido. Incluye una version 'solo movimiento' para animar la imagen."
+        )
+        self.btn_copy_video_prompt.setMinimumHeight(24)
+        self.btn_copy_video_prompt.clicked.connect(self._on_copy_video_prompt_clicked)
+        prompt_buttons_layout.addWidget(self.btn_copy_video_prompt)
 
         self.btn_fal_image = QPushButton("Generar")
         self.btn_fal_image.setCursor(QCursor(Qt.CursorShape.ArrowCursor))
@@ -619,6 +639,16 @@ class TimelineSegment(QFrame):
         text = self.segment_data.get('text', '')
         preview = text[:60] + "..." if len(text) > 60 else text
         self.text_label.setText(preview)
+
+        # Texto de gancho (solo la escena 1 lo trae)
+        hook = self.segment_data.get('hook_overlay') if isinstance(self.segment_data, dict) else None
+        if hasattr(self, 'hook_label'):
+            if isinstance(hook, dict) and hook.get('enabled') and hook.get('text'):
+                self.hook_label.setText(f"Gancho: {hook['text']}  ·  {float(hook.get('duration') or 1.8):.1f} s "
+                                        "(arriba, desde el cuadro 0)")
+                self.hook_label.setVisible(True)
+            else:
+                self.hook_label.setVisible(False)
         
         # Actualizar preview de imagen solo cuando realmente cambia media
         if refresh_media:
@@ -1174,6 +1204,11 @@ class TimelineSegment(QFrame):
         """Solicita copiar el prompt y negative prompt Recraft del segmento."""
         self.clicked.emit(self.index)
         self.recraft_prompts_copy_requested.emit(self.index)
+
+    def _on_copy_video_prompt_clicked(self):
+        """Solicita copiar el prompt de video del segmento."""
+        self.clicked.emit(self.index)
+        self.video_prompt_copy_requested.emit(self.index)
     
     def mousePressEvent(self, event):
         """Maneja el click en el segmento"""
@@ -1673,6 +1708,7 @@ class GroupedSegmentsWidget(QFrame):
     grouped_image_dropped = pyqtSignal(list, str)         # indices + ruta al soltar imagen
     grouped_video_dropped = pyqtSignal(list, str)         # indices + ruta al soltar video
     grouped_copy_prompts_requested = pyqtSignal(int)      # copiar prompt del primer segmento del grupo
+    grouped_copy_video_prompt_requested = pyqtSignal(int)  # copiar prompt de video del primer segmento
     grouped_paste_clipboard_requested = pyqtSignal(list)  # pegar imagen del portapapeles al grupo
     grouped_strip_watermark_requested = pyqtSignal(list)  # eliminar marca de agua Gemini del grupo
     grouped_generate_fal_image_requested = pyqtSignal(list)  # generar imagen con FAL.AI para el grupo
@@ -1795,7 +1831,7 @@ class GroupedSegmentsWidget(QFrame):
         self.badge_label.setObjectName("groupedBadge")
         left_column.addWidget(self.badge_label)
 
-        self.btn_copy_prompts = QPushButton("Copiar Prompts")
+        self.btn_copy_prompts = QPushButton("Copiar prompt imagen")
         self.btn_copy_prompts.setToolTip(
             "Copia el prompt y negative prompt de la imagen compartida, "
             "incluyendo el formato de imagen de la GUI (16:9, 9:16 o 1:1)."
@@ -1804,6 +1840,16 @@ class GroupedSegmentsWidget(QFrame):
 
         self.btn_copy_prompts.clicked.connect(self._on_copy_prompts_clicked)
         left_column.addWidget(self.btn_copy_prompts)
+
+        self.btn_copy_video_prompt = QPushButton("Copiar prompt video")
+        self.btn_copy_video_prompt.setToolTip(
+            "Copia el prompt de video del primer segmento del grupo (para una IA de video externa)."
+        )
+        self.btn_copy_video_prompt.setMinimumHeight(24)
+        self.btn_copy_video_prompt.clicked.connect(
+            lambda: self.member_indices and self.grouped_copy_video_prompt_requested.emit(self.member_indices[0])
+        )
+        left_column.addWidget(self.btn_copy_video_prompt)
 
         self.btn_fal_image = QPushButton("Generar imagen")
         self.btn_fal_image.setToolTip("Genera imagen con FAL.AI para todo el grupo")

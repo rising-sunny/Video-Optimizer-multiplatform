@@ -223,8 +223,9 @@ def generate_cover_frame(
     media_base_dir: Optional[str] = None,
 ) -> Optional[dict[str, Any]]:
     config = _get_cover_frame_config()
-    if not config.get("enabled", True):
-        return None
+    # Sin corte por `enabled` (2026-09-23): la placa la decide el storyboard (video_opening). Si
+    # un segmento la trae, es un proyecto viejo y se renderiza igual que antes; con el corte, al
+    # apagarla en el Bible esos proyectos caian a un gradiente oscuro al re-renderizarlos.
 
     def _log(msg: str):
         if log_callback:

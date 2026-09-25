@@ -250,6 +250,8 @@ concreta + sujeto nombrado**, duración corta. Ej: "72 Seconds: The Wow! Signal"
 | `youtube_titles.py` | Títulos investigados con puntaje explicado (optimize/suggest) |
 | `thumbnail_publish.py` | Miniatura al subir: formato, reintentos, aviso y verificación de lo que YouTube muestra |
 | `thumbnail_research.py` | Miniaturas de la competencia → acento, brillo y texto del super prompt |
+| `video_opening.py` | Arranque del video: sin placa, voz en 0 s, acercamiento, primer plano ≥1.8 s y texto de gancho (ASS) |
+| `thumbnail_typography.py` + `gemini_vision.py` | Plan tipográfico medido (tamaño, peso, color, contorno, zona) y revisión con visión de la miniatura elegida |
 | `facebook_metadata.py` | Título, arranque de la descripción y hashtags de Facebook e Instagram con la investigación de YouTube |
 | `build_derinkuyu_long.py` | Ejemplo one-off de documental (referencia; hardcodeado) |
 
@@ -272,6 +274,188 @@ concreta + sujeto nombrado**, duración corta. Ej: "72 Seconds: The Wow! Signal"
 
 ## Changelog
 
+- **2026-09-25d** — **El título del video también se verifica, y los gentilicios sirven de gancho.**
+  - **Título:** Cannae quedó con el título "86,000 Dead" mientras el guion corregido decía que 86.000
+    pelearon. Ahora `fact_check_scenes(title=...)` juzga el título como un ítem más ("VIDEO TITLE") y lo
+    repara con tope de 70 caracteres. `process_manual_json` reemplaza `json_data['title']`, así el tema
+    del storyboard, la miniatura y los metadatos toman el título corregido. No entra en la firma de la
+    narración ni frena la subida: si no se pudo corregir queda como nota. Prueba real: "86,000 Dead…"
+    → "Tens of Thousands Dead…".
+  - **Gancho** (`text_options`): las cifras con gentilicio en plural ya valen ("300 SPARTANS",
+    "86,000 ROMANS"). Antes toda palabra con mayúscula se descartaba como nombre propio y Cannae quedó
+    sin texto de gancho.
+  - **Atribución de problemas:** cuando la escena que indica el juez contiene la cita, se respeta, y
+    el título y la escena 1 pueden compartir "86,000".
+- **2026-09-25c** — **Cannae: sin investigación y subida frenada por un guardia.**
+  - **Búsqueda del tema** (`research_search.topic_search_queries`): normaliza guiones y espacios
+    tipográficos (U+2011, U+202F) y prueba el sujeto antes de los dos puntos ("The Battle of Cannae",
+    "Battle of Cannae"). Antes "…double‑envelopment in 216 BC" solo traía "Pincer movement", el guion
+    se escribió sin investigación (6.000 cartagineses, los Apeninos, dos cónsules muertos) y el
+    arranque se quedó sin texto de gancho.
+  - **Guardia de largo de la reparación:** ahora tiene un margen absoluto de ±10 palabras (mínimo 6),
+    y el prompt le dice al reescritor el rango de cada escena. "25 vs 17 palabras" se descartaba 3
+    veces y dejaba frenada la subida, aunque la voz se genera después, con el texto ya corregido.
+- **2026-09-25b** — **Claude CLI primero y más rápido.** Con Gemini primero, cada verificación esperaba a
+  que fallaran sus modelos sin cuota. Cambios:
+  - **Orden de jueces:** Claude CLI → Gemini + Google → Gemini + Wikipedia → Groq. Para reescribir:
+    Claude → Gemini → Groq.
+  - **`--effort low`** (`FACT_CHECK_CLAUDE_EFFORT`): el juez pasó de 50,7 s a 11,8 s, y encontró 5
+    problemas contra 3. La reescritura, de 9,6 s a 3,7 s.
+  - **Búsqueda web solo si hace falta** (`grounded="as_needed"`), usando primero los párrafos de
+    Wikipedia.
+  - **Otra ronda de reescritura solo si quedan afirmaciones falsas o inventadas.** Los matices
+    "engañosos" que aparecen al re-verificar quedan como notas.
+  - **Resultado:** la etapa completa con el guion de Trafalgar pasó de 241 s (3 rondas) a 78 s
+    (2 rondas).
+- **2026-09-25** — **Claude CLI de la PC como juez de hechos** (`script_fact_check.claude_judge`).
+  - **Orden de jueces:** Gemini + Google (gratis mientras haya cuota) → **Claude CLI + WebSearch/WebFetch**
+    → Gemini + Wikipedia → Groq + Wikipedia. También reescribe, sin herramientas, antes de Groq.
+  - **Cómo se llama:** `claude -p --output-format json`, con el prompt por stdin (el límite de Windows
+    es ~8000 caracteres), solo las herramientas web, sin MCP ni sesión guardada, desde una carpeta
+    temporal (sin el CLAUDE.md del proyecto).
+  - **Entorno limpio:** sin `ANTHROPIC_*` ni `CLAUDE_CODE*`. Si el Studio se abre desde una sesión de
+    Claude, esas variables dejan al CLI "Not logged in".
+  - **Costo:** usa la cuenta de Claude de la PC y su límite de uso.
+  - **Configuración:** modelo en `FACT_CHECK_CLAUDE_MODEL` (por defecto `sonnet`); `FACT_CHECK_CLAUDE=0`
+    lo saca.
+  - **Sin sesión o sin cuota:** se salta 15 minutos y el log dice cómo loguearse.
+  - **De paso:** las llamadas de respaldo a Groq pasan de 4000 a 8000 tokens. `gpt-oss-120b` razona y
+    con 4000 truncaba, y todo terminaba en `gpt-oss-20b`.
+- **2026-09-24g** — **Prompt de video por segmento** (botón "Copiar prompt video" junto a "Copiar prompt
+  imagen", también en segmentos agrupados). Es para IAs de video externas (Kling, Runway, Veo, Sora).
+  - **Mismo plano que la imagen:** la consulta de dirección de arte ahora devuelve también
+    `camera_move`, `subject_motion`, `environment_motion`, `pace` y `sound`, sin llamadas extra.
+    `VERSION=2` rehace una vez los planos guardados.
+  - **Reglas de movimiento:** un solo movimiento de cámara lento; movimiento de sujeto chico (nada de
+    peleas, multitudes corriendo, gestos de manos o hablar, que las IAs de video rompen); el ambiente
+    (humo, velas, mar, brasas) lleva la vida del plano; sonido ambiente sin voces ni música.
+  - **El texto copiado trae tres bloques:** prompt completo (texto a video) con la duración real del
+    segmento y las zonas de gancho y subtítulos; "solo movimiento" para animar la imagen del segmento
+    (imagen a video); y un negative con artefactos de video (caras que se deforman, manos, flicker,
+    cortes).
+  - **Respaldo:** si la dirección de arte no responde, arma uno con `visual_prompt` + `motion_prompt`.
+  - **Firma del plano:** ahora incluye el `motion_prompt` del segmento.
+  - **Limpieza de "evitar":** sin "No ..." (doble negativo en un negative prompt) y sin aclaraciones.
+- **2026-09-24f** — **Descarga robusta de Jamendo** (`music_recommender.download_audio`). En el buscador,
+  la forma de onda falló por DNS de `prod-1.storage.jamendo.com` y la vista previa se cortó al 21%
+  ("Read timed out"): no había reintentos, y los dos pedían el mismo archivo a la vez. Ahora:
+  - reintenta y reanuda con Range;
+  - prueba el espejo `mp3l.jamendo.com` (mismo archivo, más rápido);
+  - baja a `.part` y renombra al terminar;
+  - hace una sola descarga por tema: vista previa, forma de onda y "Guardar" comparten el caché,
+    que ahora va por id de Jamendo y no por título;
+  - `download_track` (rutas fijas como `temp_bgm.mp3`) siempre baja de nuevo, para que un video no
+    herede la música del anterior.
+- **2026-09-24e** — **Prompts de imagen con dirección de arte** (`visual_art_direction.py`). Motivo: el
+  usuario pega "Copiar Prompts" en una IA de imagen externa. Ese texto salía del armado para FLUX
+  (refuerzos, sufijo de variación, negative en etiquetas), y cada escena elegía luz y paleta por su
+  cuenta. Ahora hay dos pasos:
+  - **Biblia visual por video,** una sola vez desde la narración verificada. Incluye época, clima y hora
+    reales; el aspecto documentado de cada personaje a esa fecha (rango, edad, heridas, uniforme); los
+    barcos y objetos; la paleta en tres actos con colores hex y temperatura de luz; una cámara y un look
+    para todo el video; y los mitos y anacronismos a evitar (por ejemplo, Nelson sin parche).
+  - **Un plano por segmento:** el momento exacto que narra ese segmento, tamaño y ángulo variados,
+    lente, capas de profundidad, luz con fuente, dirección y K, paleta del acto, atmósfera, emoción y
+    detalles de época.
+  - **El prompt copiado es prosa por secciones:** escena, sujeto, acción, ambiente, composición, luz,
+    paleta, atmósfera, detalles de época, cámara y lo que hay que evitar. Deja libres la banda del
+    gancho en la escena 1 y la zona de subtítulos. Trae además un negative corto.
+  - **Guardado:** queda en `storyboard["visual_bible"]` y `segment["art_direction"]` con firma. Si se
+    edita la narración o el `visual_prompt` de un segmento, ese plano se rehace. La primera copia
+    tarda entre 20 y 50 s por video; las siguientes son instantáneas. El orden de modelos es Gemini
+    3.5 → 2.5 → 3.1-lite → Groq; si nadie responde, se copia el prompt de siempre.
+    `VISUAL_ART_DIRECTION=0` lo apaga.
+  - **Verificador de hechos:** cuando corrige una escena, ahora también corrige su `visual_prompt`,
+    para que la imagen no siga mostrando el dato falso.
+- **2026-09-24d** — **Música de Jamendo apta para video, con atribución automática**
+  (`music_license.py`). Motivo: Shorts bloqueados en todo el mundo por "The Prophecy" (Paul Werner),
+  reclamada por WAMI_CS, MINT y BMI. Es CC BY-NC-ND y `content_id_free: false`, y la app aceptaba
+  cualquier licencia CC. Auditoría: 65 de 67 proyectos con Jamendo usaban NC o ND; "The Prophecy"
+  aparecía en 30.
+  - **Licencias aptas:** NC no se puede monetizar, y ND no se puede usar en un video (Creative
+    Commons considera obra derivada sincronizar música con imagen). Quedan CC BY y CC BY-SA.
+  - **Búsqueda:** la del diálogo y la de la música automática usan `ccnc=false&ccnd=false`.
+    `content_id_free` no sirve como filtro: Jamendo solo lo marca en temas NC-ND.
+  - **Artistas reclamados:** se descartan los de `daily_shorts/music_claims.json` (va a git). Se
+    agregan con clic derecho en el buscador ("Bloquear artista") o con
+    `python music_license.py claim <id> --claimants "..."`.
+  - **Atribución:** el ensamblador registra la música que mezcló (`music_used`,
+    `music_attribution`). Cada uploader (YouTube, Facebook, Instagram, también vía VPS) pega el
+    crédito en inglés al final de la descripción ya optimizada, antes de los hashtags y sin
+    recortarlo. Formato: título, autor, fuente y licencia.
+  - **Al publicar:** el Studio frena con aviso si el tema es NC o ND, o si su artista está
+    reclamado; en proyectos viejos resuelve la licencia por el `trackid` del `audio_url`.
+  - **Riesgo que queda:** un artista CC BY que registre su música en Content ID reclama igual. Se
+    bloquea al primer reclamo. Riesgo cero solo con la Biblioteca de Audio de YouTube, cargada como
+    Música Local.
+- **2026-09-24c** — **Hechos verificados antes de la voz** (`script_fact_check.py`). El short de
+  Trafalgar salió publicado diciendo que el disparo del Victory mató a Villeneuve (lo capturaron y
+  murió en 1806; el que murió fue Nelson), con una "advertencia de Collingwood" inventada y el mito de
+  que la batalla "evitó la invasión". El prompt ya decía "no inventes"; `script_fact_guard` solo mira
+  cifras y años y solo escribe en el log; el reintento de largo pedía "hora exacta, víctimas, testigos
+  con nombre". Ahora, en `process_manual_json` (short automático, largo por lotes y JSON pegado a
+  mano) y en el camino clásico, ANTES de la voz: (1) evidencia de Wikipedia: artículos del tema y de
+  cada persona nombrada, buscada junto al tema porque "Villeneuve" suelto trae al piloto de F1;
+  (2) un juez externo enumera cada afirmación con su veredicto (falso / inventado / engañoso):
+  Gemini + Google Search → Gemini con los párrafos de Wikipedia → Groq con los párrafos. Cada modelo
+  tiene cuota diaria propia y la búsqueda de Google otra aparte; un juez con 429/503 se salta 15 min.
+  (3) Las escenas con problemas se reescriben con el dato documentado, con largo parecido y desde la
+  2.ª ronda en modo conservador (sin horas, cifras ni "mientras"). (4) Se re-verifica solo lo
+  reescrito. Lo falso o inventado que sobrevive deja el informe en `needs_review`. El informe queda
+  en `storyboard["fact_check"]` con una firma de la narración, y la subida lo mira: el Studio
+  (`_fact_check_gate`) y `daily_short_pipeline` re-verifican si falta o si se editó la narración, y
+  frenan. El Studio deja "Publicar igual" como decisión explícita. El checklist previo a publicar
+  suma `facts_verified`. Prueba en vivo con el guion real: marcó Villeneuve (falso), Collingwood
+  (inventado), la hora de la orden de columnas y la frase de las rutas comerciales, y dejó el guion
+  corregido y re-verificado en 20-60 s. `SCRIPT_FACT_CHECK=0` lo apaga; `FACT_CHECK_GEMINI_MODELS`
+  elige los modelos.
+- **2026-09-24b** — **Títulos bien redactados.** Trafalgar salió "Nelson Trafalgar how the victory
+  secured British seas" (la búsqueda del autocompletado pegada literal: el pedido al LLM decía "la
+  clave en las primeras 3-4 palabras") y Facebook/Instagram pisaron "How Nelson Won Trafalgar Against
+  a Bigger Fleet" con ese. Ahora (`youtube_titles.py`): el pedido integra la clave con conectores y
+  puntuación ("Nelson at Trafalgar: …") y escribe los compuestos como el guion (U-boat,
+  Franco-Spanish); `readability_issues` invalida la búsqueda pegada sin puntuación;
+  `apply_canonical_forms` corrige "U boat" → "U-boat" y los guiones no separables; la verificación
+  del LLM también juzga si el título es inglés fluido (`natural`); el título del guion compite como
+  candidato; en Facebook/Instagram un título investigado mal redactado no reemplaza a uno que se lee
+  bien. Prueba en vivo con el guion real: eligió "Nelson at Trafalgar: 1805 double-column wins".
+  Pendiente aparte: el guion de Trafalgar afirma que el disparo del Victory mató a Villeneuve (falso)
+  y la verificación de títulos toma el guion como verdad.
+- **2026-09-24** — **Arranque del video sin placa quieta** (`video_opening.py`, por defecto en todo
+  video nuevo). Antes: placa de 0.7 s con una palabra ("FEEDING"), un "ding" y la voz corrida 0.7 s
+  (medido en el short de Hannibal). Los 20 shorts de historia más vistos del mes: 18/20 con sonido
+  antes de 0.3 s, 3/20 quietos en el primer medio segundo, primer corte ~1.8 s, 9/12 con texto en el
+  primer cuadro. Ahora: (1) sin placa, la escena 1 y la voz arrancan en 0.0 s (el relleno de
+  silencio desaparece solo); (2) el primer clip arranca con acercamiento de salida rápida;
+  (3) el primer plano dura ≥1.8 s (se toma del segundo, que no baja de 0.8 s); (4) texto de gancho
+  arriba, encima de la escena en movimiento, como evento ASS: la cifra de las primeras frases del
+  guion (`50,000 TROOPS`, `100 KM A DAY`), estilo editorial (Georgia, cifra dorada, rótulo marfil),
+  ~1.8 s con fundido. El prompt de la imagen de la escena 1 pide el tercio superior despejado.
+  El segmento 0 guarda `hook_overlay` {enabled, text, duration}: el **timeline editor** lo muestra
+  ("Gancho: …" en la tarjeta) y lo deja editar (bloque "Texto de gancho" en la escena 1).
+  Config en el Bible: `hook_overlay` (enabled, duration_seconds, min_first_shot_seconds,
+  push_in_zoom); `cover_frame.enabled` quedó en false (vuelve solo si se apaga `hook_overlay`).
+  **Medición**: cada proyecto guarda `opening.style`; `performance_feedback` agrupa por arranque y
+  el resumen compara "placa" vs "gancho" (retención tras el inicio y tasa de despegue) cuando hay
+  ≥8 de cada uno. Proyectos viejos con placa se re-renderizan igual (`generate_cover_frame` ya no
+  corta por `enabled`). Checklist: `opening_hook_present`. Guardas: `test_video_opening.py` (29).
+- **2026-09-23** — **Texto de miniatura con impacto, medido.** `thumbnail_typography.py` +
+  `gemini_vision.py` (Groq ya no tiene modelos de visión; Gemini por REST, clave en el header).
+  Medido con visión: la miniatura del caballo mongol salió con "100 KILOMETERS" a 2.6–3.3% de
+  alto de letra, peso regular y sin contorno (la regla fija pedía "small and restrained"). En los
+  60 shorts de historia más vistos del mes (47 miniaturas `oardefault.jpg`, sin cuota), los
+  rótulos de 1–3 palabras miden mediana 6% y cuarto superior ~8%; 12/13 bold/black; 10/13 con
+  contorno o caja. **Plan**: la cifra sola y grande (11% en 9:16), el resto 8%, llenando hasta
+  86% del ancho; negrita condensada (sin Impact), contorno oscuro de 1/10 de la letra; el color de
+  la cifra por tono opuesto a la paleta y contraste WCAG con el fondo (blanco sobre el cielo
+  naranja daba 1.65:1); en vertical el texto va en y 11–34% y el sujeto baja a y 34–71% (solo en
+  el super prompt; el validador interno no cambia). La investigación mide también el texto de las
+  miniaturas que compiten (y evita su color de acento). **Revisión al elegir la miniatura**: la
+  lee a tamaño completo y de grilla (190 px, recorte 2:3), mide el alto real y avisa si es chica,
+  fina, sin contorno, ilegible o mal escrita (la del caballo: "débil"; la maqueta con el plan:
+  "con impacto"). Texto con ritmo: "100 kilometers a day" → `100 KM A DAY`.
+  `THUMBNAIL_TEXT_RESEARCH=0` / `THUMBNAIL_TEXT_CHECK=0` apagan la visión.
+  Guardas: `test_thumbnail_typography.py` (27); `test_thumbnail_superprompt.py` actualizado.
 - **2026-09-22g** — **Instagram: lo mismo que Facebook.** `instagram_uploader.upload_from_metadata`
   llama a `facebook_metadata.prepare_instagram_metadata` (mismo motor; en Instagram no hay campo
   de título: el caption arranca con el título, así que no se antepone nada). Marca = nombre de la

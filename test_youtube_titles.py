@@ -286,5 +286,65 @@ class ElUploaderYElStudio(unittest.TestCase):
         self.assertIn("youtube_meta.setdefault('title_mode', title_mode)", src)
 
 
+class LaRedaccion(unittest.TestCase):
+    """Dos videos distintos, la misma causa: la busqueda del autocompletado pegada tal cual.
+    - Trafalgar (24-09): "Nelson Trafalgar how the victory secured British seas" en YouTube, y
+      Facebook/Instagram pisaron "How Nelson Won Trafalgar Against a Bigger Fleet" con ese.
+    - U-boat (23-09, otro video): "U boat 48 crew survived..." (el guion dice "U-boat")."""
+
+    TRAFALGAR_SCRIPT = ("How did Admiral Nelson break a numerically superior fleet using unconventional tactics on "
+                        "October 21 1805? At 12:45 PM, Nelson ordered his ships to sail perpendicular, forming a "
+                        "daring double‑column that smashed the Franco‑Spanish line.")
+    TRAFALGAR_TOPIC = "How Nelson Won Trafalgar Against a Bigger Fleet"
+    UBOAT_SCRIPT = "The U‑boat U-977 fled to Argentina. Its 48 crew survived a 70‑day Atlantic crossing."
+
+    def _research(self, keyword, subject, text):
+        return {"keyword": keyword, "subject": subject, "entities": [], "corpus": set(yt.content_tokens(text)),
+                "suggestions": {keyword: 1.0}, "suggest_ranks": {}, "competitors": [], "sources_ok": {}}
+
+    def test_trafalgar_la_busqueda_pegada_no_es_un_titulo(self):
+        self.assertTrue(yt.readability_issues("Nelson Trafalgar how the victory secured British seas",
+                                              "nelson trafalgar"))
+        for bien in ("Nelson at Trafalgar: how the victory secured British seas", self.TRAFALGAR_TOPIC,
+                     "Hannibal crossing the Alps with 30,000 oxen", "Kaiten torpedo: 100 suicide subs in World War II"):
+            self.assertEqual(yt.readability_issues(bien, "nelson trafalgar"), [], bien)
+
+    def test_trafalgar_gana_un_titulo_bien_redactado(self):
+        pegado = "Nelson Trafalgar how the victory secured British seas"
+        rep = yt.optimize_title(self.TRAFALGAR_TOPIC, self.TRAFALGAR_SCRIPT, "Nelson's 1805 Miracle: 3 Ships Beat 30!",
+                                research=self._research("nelson trafalgar", "nelson",
+                                                        self.TRAFALGAR_TOPIC + " " + self.TRAFALGAR_SCRIPT),
+                                generate_fn=lambda p: [pegado], bible=BIBLE, own_winners=[], log=lambda m: None)
+        self.assertNotEqual(rep["title"], pegado)
+        fila = next(c for c in rep["candidates"] if c["title"] == pegado)
+        self.assertFalse(fila["valid"])
+        self.assertTrue(any(r.startswith("redaccion:") for r in fila["reasons"]))
+        self.assertIn(self.TRAFALGAR_TOPIC, [c["title"] for c in rep["candidates"]],
+                      "el titulo con el que se escribio el guion compite")
+
+    def test_uboat_se_escribe_como_en_el_guion(self):
+        formas = yt.canonical_forms(self.UBOAT_SCRIPT)
+        self.assertEqual(formas.get("u boat"), "U-boat")
+        self.assertEqual(yt.apply_canonical_forms("U boat 48 crew survived a 70-day Atlantic odyssey", formas),
+                         "U-boat 48 crew survived a 70-day Atlantic odyssey")
+
+    def test_el_guion_no_separable_del_guion_pasa_a_guion_comun(self):
+        # prueba en vivo de Trafalgar: el elegido traia "double‑column" copiado del guion
+        self.assertEqual(yt.apply_canonical_forms("Nelson at Trafalgar: 1805 double‑column wins", {}),
+                         "Nelson at Trafalgar: 1805 double-column wins")
+
+    def test_la_verificacion_del_llm_tambien_juzga_la_redaccion(self):
+        v = yt.parse_factcheck('{"results": [{"n": 1, "supported": true, "natural": false, "reason": "missing words"}]}')
+        self.assertEqual(v, {0: (False, "redaccion: missing words")})
+        self.assertIn('"natural"', yt.build_factcheck_prompt(["x"], "script"))
+
+    def test_el_pedido_al_llm_no_manda_pegar_la_clave(self):
+        p = yt.build_title_prompt(self.TRAFALGAR_TOPIC, self.TRAFALGAR_SCRIPT, "draft",
+                                  self._research("nelson trafalgar", "nelson", self.TRAFALGAR_SCRIPT), is_short=True, bible=BIBLE)
+        self.assertIn("NEVER write the bare keyword followed directly by a lowercase clause", p)
+        self.assertIn("Franco-Spanish", p)
+        self.assertNotIn("in the FIRST 3-4 words", p)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

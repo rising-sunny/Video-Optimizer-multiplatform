@@ -17,6 +17,7 @@ import subprocess
 import shutil
 
 import os
+import re
 import tempfile
 import threading
 import time
@@ -264,11 +265,16 @@ class MusicBrowserDialog(QDialog):
         
         self.music_results_list = QListWidget()
         self.music_results_list.itemDoubleClicked.connect(self.select_music)
+        self.music_results_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.music_results_list.customContextMenuRequested.connect(self._show_results_context_menu)
         layout.addWidget(self.music_results_list)
 
         self.copyright_filter_label = QLabel(
-            "Only Creative Commons tracks are shown. Check NC/ND restrictions before publishing."
+            "Solo temas CC BY / CC BY-SA: se pueden usar en videos monetizados. "
+            "La atribucion en ingles se agrega sola a la descripcion al publicar. "
+            "Si un tema recibe un reclamo, clic derecho > Bloquear artista."
         )
+        self.copyright_filter_label.setWordWrap(True)
         self.copyright_filter_label.setStyleSheet("color: #9ccc65; font-size: 11px;")
         layout.addWidget(self.copyright_filter_label)
         
@@ -649,36 +655,14 @@ class MusicBrowserDialog(QDialog):
         return "UNKNOWN"
 
     def _is_youtube_safe_license(self, license_url):
-        """Acepta licencias CC conocidas (con sus restricciones NC/ND)."""
-        return self._extract_license_code(license_url) != "UNKNOWN"
+        """Solo CC0 / CC BY / CC BY-SA: NC no se monetiza y ND no se puede poner en un video."""
+        from music_license import license_code, license_problem
+        return license_problem(license_code(license_url)) is None
 
     def _build_youtube_attribution_text(self, track):
-        """Genera texto en ingles para pegar en descripcion de YouTube."""
-        title = track.get('title', 'Unknown title')
-        artist = track.get('artist', 'Unknown artist')
-        license_url = track.get('license_url', '')
-        license_code = track.get('license_code') or self._extract_license_code(license_url)
-        track_url = (
-            track.get('share_url')
-            or track.get('short_url')
-            or (f"https://www.jamendo.com/track/{track.get('track_id')}" if track.get('track_id') else "")
-        )
-
-        lines = [
-            f"Music: \"{title}\" by {artist}",
-        ]
-        if track_url:
-            lines.append(f"Track link: {track_url}")
-
-        if license_url and license_code != "UNKNOWN":
-            lines.append(f"License: {license_code} ({license_url})")
-        elif license_url:
-            lines.append(f"License: {license_url}")
-        else:
-            lines.append("License: Not provided")
-
-        lines.append("Source: Jamendo")
-        return "\n".join(lines)
+        """Credito en ingles para la descripcion (el mismo que agregan los uploaders)."""
+        from music_license import attribution_text
+        return attribution_text(track)
 
     def _build_license_restriction_note(self, license_code):
         """Devuelve advertencia de uso para NC/ND."""
@@ -694,6 +678,15 @@ class MusicBrowserDialog(QDialog):
         if notes:
             return " ".join(notes)
         return "Commercial use is generally allowed under this CC license."
+
+    @staticmethod
+    def _preview_cache_path(track):
+        """Archivo local del tema, compartido por la vista previa y la forma de onda."""
+        key = str((track or {}).get('track_id') or '').strip()
+        if not key:
+            key = str((track or {}).get('title', 'track'))
+        key = re.sub(r'[^A-Za-z0-9_-]+', '_', key)[:80] or 'track'
+        return os.path.join(tempfile.gettempdir(), f"jamendo_preview_{key}.mp3")
 
     def _update_attribution_panel(self, track):
         """Actualiza UI de atribucion segun la pista seleccionada."""
@@ -729,6 +722,31 @@ class MusicBrowserDialog(QDialog):
                 f"Attribution optional for this license, but keeping the credit is recommended. {license_note}"
             )
         self.copy_attribution_btn.setEnabled(True)
+
+    def _show_results_context_menu(self, pos):
+        """Clic derecho en un resultado: bloquear al artista si su musica genero un reclamo."""
+        item = self.music_results_list.itemAt(pos)
+        track = item.data(Qt.ItemDataRole.UserRole) if item else None
+        if not isinstance(track, dict) or track.get('source') == 'local':
+            return
+        from PyQt6.QtWidgets import QMenu
+        menu = QMenu(self)
+        action = menu.addAction(f"Bloquear a {track.get('artist', 'este artista')} (reclamo de copyright en YouTube)")
+        if menu.exec(self.music_results_list.mapToGlobal(pos)) is not action:
+            return
+        try:
+            from music_license import record_claim
+            record_claim(track, claimants="reclamo de Content ID (marcado a mano)")
+        except Exception as e:
+            QMessageBox.warning(self, "Error", f"No se pudo guardar el bloqueo: {e}")
+            return
+        artist = str(track.get('artist') or '')
+        for row in range(self.music_results_list.count() - 1, -1, -1):
+            data = self.music_results_list.item(row).data(Qt.ItemDataRole.UserRole)
+            if isinstance(data, dict) and str(data.get('artist') or '') == artist:
+                self.music_results_list.takeItem(row)
+        self.music_results = [t for t in (self.music_results or []) if str(t.get('artist') or '') != artist]
+        self.log(f"[OK] Artista bloqueado: {artist}. No vuelve a aparecer en las busquedas.")
 
     def copy_attribution_to_clipboard(self):
         """Copia la atribucion al portapapeles."""
@@ -853,7 +871,7 @@ class MusicBrowserDialog(QDialog):
              
             if not self.music_results:
                 self.music_results_list.addItem(
-                    "No Creative Commons results found for this search."
+                    "Sin temas CC BY / CC BY-SA para esta busqueda. Proba otras palabras."
                 )
                 if filtered_out > 0:
                     self.log(f"[WARN] Se filtraron {filtered_out} pista(s) sin licencia CC valida")
@@ -996,10 +1014,11 @@ class MusicBrowserDialog(QDialog):
                 self.music_download_progress.setValue(0)
                 self.music_download_progress.setVisible(True)
             
-            track_id = self.current_music_track.get('title', 'track').replace(' ', '_').replace('/', '_')
-            temp_path = os.path.join(tempfile.gettempdir(), f"jamendo_preview_{track_id}.mp3")
+            temp_path = self._preview_cache_path(self.current_music_track)
             
-            if hasattr(self, '_current_preview_path') and self._current_preview_path == temp_path and os.path.exists(temp_path):
+            # El archivo completo ya existe (lo bajo la forma de onda o una vista previa anterior).
+            if os.path.exists(temp_path) and os.path.getsize(temp_path) > 0:
+                self._current_preview_path = temp_path
                 print(f"ðŸŽµ Usando archivo en cachÃ©: {temp_path}")
                 if hasattr(self, '_currently_playing_file') and self._currently_playing_file == temp_path:
                     if self._using_qt_player:
@@ -1024,41 +1043,25 @@ class MusicBrowserDialog(QDialog):
                         return
 
                     try:
-                        print(f"ðŸŽµ Descargando audio desde: {audio_url}")
-                        response = requests.get(audio_url, timeout=(10, 15), stream=True)
-                        if response.status_code == 200:
-                            total_size = int(response.headers.get('content-length', 0))
-                            downloaded = 0
-                            
-                            with open(temp_path, 'wb') as f:
-                                for chunk in response.iter_content(chunk_size=8192):
-                                    if self._download_cancelled:
-                                        print("ðŸ›‘ Descarga cancelada")
-                                        return
-                                    f.write(chunk)
-                                    downloaded += len(chunk)
-                                    if total_size > 0:
-                                        pct = int((downloaded / total_size) * 100)
-                                        self._download_progress_signal.emit(pct)
-                                        if pct % 10 == 0 or downloaded % 51200 < 8192:
-                                            print(f"   ðŸ“¥ Descargando: {pct}%")
-                            
-                            if not self._download_cancelled:
-                                self._download_progress_signal.emit(100)
-                                self._current_preview_path = temp_path
-                                print(f"âœ… Descarga completada: {downloaded/1024:.1f} KB")
-                                self._play_file_signal.emit(temp_path)
-                        else:
-                            print(f"âŒ Error descargando: HTTP {response.status_code}")
-                            self._download_error_signal.emit(f"Error HTTP: {response.status_code}")
-                    except requests.exceptions.Timeout:
-                        print(f"âŒ Timeout en descarga (servidor muy lento)")
-                        self._download_error_signal.emit(
-                            "Timeout: El servidor de Jamendo estÃ¡ muy lento.\nIntenta con otra pista.")
+                        from music_recommender import download_audio
+                        print(f"[Jamendo] Descargando vista previa: {audio_url}")
+                        path = download_audio(
+                            audio_url, temp_path,
+                            progress=self._download_progress_signal.emit,
+                            cancelled=lambda: self._download_cancelled,
+                        )
+                        if path and not self._download_cancelled:
+                            self._current_preview_path = temp_path
+                            print(f"[Jamendo] Vista previa lista: {os.path.getsize(temp_path) / 1024:.1f} KB")
+                            self._play_file_signal.emit(temp_path)
+                        elif not path:
+                            print("[Jamendo] Descarga cancelada")
                     except Exception as e:
-                        print(f"âŒ Error descargando: {e}")
-                        self._download_error_signal.emit(str(e))
-                
+                        print(f"[Jamendo] Error descargando: {e}")
+                        self._download_error_signal.emit(
+                            "No se pudo descargar el tema de Jamendo (se reintento y se probo el "
+                            f"servidor espejo).\nRevisa la conexion o proba otra pista.\n\n{e}")
+
                 threading.Thread(target=download_and_play, daemon=True).start()
         
         except Exception as e:
@@ -2180,29 +2183,14 @@ class MusicBrowserDialog(QDialog):
                     import requests
                     
                     temp_path = self.cached_path
+                    # Archivo compartido con la vista previa: no se borra, y si la vista
+                    # previa lo esta bajando, download_audio espera y lo reutiliza.
                     should_delete = False
-                    
-                    if not temp_path or not os.path.exists(temp_path):
-                        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.mp3')
-                        temp_path = temp_file.name
-                        temp_file.close()
-                        should_delete = True
-                        
+                    if not os.path.exists(temp_path):
                         try:
-                            response = requests.get(self.audio_url, timeout=15, stream=True)
-                            if response.status_code != 200:
-                                self.error_occurred.emit(f"Error HTTP: {response.status_code}")
-                                return
-                            
-                            with open(temp_path, 'wb') as f:
-                                for chunk in response.iter_content(chunk_size=8192):
-                                    f.write(chunk)
+                            from music_recommender import download_audio
+                            download_audio(self.audio_url, temp_path)
                         except Exception as e:
-                            if should_delete and os.path.exists(temp_path):
-                                try:
-                                    os.unlink(temp_path)
-                                except:
-                                    pass
                             self.error_occurred.emit(f"Error descargando: {e}")
                             return
                     
@@ -2245,14 +2233,7 @@ class MusicBrowserDialog(QDialog):
                 except Exception as e:
                     self.error_occurred.emit(f"Error procesando: {e}")
         
-        cached_path = None
-        if hasattr(self, '_current_preview_path') and self._current_preview_path:
-            track_id = track.get('title', 'track').replace(' ', '_').replace('/', '_')
-            expected_path = os.path.join(tempfile.gettempdir(), f"jamendo_preview_{track_id}.mp3")
-            if os.path.exists(expected_path):
-                cached_path = expected_path
-        
-        self.waveform_worker = WaveformWorker(track, cached_path)
+        self.waveform_worker = WaveformWorker(track, self._preview_cache_path(track))
         self.waveform_worker.waveform_ready.connect(self.on_waveform_ready)
         self.waveform_worker.progress_updated.connect(self.on_waveform_progress)
         self.waveform_worker.error_occurred.connect(self.on_waveform_error)
@@ -2276,6 +2257,10 @@ class MusicBrowserDialog(QDialog):
     
     def on_waveform_ready(self, waveform_data, duration):
         """Callback cuando la forma de onda estÃ¡ lista"""
+        # El audio ya esta en el cache compartido: recortar/guardar no necesita reproducir antes.
+        cached = self._preview_cache_path(getattr(self, 'current_music_track', None) or {})
+        if os.path.exists(cached):
+            self._current_preview_path = cached
         # Ocultar barra de progreso
         if hasattr(self, 'waveform_progress'):
             self.waveform_progress.setVisible(False)
@@ -2402,8 +2387,8 @@ class MusicBrowserDialog(QDialog):
                 file_name = os.path.basename(local_path)
                 temp_path = os.path.join(temp_dir, f"local_{file_name}")
                 
-                # Copiar archivo local
-                import shutil
+                # Copiar archivo local (shutil es el import del modulo: un `import shutil`
+                # aca lo volvia variable local de toda la funcion y rompia la rama de Jamendo)
                 shutil.copy2(local_path, temp_path)
                 
                 final_path = temp_path
@@ -2442,6 +2427,9 @@ class MusicBrowserDialog(QDialog):
                     'license_code': self.current_music_track.get('license_code', 'LOCAL'),
                     'attribution_required': self.current_music_track.get('attribution_required', False),
                     'attribution_text_en': self.youtube_attribution_text.toPlainText().strip(),
+                    'track_id': self.current_music_track.get('track_id', ''),
+                    'artist_id': self.current_music_track.get('artist_id', ''),
+                    'share_url': self.current_music_track.get('share_url', ''),
                 }
 
                 self.log(f"[OK] Archivo local seleccionado: {final_path}")
@@ -2460,8 +2448,14 @@ class MusicBrowserDialog(QDialog):
                 QMessageBox.warning(self, "Error", "La pista no tiene URL de audio")
                 return
             
-            downloaded_path = download_track(audio_url, save_path)
-            
+            # Si la vista previa o la forma de onda ya bajaron el tema, se copia (instantaneo).
+            cached = self._preview_cache_path(self.current_music_track)
+            if os.path.exists(cached) and os.path.getsize(cached) > 0:
+                shutil.copy2(cached, save_path)
+                downloaded_path = save_path
+            else:
+                downloaded_path = download_track(audio_url, save_path)
+
             if downloaded_path and os.path.exists(downloaded_path):
                 final_path = downloaded_path
                 if PYDUB_AVAILABLE and (self.music_crop_start_value > 0 or 
@@ -2500,6 +2494,9 @@ class MusicBrowserDialog(QDialog):
                             'youtube_attribution_text',
                             self._build_youtube_attribution_text(self.current_music_track),
                         ),
+                        'track_id': self.current_music_track.get('track_id', ''),
+                        'artist_id': self.current_music_track.get('artist_id', ''),
+                        'share_url': self.current_music_track.get('share_url', ''),
                     }
 
                 self.log(f"[OK] Musica seleccionada: {self.selected_music_path}")

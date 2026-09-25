@@ -37,6 +37,8 @@ generated_media/
 daily_shorts/*
 # El Channel Bible es estrategia, no media: va a git (el resto de daily_shorts/ no)
 !daily_shorts/channel_strategy_profile.json
+# Artistas/temas de Jamendo que generaron reclamos de Content ID (music_license): va a git
+!daily_shorts/music_claims.json
 projects/
 long_form/
 project_media/

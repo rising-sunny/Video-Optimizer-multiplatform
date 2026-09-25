@@ -13,6 +13,9 @@ No necesita red: se le enchufa un `_generate` falso al cliente.
 """
 
 import unittest
+import json
+from types import SimpleNamespace
+from unittest.mock import Mock
 
 from claude_client import ClaudeAiClient
 from thumbnail_formats import LANDSCAPE_16_9, SHORT_9_16
@@ -39,32 +42,24 @@ def cliente_espia():
     return cli, caja
 
 
-RESPUESTA_OK = """[TEXT]
-20,000 PEOPLE
+def art_response(hook="20,000 PEOPLE", scene="photoreal cinematic thumbnail of an immense earthen mound with a tiny human for scale",
+                 evidence="", **overrides):
+    direction = dict(font_family="editorial_sans", finish="matte_ink", base_color="#F1E6CC",
+                     accent_color="#EFC891", background_color="#14222B", number_layout="hero",
+                     tracking="optical", evidence_quote=evidence, visual_anchor=scene,
+                     reason="Letras claras y tonos calidos relacionados con la luz de la escena.")
+    direction.update(overrides)
+    return (f"[TEXT]{hook}[ART DIRECTION]{json.dumps(direction)}"
+            f"[POSITIVE PROMPT]{scene}[NEGATIVE PROMPT]misspelled words, garbled glyphs, modern clothing")
 
-[POSITIVE PROMPT]
-photoreal cinematic thumbnail of a Mississippian chief before Monks Mound,
-"20,000 PEOPLE" in heavy condensed sans-serif poster type, warm rim light
 
-[NEGATIVE PROMPT]
-misspelled words, garbled glyphs, modern clothing
-"""
+RESPUESTA_OK = art_response()
 
 # El modelo devuelve esto la mitad de las veces: bloques PEGADOS a la etiqueta.
-RESPUESTA_SIN_SALTOS = (
-    '[TEXT]20,000 PEOPLE'
-    '[POSITIVE PROMPT]photoreal thumbnail, "20,000 PEOPLE" in condensed poster type'
-    '[NEGATIVE PROMPT]garbled glyphs, modern clothing'
-)
+RESPUESTA_SIN_SALTOS = art_response(scene="photoreal thumbnail of an immense earthen mound")
 
 # El LLM se olvida de meter el hook en el prompt positivo.
-RESPUESTA_SIN_HOOK_EN_PROMPT = """[TEXT]
-20,000 PEOPLE
-[POSITIVE PROMPT]
-photoreal cinematic thumbnail of a Mississippian chief before Monks Mound
-[NEGATIVE PROMPT]
-garbled glyphs
-"""
+RESPUESTA_SIN_HOOK_EN_PROMPT = art_response()
 
 
 class DevuelveElTexto(unittest.TestCase):
@@ -87,9 +82,64 @@ class DevuelveElTexto(unittest.TestCase):
         self.assertIn("garbled glyphs", res["negative"])
 
     def test_el_hook_se_normaliza_a_mayusculas_sin_comillas(self):
-        res = cliente_con('[TEXT]\n"veinte mil"\n[POSITIVE PROMPT]\nx\n[NEGATIVE PROMPT]\ny'
+        res = cliente_con(art_response(hook='"veinte mil"')
                           ).generate_thumbnail_super_prompt("t", thumbnail_format=SHORT_9_16)
         self.assertEqual(res["text"], "VEINTE MIL")
+
+
+class RespuestasIncompletas(unittest.TestCase):
+
+    def test_reintenta_el_corte_de_la_captura_sin_disfrazarlo_con_un_negativo(self):
+        cli = cliente_con("")
+        cli._generate = Mock(side_effect=[
+            '[TEXT]HOW[POSITIVE PROMPT]"HOW" rendered in bold condensed wedge-',
+            RESPUESTA_OK,
+        ])
+        res = cli.generate_thumbnail_super_prompt("Naval cannon", thumbnail_format=SHORT_9_16)
+        self.assertEqual(res["text"], "20,000 PEOPLE")
+        self.assertIn("photoreal cinematic thumbnail", res["combined"])
+        self.assertNotIn("wedge-", res["combined"])
+        budgets = [c.kwargs["max_tokens"] for c in cli._generate.call_args_list]
+        self.assertEqual(len(budgets), 2)
+        self.assertGreater(budgets[0], 1400)
+        self.assertGreater(budgets[1], budgets[0])
+
+    def test_no_devuelve_un_resultado_copiable_si_ambos_intentos_fallan(self):
+        for broken in (
+            '[TEXT]CANNON[POSITIVE PROMPT]a cannon at sea',
+            '[TEXT]CANNON[POSITIVE PROMPT]a cannon[NEGATIVE PROMPT]',
+            '[TEXT]CANNON[POSITIVE PROMPT]bold wedge-[NEGATIVE PROMPT]blur',
+            None,
+        ):
+            with self.subTest(response=broken):
+                cli = cliente_con(broken)
+                cli._generate = Mock(return_value=broken)
+                self.assertIsNone(cli.generate_thumbnail_super_prompt("Naval cannon"))
+                self.assertEqual(cli._generate.call_count, 2)
+
+    def test_how_tampoco_se_acepta_si_lo_elige_el_llm(self):
+        cli = cliente_con("")
+        cli._generate = Mock(side_effect=[
+            art_response(hook="HOW?", scene="cannon on a ship"),
+            RESPUESTA_OK,
+        ])
+        self.assertEqual(cli.generate_thumbnail_super_prompt("Naval cannon")["text"], "20,000 PEOPLE")
+        self.assertEqual(cli._generate.call_count, 2)
+
+    def test_groq_rechaza_length_aunque_el_texto_tenga_los_tres_bloques(self):
+        from groq_client import GroqAiClient
+        client = GroqAiClient.__new__(GroqAiClient)
+        client.model_cursors = {}
+        client._get_models_for_task = lambda task: ["first", "second"]
+        create = Mock(side_effect=[
+            SimpleNamespace(choices=[SimpleNamespace(
+                finish_reason="length", message=SimpleNamespace(content=RESPUESTA_OK))]),
+            SimpleNamespace(choices=[SimpleNamespace(
+                finish_reason="stop", message=SimpleNamespace(content="complete response"))]),
+        ])
+        client.client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+        self.assertEqual(client._generate("prompt", task_type="script_quality"), "complete response")
+        self.assertEqual(create.call_count, 2)
 
 
 class LaIaEscribeElTexto(unittest.TestCase):
@@ -104,7 +154,7 @@ class LaIaEscribeElTexto(unittest.TestCase):
         res = cliente_con(RESPUESTA_SIN_HOOK_EN_PROMPT).generate_thumbnail_super_prompt(
             "Cahokia", thumbnail_format=SHORT_9_16, render_text=True)
         self.assertIn('"20,000 PEOPLE"', res["positive"])
-        self.assertIn("condensed", res["positive"].lower(),
+        self.assertIn("semibold", res["positive"].lower(),
                       "se agrego el hook pero sin decir como dibujarlo")
 
     def test_el_prompt_al_llm_pide_dibujar_el_texto(self):
@@ -182,7 +232,7 @@ class TitularEnInglesSinTildes(unittest.TestCase):
         self.assertEqual(_ascii_hook("  50   toneladas  "), "50 TONELADAS")
 
     def test_el_hook_parseado_queda_en_ascii(self):
-        res = cliente_con('[TEXT]\n6 PIRÁMIDES\n[POSITIVE PROMPT]\nx\n[NEGATIVE PROMPT]\ny'
+        res = cliente_con(art_response(hook='6 PIRÁMIDES')
                           ).generate_thumbnail_super_prompt("Caral", thumbnail_format=SHORT_9_16)
         self.assertEqual(res["text"], "6 PIRAMIDES")
         self.assertTrue(res["text"].isascii())
@@ -201,33 +251,52 @@ class TitularEnInglesSinTildes(unittest.TestCase):
             self.assertIn("no accents", d)
 
 
-class TipografiaMinimalista(unittest.TestCase):
-    """El primer resultado salio con Impact, contorno grueso y 80% del ancho."""
+class TipografiaConImpactoMedido(unittest.TestCase):
+    """Historia: la primera version salio con Impact, contorno grueso y 80% del ancho; se paso
+    al extremo minimo (6% de alto, peso medio, espaciado amplio, sombra suave) y en la miniatura
+    del caballo mongol (2026-09-23) el generador dejo el texto en 2.6% de alto, peso regular:
+    mas chico que las 31 miniaturas con texto de los shorts de historia mas vistos. Ahora sale
+    del plan medido (thumbnail_typography): negrita condensada, 7-8% para rotulos, la cifra mas
+    grande. El acabado es ahora de cartel cinematografico, sin borde grueso ni sombra dura."""
 
-    def test_no_pide_tipografia_de_poster(self):
-        d = " ".join(SHORT_9_16.text_render_directives("X"))
+    def test_negrita_condensada_pero_no_impact(self):
+        d = " ".join(SHORT_9_16.text_render_directives("100 KILOMETERS"))
         self.assertIn("NOT Impact", d)
-        self.assertIn("NOT a heavy condensed poster face", d)
-        self.assertIn("geometric sans-serif", d)
+        self.assertIn("bold condensed", d)
+        self.assertIn("NOT a thin or light weight", d)
+        self.assertNotIn("generous letter spacing --", d)
+        self.assertNotIn("small and restrained", d)
 
-    def test_no_pide_contorno_grueso(self):
-        d = " ".join(SHORT_9_16.text_render_directives("X"))
+    def test_acabado_cinematografico_sin_borde_de_pegatina(self):
+        d = " ".join(SHORT_9_16.text_render_directives("100 KILOMETERS"))
         self.assertIn("no thick outline", d)
-        self.assertNotIn("hard black outline", d)
+        self.assertIn("no hard offset drop shadow", d)
+        self.assertIn("no bevel, no extruded 3D", d)
+        self.assertIn("optical kerning", d)
 
-    def test_el_texto_ocupa_bastante_menos(self):
-        d = " ".join(SHORT_9_16.text_render_directives("X"))
-        self.assertIn("no more than 60% of the frame width", d)
-        self.assertNotIn("80% of the frame width", d)
+    def test_la_cifra_va_sola_y_mas_grande(self):
+        d = " ".join(SHORT_9_16.text_render_directives("100 KILOMETERS"))
+        self.assertIn('line 1 "100" -- cap height 11.0%', d)
+        self.assertIn('line 2 "KILOMETERS" -- cap height 8.0%', d)
+
+    def test_nunca_llega_al_borde(self):
+        import re
+        d = " ".join(SHORT_9_16.text_render_directives("THE MONGOL HORSE ARMY"))
+        ancho = int(re.search(r"spans about (\d+)% of the frame width", d).group(1))
+        self.assertLessEqual(ancho, 86)
 
     def test_el_texto_no_entra_en_la_zona_recortada(self):
         # En el resultado real arranco al 5%, dentro del 7.8% que recorta la
         # grilla: se le comia el borde superior a las letras.
         d = " ".join(SHORT_9_16.text_render_directives("X"))
-        self.assertIn("13%", d)
-        self.assertIn("nothing above 13%", d)
-        self.assertGreater(0.13, SHORT_9_16.ui_reserved_top,
+        self.assertIn("nothing above 11%", d)
+        self.assertGreater(0.11, SHORT_9_16.ui_reserved_top,
                            "el piso del texto tiene que estar por debajo del recorte")
+
+    def test_sin_texto_concreto_pasa_la_formula(self):
+        d = " ".join(SHORT_9_16.text_render_directives())
+        self.assertIn("if the text starts with a number, put the number ALONE", d)
+        self.assertIn("{short_text}", d)
 
 
 class NoEsElRetratoGenericoDeIa(unittest.TestCase):
@@ -318,7 +387,7 @@ class DirectivasDeTipografia(unittest.TestCase):
         # el recorte 2:3, abajo el titulo que YouTube superpone en movil.
         d = " ".join(SHORT_9_16.text_render_directives("X"))
         self.assertIn("no text below 71%", d)
-        self.assertIn("nothing above 13%", d)
+        self.assertIn("nothing above 11%", d)
 
     def test_el_apaisado_manda_el_texto_al_tercio_derecho(self):
         d = " ".join(LANDSCAPE_16_9.text_render_directives("X"))

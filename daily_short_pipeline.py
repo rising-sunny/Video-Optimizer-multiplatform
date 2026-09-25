@@ -2044,6 +2044,17 @@ def generate_platform_metadata(storyboard: dict, output_dir: Path) -> tuple[dict
     youtube_metadata = generate_youtube_metadata(storyboard, output_dir, used_titles=used_titles)
     from channel_profiles import active_channel
     youtube_metadata['channel_profile'] = storyboard.get('channel_profile') or active_channel()
+    # Atribucion de la musica automatica de Jamendo (CC BY la exige); cada uploader la
+    # pega al final de la descripcion ya optimizada. Ver music_license.
+    music_attribution = ""
+    if storyboard.get("music_data"):
+        try:
+            from music_license import attribution_text
+            music_attribution = attribution_text(storyboard["music_data"])
+        except Exception as e:
+            log(f"Atribucion de musica omitida: {e}", "WARN")
+    if music_attribution:
+        youtube_metadata["music_attribution"] = music_attribution
     
     if _is_longform_storyboard(storyboard):
         _save_platform_metadata_files(output_dir, youtube_metadata, {}, {})
@@ -2063,6 +2074,9 @@ def generate_platform_metadata(storyboard: dict, output_dir: Path) -> tuple[dict
         facebook_metadata=facebook_metadata,
         used_titles=used_titles
     )
+    if music_attribution:
+        facebook_metadata["music_attribution"] = music_attribution
+        instagram_metadata["music_attribution"] = music_attribution
     _save_platform_metadata_files(output_dir, youtube_metadata, facebook_metadata, instagram_metadata)
     log(f"Metadata YouTube guardada: {output_dir / YOUTUBE_METADATA_FILENAME}", "OK")
     log(f"Metadata Facebook guardada: {output_dir / FACEBOOK_METADATA_FILENAME}", "OK")
@@ -2562,6 +2576,22 @@ def run_pipeline(topic: str = None, voice_id: str = None, upload: bool = False,
     save_summary(output_dir, idea, video_path, thumbnail_path, metadata, storyboard,
                  facebook_metadata=facebook_metadata,
                  instagram_metadata=instagram_metadata)
+
+    # ── Paso 8.5: Hechos verificados (script_fact_check) ──────────────
+    # Nada con afirmaciones falsas o inventadas se sube (Trafalgar 2026-09-23).
+    if upload:
+        try:
+            from script_fact_check import upload_gate
+            facts_ok, _fc_report, _fc_msg = upload_gate(storyboard, log=lambda m: log(m, "INFO"))
+            save_storyboard(output_dir, storyboard)   # deja el informe junto al proyecto
+            if facts_ok:
+                log(_fc_msg, "INFO")
+            else:
+                log("Hechos: la narracion tiene afirmaciones falsas o inventadas. NO se sube:\n" + _fc_msg,
+                    "ERROR")
+                upload = False
+        except Exception as e:
+            log(f"Verificacion de hechos omitida: {e}", "WARN")
 
     # ── Paso 9: Upload a YouTube (opcional) ───────────────────────────
     upload_result = None

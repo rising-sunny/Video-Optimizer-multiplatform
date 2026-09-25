@@ -1449,6 +1449,48 @@ Reglas:
                  f"(se mezcla sobre el clip, sin sumar duracion)")
         return destino, real
 
+    def _add_hook_to_ass(self, ass_path, storyboard_data, res):
+        """Texto de gancho (video_opening) como evento del mismo .ass de los subtitulos."""
+        try:
+            from video_opening import append_hook_to_ass, get_hook_overlay
+            hook = get_hook_overlay(storyboard_data)
+            if not hook or not ass_path or not os.path.exists(ass_path):
+                return False
+            with open(ass_path, encoding='utf-8') as fh:
+                text = fh.read()
+            nuevo = append_hook_to_ass(text, hook, int(res[0]), int(res[1]))
+            if nuevo != text:
+                with open(ass_path, 'w', encoding='utf-8') as fh:
+                    fh.write(nuevo)
+                self._record_audio_qa('hook_overlay', hook['text'])
+                self.log(f"   Texto de gancho: '{hook['text']}' ({hook['duration']:.1f}s, arriba, sobre la escena 1)")
+            return True
+        except Exception as exc:
+            self.log(f"   [WARN] No se pudo agregar el texto de gancho: {exc}")
+            return False
+
+    def _burn_hook_only(self, video_path, storyboard_data, res):
+        """Si el video sale sin subtitulos, el texto de gancho se quema solo."""
+        try:
+            from video_opening import get_hook_overlay, standalone_hook_ass
+            hook = get_hook_overlay(storyboard_data)
+            if not hook or not video_path or not os.path.exists(str(video_path)):
+                return False
+            ass_path = str(video_path).replace('.mp4', '_hook.ass')
+            with open(ass_path, 'w', encoding='utf-8') as fh:
+                fh.write(standalone_hook_ass(hook, int(res[0]), int(res[1])))
+            from dynamic_subtitles_generator import DynamicSubtitleEngine
+            out_hook = str(video_path).replace('.mp4', '_hook.mp4')
+            if DynamicSubtitleEngine.burn_subtitles_with_ffmpeg(str(video_path), ass_path, out_hook,
+                                                                video_width=int(res[0]), video_height=int(res[1])):
+                os.replace(out_hook, str(video_path))
+                self._record_audio_qa('hook_overlay', hook['text'])
+                self.log(f"   Texto de gancho quemado sin subtitulos: '{hook['text']}'")
+                return True
+        except Exception as exc:
+            self.log(f"   [WARN] No se pudo quemar el texto de gancho: {exc}")
+        return False
+
     def _build_motion_filter(self, clip_data, frames, duration, size,
                              apply_cinematic, index):
         """Filtro de movimiento (Ken Burns) para un clip de imagen.
@@ -1468,6 +1510,12 @@ Reglas:
         # un movimiento. Va quieto.
         if clip_data.get('is_cover'):
             return f"zoompan=z=1:x=0:y=0:d={n}:s={width}x{height}"
+
+        # Arranque nuevo (video_opening): movimiento desde el cuadro 0. El zoom por defecto
+        # arranca lento y el primer medio segundo se ve quieto.
+        if clip_data.get('opening_push_in'):
+            from video_opening import push_in_filter
+            return push_in_filter(n, width, height, float(clip_data['opening_push_in']))
 
         if apply_cinematic and CINEMATIC_AVAILABLE:
             try:
@@ -2810,6 +2858,24 @@ Reglas:
             )
         generated_clips = _merged
 
+        # Arranque (video_opening): el primer plano dura ~1.8 s (mediana de los shorts que ganan)
+        # y arranca con acercamiento. Solo en storyboards nuevos: los viejos renderizan igual.
+        try:
+            import video_opening as _vo
+            if generated_clips and _vo.opening_style(storyboard_data) == _vo.OPENING_STYLE:
+                _op = storyboard_data.get('opening') or {}
+                _moved = _vo.enforce_min_first_shot(
+                    generated_clips,
+                    float(_op.get('min_first_shot_seconds') or _vo.DEFAULTS['min_first_shot_seconds']))
+                generated_clips[0]['opening_push_in'] = float(
+                    _op.get('push_in_zoom') or _vo.DEFAULTS['push_in_zoom'])
+                self._record_audio_qa('opening_style', _vo.OPENING_STYLE)
+                self.log(f"   Arranque: primer plano {generated_clips[0]['duration']:.2f}s"
+                         + (f" (+{_moved:.2f}s tomados del segundo)" if _moved else "")
+                         + ", acercamiento desde el cuadro 0, voz en 0.0s")
+        except Exception as exc:
+            self.log(f"   [WARN] No se pudo preparar el arranque: {exc}")
+
         # 2. Ensamblar
         res = VideoConfig.VIDEO_RESOLUTION_VERTICAL if is_vertical else VideoConfig.VIDEO_RESOLUTION
 
@@ -2953,6 +3019,24 @@ Reglas:
             except Exception as e:
                 self.log(f"   ⚠️ Error descargando música: {e}")
                 bgm = None
+
+        # Que musica quedo en la mezcla: se atribuye en la descripcion al publicar
+        # (music_license). Antes 'music_attribution' era siempre None y la atribucion
+        # que exige CC BY nunca llegaba a YouTube.
+        _music_used = None
+        if bgm and _bgm_paths:
+            _music_used = dict(manual_bgm_metadata) if isinstance(manual_bgm_metadata, dict) else {
+                'source': 'local', 'license_code': 'LOCAL',
+                'title': os.path.splitext(os.path.basename(str(bgm)))[0]}
+        elif bgm and effective_music_data:
+            _music_used = dict(effective_music_data)
+        _music_attribution = None
+        if _music_used and str(_music_used.get('source') or '').lower() != 'local':
+            try:
+                from music_license import attribution_text as _music_attr_text
+                _music_attribution = _music_attr_text(_music_used)
+            except Exception:
+                _music_attribution = None
 
         # Preparar audio con fade-out suave al final
         # Agregar segundos extra despuÃ©s de la narraciÃ³n para un cierre gradual
@@ -3162,7 +3246,8 @@ Reglas:
                     'script': storyboard_data['script'],
                     'topic': storyboard_data['topic'],
                     'category': storyboard_data['category'],
-                    'music_attribution': None,
+                    'music_attribution': _music_attribution,
+                    'music_used': _music_used,
                     'segments': storyboard_data.get('segments', []),
                     'audio_path': storyboard_data.get('audio_path'),
                     'final_audio_path': final_audio_path,
@@ -3198,6 +3283,7 @@ Reglas:
                                 language=subtitle_language
                             )
                             _subtitle_sync = dict(getattr(wrapper.engine, 'last_sync_details', None) or {})
+                            self._add_hook_to_ass(ass_path, storyboard_data, res)
 
                             # Verificar que el ASS se generÃ³ con contenido
                             if not os.path.exists(ass_path) or os.path.getsize(ass_path) < 50:
@@ -3230,6 +3316,7 @@ Reglas:
                         self.log(f"   {traceback.format_exc().splitlines()[-1]}")
 
                     if not subs_applied:
+                        self._burn_hook_only(result.get('video_path') or str(out), storyboard_data, res)
                         self.log(f"ðŸ”´ ATENCIÃ“N: El video final NO contiene subtÃ­tulos. "
                                  f"PodÃ©s aplicarlos manualmente con: python simple_subs.py")
 
@@ -3239,6 +3326,7 @@ Reglas:
                         subtitle_sync=_subtitle_sync,
                     )
                 else:
+                    self._burn_hook_only(str(out), storyboard_data, res)
                     result['audio_qa_problems'] = self.log_audio_qa(
                         video_path=str(out), audio_path=final_audio_path
                     )
@@ -3513,7 +3601,8 @@ Reglas:
             'script': storyboard_data['script'], 
             'topic': storyboard_data['topic'], 
             'category': storyboard_data['category'], 
-            'music_attribution': None,
+            'music_attribution': _music_attribution,
+            'music_used': _music_used,
             'segments': storyboard_data.get('segments', []),  # Incluir segmentos para el preview
             'audio_path': storyboard_data.get('audio_path'),  # Incluir audio_path para el preview
             'final_audio_path': final_audio_path,
@@ -3547,6 +3636,7 @@ Reglas:
                         language=subtitle_language
                     )
                     _subtitle_sync = dict(getattr(wrapper.engine, 'last_sync_details', None) or {})
+                    self._add_hook_to_ass(ass_path, storyboard_data, res)
 
                     if not os.path.exists(ass_path) or os.path.getsize(ass_path) < 50:
                         self.log(f"âš ï¸ Archivo ASS no generado o vacÃ­o: {ass_path}")
@@ -3579,6 +3669,7 @@ Reglas:
                 self.log(f"   {traceback.format_exc().splitlines()[-1]}")
 
             if not subs_applied:
+                self._burn_hook_only(result.get('video_path') or str(out), storyboard_data, res)
                 self.log(f"ðŸ”´ ATENCIÃ“N: El video final NO contiene subtÃ­tulos. "
                          f"PodÃ©s aplicarlos manualmente con: python simple_subs.py")
 
@@ -3588,6 +3679,7 @@ Reglas:
                 subtitle_sync=_subtitle_sync,
             )
         else:
+            self._burn_hook_only(result.get('video_path') or str(out), storyboard_data, res)
             result['audio_qa_problems'] = self.log_audio_qa(
                 video_path=result.get('video_path') or str(out),
                 audio_path=final_audio_path,

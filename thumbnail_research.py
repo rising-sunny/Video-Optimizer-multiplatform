@@ -150,6 +150,12 @@ def _ascii_upper(text: str) -> str:
     return re.sub(r"\s+", " ", t).strip(" ,.-").upper()
 
 
+# 'cien kilometros POR DIA' pega mas que 'cien kilometros': el ritmo es la noticia.
+_RATE_RE = re.compile(r"\s+(?:a|an|per|each|every)\s+(day|night|hour|week|month|year)\b", re.I)
+_UNIT_ABBR = {"kilometers": "KM", "kilometres": "KM", "kilometer": "KM", "kilometre": "KM",
+              "kilograms": "KG", "kilogram": "KG", "kilos": "KG"}
+
+
 def _is_year(num: str) -> bool:
     return bool(re.fullmatch(r"1\d{3}|20\d{2}", num))
 
@@ -170,12 +176,14 @@ def text_options(title: str, script: str, research: dict[str, Any], archetype: s
     out: list[dict[str, str]] = []
     seen: set[str] = set()
 
-    def add(text: str, why: str) -> None:
+    def add(text: str, why: str, validate: str = "", max_words: int = 3) -> None:
         t = _ascii_upper(text)
         words = t.split()
-        if not t or len(t) > max_chars or not 1 <= len(words) <= 3 or t in seen:
+        if not t or len(t) > max_chars or not 1 <= len(words) <= max_words or t in seen:
             return
-        toks = set(content_tokens(t))
+        toks = set(content_tokens(validate or t))     # 'KM' se valida como 'kilometers'
+        if not toks:
+            return                                  # HOW?/WHY? no aportan contenido del guion
         nums = {n.replace(",", "") for n in re.findall(r"\d[\d,]*", t)}
         title_nums = {n.replace(",", "") for n in re.findall(r"\d[\d,]*", title or "")}
         new_number = bool(nums - title_nums)
@@ -189,10 +197,19 @@ def text_options(title: str, script: str, research: dict[str, Any], archetype: s
     # 1) cifras con sustantivo comun (en minuscula en el guion), sin anos
     for m in _NUM_NOUN_RE.finditer(script or ""):
         num, noun = m.group(1), m.group(2)
-        if _is_year(num) or noun.lower() in _SKIP_NOUNS or noun[:1].isupper():
+        # Mayuscula = nombre propio ("1415 Agincourt"), salvo gentilicios en plural: "300 Spartans",
+        # "40,000 Romans" son el mejor gancho posible (Cannae 2026-09-25 quedo sin texto de gancho).
+        proper = noun[:1].isupper() and not (noun.endswith("s") and noun[1:].islower() and len(noun) >= 5)
+        if _is_year(num) or noun.lower() in _SKIP_NOUNS or proper:
             continue
         if num.replace(",", "") in {n.replace(",", "") for n in re.findall(r"\d[\d,]*", title or "")}:
             continue                                # la cifra ya esta en el titulo
+        rate = _RATE_RE.match(script, m.end())
+        if rate:
+            full = f"{num} {noun} a {rate.group(1)}"
+            short = f"{num} {_UNIT_ABBR.get(noun.lower(), noun)} a {rate.group(1)}"
+            add(full if len(_ascii_upper(full)) <= max_chars else short,
+                "cifra con ritmo del guion (por dia, por hora...)", validate=full, max_words=4)
         add(f"{num} {noun}", "cifra del guion que el titulo no dice")
 
     # 2) busquedas reales de 2+ palabras (sin la palabra clave, que ya va en el titulo)
@@ -226,7 +243,8 @@ def _depossess_safe(word: str) -> str:
 # ----------------------------------------------------------------------------
 def fetch_competitor_metrics(competitors: Iterable[dict[str, Any]], limit: int = 8,
                              fetch: Optional[Callable[[str], Optional[bytes]]] = None,
-                             log: Callable[[str], None] = lambda m: None) -> list[dict[str, Any]]:
+                             log: Callable[[str], None] = lambda m: None,
+                             raw_out: Optional[list] = None) -> list[dict[str, Any]]:
     from PIL import Image
 
     if fetch is None:
@@ -247,6 +265,8 @@ def fetch_competitor_metrics(competitors: Iterable[dict[str, Any]], limit: int =
             m = analyze_image(Image.open(io.BytesIO(raw)))
             m.update({"title": v.get("title", ""), "views": int(v.get("views") or 0)})
             out.append(m)
+            if raw_out is not None:
+                raw_out.append(raw)                 # para medir su texto con vision
         except Exception as exc:
             log(f"   [Miniatura] no se pudo analizar {url}: {exc}")
         if len(out) >= limit:
@@ -254,12 +274,31 @@ def fetch_competitor_metrics(competitors: Iterable[dict[str, Any]], limit: int =
     return out
 
 
+def _default_text_vision():
+    """Gemini para medir el texto de la competencia; None si no hay clave o esta apagado."""
+    import os
+    if str(os.getenv("THUMBNAIL_TEXT_RESEARCH", "1")).strip().lower() in ("0", "false", "no", "off"):
+        return None
+    try:
+        import gemini_vision
+    except ImportError:
+        return None
+    if not gemini_vision.available():
+        return None
+    return lambda prompt, images: gemini_vision.ask_images(prompt, images, json_mode=True)
+
+
 def build_thumbnail_brief(topic: str, title: str, script: str, *, research: Optional[dict[str, Any]] = None,
-                          archetype: str = "", fetch=None, log: Callable[[str], None] = print) -> dict[str, Any]:
+                          archetype: str = "", fetch=None, log: Callable[[str], None] = print,
+                          thumbnail_format=None, text_vision_fn=None) -> dict[str, Any]:
+    """thumbnail_format: el formato real (9:16 / 16:9) para el plan tipografico.
+    text_vision_fn(prompt, images): mide el texto de la competencia; por defecto Gemini, pero solo
+    si `fetch` no se inyecto (en los tests no se llama a ninguna API real)."""
     if research is None:
         from youtube_tags import gather_research
         research = gather_research(topic, title, script, log=log)
-    metrics = fetch_competitor_metrics(research.get("competitors") or [], fetch=fetch, log=log)
+    raws: list = []
+    metrics = fetch_competitor_metrics(research.get("competitors") or [], fetch=fetch, log=log, raw_out=raws)
     summary = summarize_competitors(metrics)
     diff = differentiate(summary)
     options = text_options(title, script, research, archetype, max_chars=14 if diff["minimal"] else 18)
@@ -274,16 +313,39 @@ def build_thumbnail_brief(topic: str, title: str, script: str, *, research: Opti
     for n in diff["notes"]:
         lines.append(f"- {n}")
     if text:
-        lines.append(f"- short_text: use EXACTLY \"{text}\" ({options[0]['why']}).")
+        lines.append("- Headline candidates: choose by story relevance and a visible connection to the scene, "
+                     "not by list order: " + "; ".join(f"{o['text']} ({o['why']})" for o in options))
     lines.append(f"- COLOR SYSTEM ({palette['label']}): highlights {', '.join(palette['highlights'])}; "
                  f"mids {', '.join(palette['mids'])}; shadows {', '.join(palette['shadows'])}.")
     lines.append(f"- Average luminance target: {lo}-{hi} (out of 255).")
     if diff["minimal"]:
         lines.append("- ONE subject, large calm negative space, 2 words max: the result page is cluttered.")
+
+    # Texto de la competencia (vision) y plan tipografico (thumbnail_typography).
+    competitor_text = None
+    vision = text_vision_fn if text_vision_fn is not None else (_default_text_vision() if fetch is None else None)
+    if vision and raws:
+        try:
+            from thumbnail_typography import analyze_text_styles, summarize_text_styles
+            competitor_text = summarize_text_styles(analyze_text_styles(raws, vision, log=log))
+            ct = competitor_text
+            top_fill = next(iter(ct.get("fill") or {}), "?")
+            lines.append(f"- Competing thumbnails' text: {ct['with_text']}/{ct['n']} carry headline text; "
+                         f"{int(ct.get('heavy_share', 0) * 100)}% bold/black, "
+                         f"{int(ct.get('outline_or_box_share', 0) * 100)}% with outline or box; "
+                         f"most common text color: {top_fill}.")
+        except Exception as exc:
+            log(f"   [Miniatura] no se pudo medir el texto de la competencia ({exc})")
+    typography = None
+    if text:
+        from thumbnail_formats import SHORT_9_16
+        from thumbnail_typography import plan_typography
+        typography = plan_typography(text, thumbnail_format or SHORT_9_16, palette, competitor_text)
     return {
         "keyword": research.get("keyword"), "text": text, "text_options": options,
         "palette": palette, "family": diff["family"], "luminance": (lo, hi), "minimal": diff["minimal"],
         "competitors": summary, "competitor_samples": metrics, "differentiation": diff["notes"],
+        "competitor_text": competitor_text, "typography": typography,
         "prompt_block": "\n".join(lines),
     }
 

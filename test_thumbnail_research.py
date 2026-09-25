@@ -12,6 +12,7 @@ pilotos kaiten, que morian: todo texto tiene que estar respaldado por el guion.
 
 import io
 import unittest
+from unittest.mock import patch
 
 from PIL import Image, ImageDraw
 
@@ -79,6 +80,18 @@ SCRIPT = ("The famous bodies of Pompeii are not bodies. In 1863 Giuseppe Fiorell
 
 class ElTexto(unittest.TestCase):
 
+    def test_how_why_no_pasan_con_un_conjunto_de_palabras_vacio(self):
+        with patch("channel_strategy.archetype_cover_words", return_value=["HOW?", "WHY?", "BY HAND"]):
+            ops = tr.text_options("Naval cannon", "Sailors loaded the gun by hand.",
+                                  {"keyword": "", "suggestions": {}, "corpus": set()}, "mechanism")
+        self.assertEqual([o["text"] for o in ops], ["BY HAND"])
+
+    def test_sin_detalle_respaldado_no_impone_una_palabra_generica(self):
+        with patch("channel_strategy.archetype_cover_words", return_value=["HOW?", "WHY?", "BY HAND"]):
+            ops = tr.text_options("Naval cannon", "The ship sailed.",
+                                  {"keyword": "", "suggestions": {}, "corpus": set()}, "mechanism")
+        self.assertEqual(ops, [])
+
     def test_prioriza_la_cifra_nueva_con_formato(self):
         ops = tr.text_options("Plaster casts of Pompeii: Fiorelli's 1863 breakthrough", SCRIPT, RESEARCH, "discovery")
         self.assertEqual(ops[0]["text"], "1,000 CASTS")
@@ -131,7 +144,8 @@ class ElBriefYElPrompt(unittest.TestCase):
         self.assertEqual(b["competitors"]["n"], 6)
         self.assertEqual(b["family"], "cool", "competencia toda calida -> acento frio")
         self.assertEqual(b["text"], "1,000 CASTS")
-        self.assertIn('use EXACTLY "1,000 CASTS"', b["prompt_block"])
+        self.assertIn('1,000 CASTS', b["prompt_block"])
+        self.assertNotIn('use EXACTLY', b["prompt_block"])
         self.assertIn("#3fb6c6", b["prompt_block"])
 
     def test_el_super_prompt_usa_la_paleta_y_la_luminancia_del_brief(self):
@@ -143,14 +157,16 @@ class ElBriefYElPrompt(unittest.TestCase):
 
         def fake_generate(prompt, *a, **k):
             capturado["p"] = prompt
-            return "[TEXT]\n1,000 CASTS\n[POSITIVE PROMPT]\nx\n[NEGATIVE PROMPT]\ny"
+            from test_thumbnail_superprompt import art_response
+            return art_response(hook="1,000 CASTS", evidence="More than 1,000 casts exist.")
         cc._generate = fake_generate
         cc.generate_thumbnail_super_prompt(topic="Pompeii", script_excerpt=SCRIPT, category="", language="en",
                                            thumbnail_format=SHORT_9_16, research_brief=b)
         prompt = capturado["p"]
         self.assertIn("#3fb6c6", prompt)
         self.assertNotIn("#f3c267, #e07a2b, #b32a1c", prompt)
-        self.assertIn('use EXACTLY "1,000 CASTS"', prompt)
+        self.assertIn('1,000 CASTS', prompt)
+        self.assertNotIn('use EXACTLY', prompt)
 
     def test_la_fuente_del_super_prompt_tiene_los_defaults_solo_sin_brief(self):
         src = open("claude_client.py", encoding="utf-8", errors="replace").read()
@@ -163,6 +179,29 @@ class ElBriefYElPrompt(unittest.TestCase):
         src = open("auto_video_integration_pyqt6.py", encoding="utf-8", errors="replace").read()
         self.assertIn("build_thumbnail_brief(topic, _title_for_brief", src)
         self.assertIn("research_brief=brief if brief and not brief.get(\"error\") else None", src)
+
+
+class CifrasConGentilicio(unittest.TestCase):
+    """Cannae (2026-09-25) quedo sin texto de gancho: 'Romans' con mayuscula se descartaba como nombre propio."""
+
+    R = {"keyword": "", "suggestions": {}, "corpus": set()}
+
+    def texts(self, title, script):
+        return [o["text"] for o in tr.text_options(title, script, self.R, "", max_chars=18)]
+
+    def test_demonyms_are_valid_hook_nouns(self):
+        self.assertIn("300 SPARTANS", self.texts("Thermopylae", "Only 300 Spartans held the pass in 480 BC."))
+        self.assertIn("86,000 ROMANS", self.texts("Cannae", "About 86,000 Romans and allies fought at Cannae."))
+
+    def test_proper_names_and_title_numbers_are_still_excluded(self):
+        self.assertEqual(self.texts("Nelson", "In 1805 Nelson won; by 1806 Villeneuve was dead."), [])
+        self.assertNotIn("86,000 ROMANS", self.texts("86,000 Dead", "About 86,000 Romans fought."))
+
+    def test_the_video_opening_hook_now_finds_it(self):
+        from video_opening import pick_hook_text
+        text, why = pick_hook_text("About 86,000 Romans and allies fought at Cannae. Hannibal waited.", "ANNIHILATED")
+        self.assertEqual(text, "86,000 ROMANS")
+        self.assertIn("cifra", why)
 
 
 if __name__ == "__main__":

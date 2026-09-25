@@ -225,6 +225,65 @@ def competitor_titles(research: dict[str, Any], limit: int = 8) -> list[tuple[st
     return rows[:limit]
 
 
+# ----------------------------------------------------------------------------
+# Redaccion (2026-09-24): el titulo de Trafalgar salio "Nelson Trafalgar how the victory
+# secured British seas" -- la busqueda del autocompletado pegada a una frase, sin puntuacion --
+# y el del dia anterior "U boat 48 crew survived..." (el guion dice "U-boat"). Ninguna regla
+# miraba la redaccion y el LLM habia pegado la clave literal porque el pedido decia "en las
+# primeras 3-4 palabras".
+# ----------------------------------------------------------------------------
+_CLAUSE_STARTERS = {"how", "why", "what", "when", "where", "who", "which", "the", "a", "an", "this",
+                    "that", "these", "those", "and", "but"}
+_COMPOUND_RE = re.compile(r"\b([A-Za-z0-9]+(?:[-\u2010\u2011][A-Za-z0-9]+)+)\b")
+
+
+def canonical_forms(script: str) -> dict[str, str]:
+    """Compuestos con guion del guion: {'u boat': 'U-boat', 'franco spanish': 'Franco-Spanish'}."""
+    out: dict[str, str] = {}
+    for m in _COMPOUND_RE.finditer(str(script or "")):
+        form = re.sub(r"[\u2010\u2011]", "-", m.group(1))
+        if re.search(r"[A-Za-z]", form) and not re.fullmatch(r"[\d-]+", form):
+            out.setdefault(form.replace("-", " ").lower(), form)
+    return out
+
+
+def apply_canonical_forms(title: str, forms: dict[str, str]) -> str:
+    """'U boat 48 crew' -> 'U-boat 48 crew' con la escritura del guion."""
+    # El guion trae guiones no separables (U+2011) y el LLM los copia: al titulo va el guion comun.
+    t = re.sub(r"[‐‑]", "-", str(title or ""))
+    for spaced, form in forms.items():
+        t = re.sub(r"(?i)\b" + r"[\s-]+".join(map(re.escape, spaced.split())) + r"\b", form, t)
+    return t
+
+
+def readability_issues(title: str, keyword: str = "") -> list[str]:
+    """Problemas de redaccion que se ven sin LLM. Una busqueda pegada invalida el titulo."""
+    t = str(title or "").strip()
+    issues: list[str] = []
+    if not t:
+        return issues
+    if t[:1].islower():
+        issues.append("empieza en minuscula")
+    words = t.split()
+    kw_words = normalize_tag(keyword).split() if keyword else []
+    head = [re.sub(r"[^\w'-]", "", w).lower() for w in words[:len(kw_words)]]
+    if kw_words and head == kw_words and len(words) > len(kw_words):
+        joint = words[len(kw_words) - 1]
+        nxt = words[len(kw_words)]
+        if not re.search(r"[:,;?!\-\u2014\u2013.]$", joint) and (
+                nxt.lower() in _CLAUSE_STARTERS and nxt[:1].islower() or nxt[:1].isdigit()):
+            issues.append(f"la busqueda '{keyword}' quedo pegada a la frase, sin conector ni puntuacion")
+    for i in range(1, len(words) - 2):
+        a, b, c = words[i], words[i + 1], words[i + 2]
+        if (a[:1].isupper() and b[:1].isupper() and not re.search(r"[:,;?!.]$", b)
+                and c.lower() in _CLAUSE_STARTERS and c[:1].islower() and c.lower() not in ("the", "a", "an", "and")):
+            issues.append(f"'{a} {b} {c}...': falta un conector o puntuacion")
+            break
+    if "  " in t or " ," in t or re.search(r":\S", t):
+        issues.append("espacios o puntuacion mal puestos")
+    return list(dict.fromkeys(issues))
+
+
 def _keyword_position(title: str, keyword_tokens: list[str]) -> Optional[float]:
     """Posicion relativa (0..1) donde arranca la palabra clave en el titulo, o None."""
     if not keyword_tokens:
@@ -291,6 +350,10 @@ def score_title(title: str, research: dict[str, Any], source_text: str, *, is_sh
         if bad_names:
             valid = False
             reasons.append(f"nombre que no esta en el guion: {', '.join(bad_names)}")
+    bad_writing = readability_issues(t, research.get("keyword") or "")
+    if bad_writing:
+        valid = False
+        reasons.extend(f"redaccion: {x}" for x in bad_writing)
     bad_numbers = unsupported_numbers(t, source_text)
     if bad_numbers:
         valid = False
@@ -399,6 +462,7 @@ def build_title_prompt(topic: str, script: str, draft: str, research: dict[str, 
     except Exception:
         pass
     winners = [w for w in own_winners if w][:5] or list(formula.get("winning_examples_live") or [])[:5]
+    forms = sorted(set(canonical_forms(script).values()))[:12]
     return f"""You write YouTube titles for a documented-history channel. Use the research below; do not guess.
 
 VIDEO: {topic}
@@ -417,7 +481,13 @@ FACTS (the ONLY allowed source of numbers, names and claims):
 {str(script or '')[:1800]}
 
 RULES:
-- Put the main search keyword (or its natural form, e.g. possessive) in the FIRST 3-4 words.
+- The main keyword is what people TYPE in search, not a phrase to paste. Work its words naturally into the
+  first 3-5 words of a fluent headline: add connector words, a possessive or punctuation as needed
+  (e.g. keyword "nelson trafalgar" -> "Nelson at Trafalgar: ..." or "How Nelson won at Trafalgar ...").
+  NEVER write the bare keyword followed directly by a lowercase clause ("Nelson Trafalgar how the ...").
+- Every title must read as fluent, grammatical English: articles and verbs where needed, and a colon,
+  dash or question mark between two clauses.
+- Spell compound terms exactly as in the facts: {forms}.
 - {lo}-{hi} characters. Plain English. No emojis, no hashtags, no ALL CAPS words.
 - Sentence case: capitalize ONLY the first word and real proper nouns (names, places, ships).
 - Use a concrete number ONLY if it appears in the facts. Never invent or round a number differently.
@@ -482,6 +552,8 @@ def build_factcheck_prompt(titles: list[str], script: str, topic: str = "") -> s
     return f"""You fact-check video titles for a history channel. A title may simplify, but every claim in it
 must be supported by the SCRIPT and must not contradict it: numbers must count the same thing the script
 counts; no invented causes, counts, superlatives, people or outcomes; nothing the script says is false or a myth.
+It must also read as a fluent, grammatical English headline: not a pasted search phrase, no missing words
+(articles, verbs, possessives) and correct punctuation between clauses. "natural" is false otherwise.
 
 TOPIC: {topic}
 SCRIPT:
@@ -490,7 +562,8 @@ SCRIPT:
 CANDIDATE TITLES:
 {listed}
 
-Return ONLY JSON: {{"results": [{{"n": 1, "supported": true, "reason": "short reason"}}]}} with one entry per title."""
+Return ONLY JSON: {{"results": [{{"n": 1, "supported": true, "natural": true, "reason": "short reason"}}]}}
+with one entry per title."""
 
 
 def parse_factcheck(raw: Any) -> dict[int, tuple[bool, str]]:
@@ -509,9 +582,14 @@ def parse_factcheck(raw: Any) -> dict[int, tuple[bool, str]]:
             i = int(r.get("n")) - 1
         except (TypeError, ValueError):
             continue
-        v = r.get("supported")
-        ok = v if isinstance(v, bool) else str(v).strip().lower() in ("true", "yes", "1")
-        out[i] = (ok, str(r.get("reason") or "").strip()[:160])
+        def _yes(v):
+            return v if isinstance(v, bool) else str(v).strip().lower() in ("true", "yes", "1")
+        ok = _yes(r.get("supported"))
+        reason = str(r.get("reason") or "").strip()[:160]
+        if "natural" in r and not _yes(r.get("natural")):
+            ok = False
+            reason = f"redaccion: {reason or 'no se lee como un titular natural'}"
+        out[i] = (ok, reason)
     return out
 
 
@@ -585,6 +663,10 @@ def optimize_title(topic: str, script: str, draft_title: str, *, research: Optio
     comps = competitor_titles(research)
 
     candidates = deterministic_candidates(draft_title, research, is_short, bible)
+    # El titulo con el que se escribio el guion ("How Nelson Won Trafalgar Against a Bigger Fleet")
+    # tambien compite: en Trafalgar era mejor que todo lo que se publico.
+    if topic and topic.strip() != str(draft_title or "").strip() and 3 <= len(topic.split()) and len(topic) <= 100:
+        candidates.append(topic.strip())
     try:
         gen = generate_fn or _default_generate
         prompt = build_title_prompt(topic, script, draft_title, research, is_short=is_short,
@@ -593,8 +675,10 @@ def optimize_title(topic: str, script: str, draft_title: str, *, research: Optio
     except Exception as exc:
         log(f"   [Titulo] el LLM no propuso candidatos ({exc}); se puntuan borrador y variantes")
 
+    forms = canonical_forms(f"{topic} {script}")
     seen, scored = set(), []
     for c in candidates:
+        c = apply_canonical_forms(c, forms)
         key = normalize_tag(c)
         if not key or key in seen:
             continue

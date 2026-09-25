@@ -496,10 +496,17 @@ def upload_from_metadata(
     if is_short is None:
         is_short = _infer_is_short(video_path)
 
+    # Atribucion de la musica (CC BY la exige): va al final de la descripcion, sin recortarse.
+    description = metadata.get("description", "")
+    if metadata.get("music_attribution"):
+        from music_license import with_attribution, DESCRIPTION_LIMITS
+        description = with_attribution(description, metadata["music_attribution"],
+                                       DESCRIPTION_LIMITS["youtube"])
+
     result = upload_video(
         video_path=str(video_path),
         title=metadata.get("title") or "Untitled video",
-        description=metadata.get("description", ""),
+        description=description,
         tags=metadata.get("tags", []),
         category_id=str(metadata.get("category_id") or "27"),  # Education
         privacy_status=privacy_status,

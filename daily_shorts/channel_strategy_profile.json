@@ -311,8 +311,17 @@
       ]
     }
   ],
-  "cover_frame": {
+  "hook_overlay": {
     "enabled": true,
+    "duration_seconds": 1.8,
+    "min_first_shot_seconds": 1.8,
+    "push_in_zoom": 0.12,
+    "fade_out_seconds": 0.25,
+    "note": "2026-09-23 (video_opening.py): sin placa quieta. La escena 1 arranca en movimiento con la voz en 0.0 s y el texto de gancho (la cifra de las primeras frases del guion) encima, ~1.8 s. Medido en los 20 shorts de historia mas vistos del mes: 18/20 con sonido antes de 0.3 s, 3/20 quietos en el primer medio segundo, primer corte ~1.8 s, 9/12 con texto en el primer cuadro. La placa de 0.7 s tenia 'ding' y ninguna voz."
+  },
+  "cover_frame": {
+    "enabled": false,
+    "disabled_note": "2026-09-23: reemplazada por hook_overlay (ver su nota). Solo se usa si hook_overlay.enabled es false.",
     "duration_seconds": 0.7,
     "word_count_min": 1,
     "word_count_max": 3,

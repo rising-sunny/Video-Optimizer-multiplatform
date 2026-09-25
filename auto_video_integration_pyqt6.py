@@ -1252,6 +1252,127 @@ class AutoVideoStudioTab(QWidget):
         self.log(f" Reproduciendo video: {video_path}")
         self._play_file_signal.emit(video_path)
 
+    def _fact_check_gate(self, storyboard) -> bool:
+        """True si se puede publicar. Frena si la narracion tiene afirmaciones falsas o inventadas.
+
+        Usa el informe guardado en el storyboard si corresponde al texto actual; si no,
+        verifica (en un hilo, con un dialogo de espera: tarda 20-60 s). Ante problemas
+        muestra cuales son y deja elegir: cancelar (por defecto) o publicar igual.
+        """
+        try:
+            import script_fact_check as sfc
+        except Exception as exc:
+            self.log(f" Verificacion de hechos no disponible: {exc}")
+            return True
+        if not storyboard or not sfc.storyboard_texts(storyboard):
+            return True
+        had_current = sfc.report_is_current(storyboard)
+
+        import threading
+        from PyQt6.QtWidgets import QApplication, QProgressDialog
+        box, logs = {}, []
+
+        def _work():
+            box['gate'] = sfc.upload_gate(storyboard, log=logs.append)
+
+        worker = threading.Thread(target=_work, daemon=True)
+        dlg = None
+        if not had_current:
+            self.log(" Verificando los hechos del guion antes de publicar...")
+            dlg = QProgressDialog("Verificando los hechos del guion (Wikipedia + juez externo)...",
+                                  None, 0, 0, self)
+            dlg.setWindowTitle("Verificacion de hechos")
+            dlg.setMinimumDuration(0)
+            dlg.show()
+        worker.start()
+        while worker.is_alive():
+            QApplication.processEvents()
+            worker.join(0.05)
+        if dlg is not None:
+            dlg.close()
+        for line in logs:
+            self.log(line)
+        ok, report, message = box.get('gate', (True, {}, 'sin resultado'))
+        if not had_current and report.get('status') not in (None, 'unchecked', 'disabled', 'empty'):
+            try:
+                self.save_project()     # deja el informe guardado en el proyecto
+            except Exception:
+                pass
+        if ok:
+            self.log(f" {message}")
+            return True
+        self.log(" ⛔ Publicacion frenada: la narracion tiene afirmaciones falsas o inventadas:")
+        for line in message.splitlines():
+            self.log(f"    {line}")
+        box_msg = QMessageBox(self)
+        box_msg.setIcon(QMessageBox.Icon.Warning)
+        box_msg.setWindowTitle("Hechos sin verificar")
+        box_msg.setText("La narracion de este video tiene afirmaciones falsas o inventadas.\n"
+                        "Corregilas en el timeline (y regenera la voz) antes de publicar.")
+        box_msg.setDetailedText(message)
+        btn_cancel = box_msg.addButton("Cancelar publicacion", QMessageBox.ButtonRole.RejectRole)
+        btn_force = box_msg.addButton("Publicar igual", QMessageBox.ButtonRole.DestructiveRole)
+        box_msg.setDefaultButton(btn_cancel)
+        box_msg.exec()
+        if box_msg.clickedButton() is btn_force:
+            self.log(" ATENCION: publicado igual pese a la verificacion de hechos (decision del usuario).")
+            return True
+        return False
+
+    def _music_for_publish(self, storyboard):
+        """La musica que tiene el video a publicar (None = sin musica)."""
+        video_data = getattr(self, 'last_generated_video_data', None) or {}
+        if 'music_used' in video_data:
+            return video_data.get('music_used')     # lo que el ensamblador mezclo de verdad
+        pm = getattr(self, 'project_manager', None)
+        project_data = getattr(pm, 'current_project_data', None) or {}
+        return (getattr(self, 'selected_music_metadata', None) or project_data.get('music_metadata')
+                or (storyboard or {}).get('music_data'))
+
+    def _music_license_gate(self, storyboard):
+        """(se puede publicar, atribucion en ingles) segun la licencia de la musica.
+
+        Frena con aviso si el tema es NC/ND (no sirve para video) o de un artista que ya
+        genero un reclamo de Content ID (daily_shorts/music_claims.json). Ver music_license.
+        """
+        try:
+            import music_license as ml
+        except Exception as exc:
+            self.log(f" Verificacion de licencia de musica no disponible: {exc}")
+            return True, ""
+        music = self._music_for_publish(storyboard)
+        try:
+            verdict = ml.check_music_for_upload(music, client_id=os.getenv('JAMENDO_CLIENT_ID', ''))
+        except Exception as exc:
+            self.log(f" No se pudo verificar la licencia de la musica: {exc}")
+            return True, ""
+        status = verdict.get('status')
+        title = (music or {}).get('title', '') if isinstance(music, dict) else ''
+        if status == 'none':
+            self.log(" Musica: el video no tiene musica de fondo.")
+            return True, ""
+        if status == 'local':
+            self.log(f" Musica: archivo local '{title}' (asegurate de tener los derechos).")
+            return True, ""
+        if status == 'ok':
+            self.log(f" Musica: '{title}' ({verdict.get('license_code')}) apta; la atribucion va a la descripcion.")
+            return True, verdict.get('attribution', '')
+        reason = verdict.get('reason') or 'licencia no apta'
+        self.log(f" ⛔ Musica con riesgo de reclamo: '{title}': {reason}")
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setWindowTitle("Musica con riesgo de copyright")
+        box.setText(f"La musica de este video ('{title}') puede generar un reclamo o bloqueo en YouTube:\n\n"
+                    f"{reason}\n\nCambia la musica (Buscador de Musica o Musica Local) y reensambla.")
+        btn_cancel = box.addButton("Cancelar publicacion", QMessageBox.ButtonRole.RejectRole)
+        btn_force = box.addButton("Publicar igual", QMessageBox.ButtonRole.DestructiveRole)
+        box.setDefaultButton(btn_cancel)
+        box.exec()
+        if box.clickedButton() is btn_force:
+            self.log(" ATENCION: publicado igual pese al riesgo de la musica (decision del usuario).")
+            return True, verdict.get('attribution', '')
+        return False, ""
+
     def publish_video_to_platforms(self):
         """Sube el video ensamblado a las plataformas seleccionadas."""
         from PyQt6.QtCore import Qt
@@ -1295,10 +1416,27 @@ class AutoVideoStudioTab(QWidget):
         if not video_path or not os.path.exists(video_path):
             return
 
+        # La narracion que se verifica abajo es la del timeline (con lo editado a mano).
+        _pm = getattr(self, 'project_manager', None)
+        if _pm is not None and hasattr(_pm, '_sync_timeline_editor_to_storyboard'):
+            try:
+                _pm._sync_timeline_editor_to_storyboard()
+            except Exception:
+                pass
         storyboard = getattr(self, 'last_storyboard_data', None)
         if not storyboard and hasattr(self, 'project_manager') and self.project_manager.current_project_data:
             storyboard = self.project_manager.current_project_data.get('storyboard', {})
         storyboard = storyboard or {}
+
+        # Hechos verificados (script_fact_check): no se publica una narracion con
+        # afirmaciones falsas o inventadas (Trafalgar 2026-09-23: "el Victory mato a
+        # Villeneuve"). Si el informe no existe o se edito la narracion, se verifica ahora.
+        if not self._fact_check_gate(storyboard):
+            return
+        # Musica: licencia apta para video (sin NC/ND ni artistas reclamados) y su atribucion.
+        _music_ok, _music_attribution = self._music_license_gate(storyboard)
+        if not _music_ok:
+            return
 
         # Construir metadata desde el storyboard (mismos fallbacks que daily_short_pipeline)
         topic = storyboard.get('topic') or storyboard.get('title') or os.path.splitext(os.path.basename(video_path))[0]
@@ -1488,6 +1626,9 @@ Respond ONLY with valid JSON."""
         _instagram_meta['topic'] = topic
         _instagram_meta['script_excerpt'] = (script or preview or '')[:4000]
         _instagram_meta['format_archetype'] = storyboard.get('format_archetype') or ''
+        # Cada uploader la pega al final de la descripcion ya optimizada (music_license).
+        for _meta in (_youtube_meta, _facebook_meta, _instagram_meta):
+            _meta['music_attribution'] = _music_attribution or ''
         _x_meta = instagram_meta or facebook_meta or youtube_meta or {}
         _thumbnail_path = getattr(self, 'selected_thumbnail_path', None)
         if _thumbnail_path and os.path.exists(_thumbnail_path):
@@ -1665,6 +1806,7 @@ Respond ONLY with valid JSON."""
         local_scripts = [
             os.path.join(os.getcwd(), 'facebook_uploader.py'),
             os.path.join(os.getcwd(), 'facebook_metadata.py'),
+            os.path.join(os.getcwd(), 'music_license.py'),       # atribucion de la musica
             os.path.join(os.getcwd(), 'thumbnail_publish.py'),
             os.path.join(os.getcwd(), 'output_video_locator.py'),
             os.path.join(os.getcwd(), 'instagram_uploader.py'),
@@ -3489,10 +3631,10 @@ Respond ONLY with valid JSON."""
         project_data = self.get_current_project_data()
         if project_data:
             storyboard = project_data.get('storyboard') or {}
-            script_excerpt = str(storyboard.get('script', '') or '')[:1200]
+            script_excerpt = str(storyboard.get('script', '') or '')[:12000]
             if not script_excerpt:
                 segments = storyboard.get('segments', [])
-                script_excerpt = " ".join(str(s.get('text', '')) for s in segments[:15])[:1200]
+                script_excerpt = " ".join(str(s.get('text', '')) for s in segments)[:12000]
 
         # Deshabilitar botón mientras procesa
         self.btn_generate_super_prompt.setEnabled(False)
@@ -3542,13 +3684,14 @@ Respond ONLY with valid JSON."""
                 try:
                     from thumbnail_research import build_thumbnail_brief
                     brief = build_thumbnail_brief(topic, _title_for_brief, _script_full,
-                                                  archetype=_arche or "", log=lambda m: None)
+                                                  archetype=_arche or "", log=lambda m: None,
+                                                  thumbnail_format=fmt)
                 except Exception as exc:
                     brief = {"error": f"{type(exc).__name__}: {exc}"}
             _brief_holder["brief"] = brief
             return llm_client.generate_thumbnail_super_prompt(
                 topic=topic,
-                script_excerpt=script_excerpt,
+                script_excerpt=_script_full[:12000],
                 category=category,
                 language=language,
                 thumbnail_format=fmt,
@@ -3569,9 +3712,19 @@ Respond ONLY with valid JSON."""
                     self.log(f"   - {_n}")
                 if _brief.get("text_options"):
                     self.log("   - texto: " + ", ".join(f"{o['text']} ({o['why']})" for o in _brief["text_options"][:4]))
+                _ct = _brief.get("competitor_text")
+                if _ct:
+                    self.log(f"   - texto de la competencia: {_ct['with_text']}/{_ct['n']} con texto, "
+                             f"{int(_ct.get('heavy_share', 0) * 100)}% en negrita, "
+                             f"{int(_ct.get('outline_or_box_share', 0) * 100)}% con contorno o caja")
             if not result:
                 QMessageBox.critical(self, "Error", "No se pudo generar el super prompt.")
                 return
+            # El texto pedido: al elegir la miniatura se compara con lo que el generador escribio.
+            self._last_thumbnail_text = result.get('text') or ''
+            _direction = result.get('art_direction') or {}
+            if _direction.get('reason'):
+                self.log(f"   - Direccion elegida para '{self._last_thumbnail_text}': {_direction['reason']}")
 
             positive = result.get('positive', '')
             negative = result.get('negative', '')
@@ -4209,8 +4362,54 @@ Respond ONLY with valid JSON."""
         self.selected_thumbnail_path = thumbnail_path
         self._update_studio_thumbnail_preview(thumbnail_path)
         self._refresh_thumbnail_module_state()
+        if auto_save:
+            self._check_thumbnail_text_async(thumbnail_path)
         if (not self._suppress_thumbnail_autosave) and auto_save and self.auto_save_enabled and self.current_project_path:
             self.auto_save_project("seleccion de miniatura")
+
+    def _check_thumbnail_text_async(self, thumbnail_path):
+        """Lee la miniatura elegida con vision (thumbnail_typography.check_thumbnail_text) y avisa
+        en el panel si el texto es chico, fino, sin contorno, ilegible a 190 px o mal escrito.
+        Nunca bloquea: corre en un hilo y se apaga con THUMBNAIL_TEXT_CHECK=0."""
+        if not thumbnail_path or not os.path.exists(thumbnail_path):
+            return
+        if str(os.getenv("THUMBNAIL_TEXT_CHECK", "1")).strip().lower() in ("0", "false", "no", "off"):
+            return
+        try:
+            import gemini_vision
+            if not gemini_vision.available():
+                return
+        except ImportError:
+            return
+        key = (thumbnail_path, os.path.getmtime(thumbnail_path))
+        if getattr(self, '_thumb_text_checked', None) == key:
+            return
+        self._thumb_text_checked = key
+        expected = getattr(self, '_last_thumbnail_text', '') or ''
+        notify = self._publish_log_signal.emit
+
+        def _run():
+            try:
+                from PIL import Image
+                from thumbnail_typography import check_thumbnail_text
+                with open(thumbnail_path, "rb") as fh:
+                    data = fh.read()
+                with Image.open(thumbnail_path) as im:
+                    vertical = im.height > im.width
+                res = check_thumbnail_text(data, lambda p, ims: gemini_vision.ask_images(p, ims),
+                                           expected=expected, vertical=vertical)
+                if not res.get("text"):
+                    notify(f" Miniatura: {res['verdict']} ({'; '.join(res['warnings'])})")
+                    return
+                notify(f" Miniatura: texto '{res['text']}' -> {res['verdict']}"
+                       + (f" (alto de letra {res['cap_pct']}%)" if res.get('cap_pct') is not None else ""))
+                for w in res.get("warnings", []):
+                    notify(f"   - {w}")
+            except Exception as exc:
+                notify(f" Miniatura: no se pudo revisar el texto ({type(exc).__name__}: {str(exc)[:120]})")
+
+        import threading
+        threading.Thread(target=_run, daemon=True).start()
 
     def _update_studio_thumbnail_preview(self, image_path):
         if not hasattr(self, 'thumbnail_preview'):

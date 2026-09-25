@@ -846,6 +846,16 @@ def upload_from_metadata(output_dir: str, share_to_feed: Optional[bool] = None, 
         except Exception as exc:
             _status(on_status, f"optimizacion no disponible ({type(exc).__name__}: {exc}); se usa la metadata tal cual")
 
+    # Atribucion de la musica (CC BY la exige): al final, despues de optimizar. El caption
+    # es titulo + descripcion con tope 2200, asi que la descripcion deja lugar al titulo.
+    if metadata.get("music_attribution"):
+        try:
+            from music_license import with_attribution, DESCRIPTION_LIMITS
+            room = DESCRIPTION_LIMITS["instagram"] - len(str(title or "")) - 2
+            description = with_attribution(description, metadata["music_attribution"], room)
+        except ImportError:
+            description = f"{description}\n\n{metadata['music_attribution']}".strip()
+
     cover = _find_cover(output_dir) if thumbnail else None
     result = upload_video(
         video_path=str(video_path),

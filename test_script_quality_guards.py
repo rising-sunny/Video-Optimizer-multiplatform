@@ -65,6 +65,15 @@ class ScriptQualityGuardTests(unittest.TestCase):
         self.assertLess(queries.index("Muriq-Tidnim"), queries.index("Muro amorrita"))
         self.assertEqual(_simplify_query("Muriq-Tidnim (Muro amorrita)"), "Muriq-Tidnim")
 
+    def test_topic_queries_try_the_subject_before_the_colon_and_normalize_typography(self):
+        # Cannae (2026-09-25): el titulo con U+2011 y U+202F no encontraba el articulo y el guion
+        # se escribio sin investigacion (6.000 cartagineses, los Apeninos, dos consules muertos).
+        queries = topic_search_queries("The Battle of Cannae: Hannibal's double‑envelopment in 216 BC")
+        self.assertEqual(queries[:3], ["The Battle of Cannae: Hannibal's double-envelopment in 216 BC",
+                                       "The Battle of Cannae", "Battle of Cannae"])
+        self.assertFalse(any("‑" in q or " " in q for q in queries))
+        self.assertIn("Stamford Bridge", topic_search_queries("Stamford Bridge - the last Viking battle"))
+
     def test_new_topic_detaches_from_previous_project(self):
         from studio_project_manager import StudioProjectManager
 

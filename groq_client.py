@@ -206,8 +206,8 @@ class GroqAiClient:
                     **({'response_format': {'type': 'json_object'}} if json_mode else {})
                 )
 
-                if json_mode and chat_completion.choices[0].finish_reason == 'length':
-                    last_error = 'Respuesta JSON truncada por límite de tokens'
+                if chat_completion.choices[0].finish_reason == 'length':
+                    last_error = 'Respuesta truncada por límite de tokens'
                     print(f'[WARN] {last_error}; probando siguiente modelo.')
                     continue
                 response = chat_completion.choices[0].message.content

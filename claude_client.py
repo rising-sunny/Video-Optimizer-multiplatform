@@ -632,6 +632,9 @@ Return ONLY a JSON array, no markdown, no extra text:
           reglas de encuadre distintas (ver `thumbnail_formats`).
         """
         from thumbnail_formats import LANDSCAPE_16_9
+        from thumbnail_art_direction import (
+            art_direction_brief, compile_title, contextual_composition_rules, parse_art_response,
+        )
 
         fmt = thumbnail_format or LANDSCAPE_16_9
         print(f"Generando super prompt de thumbnail para IA externa ({fmt.aspect_label})...")
@@ -653,47 +656,57 @@ Return ONLY a JSON array, no markdown, no extra text:
         # Investigacion (thumbnail_research.build_thumbnail_brief): si esta, la paleta, la
         # luminancia y el texto salen de la competencia real en vez de los valores fijos.
         brief = research_brief if isinstance(research_brief, dict) else {}
-        research_block = ("\n" + brief["prompt_block"] + "\n") if brief.get("prompt_block") else ""
+        # Un brief viejo puede imponer un titular o el estilo anterior. Sus
+        # candidatos y mediciones informan la decision, no la sustituyen.
+        research_lines = [line for line in str(brief.get("prompt_block") or "").splitlines()
+                          if not line.lstrip().startswith(("- short_text:", "- Typography plan"))]
+        candidates = brief.get("text_options") or ([{"text": brief["text"]}] if brief.get("text") else [])
+        research_block = "\n".join(research_lines)
+        if candidates:
+            research_block += "\nHeadline candidates (evaluate visual relevance, not fixed choices): " + json.dumps(
+                candidates, ensure_ascii=False)
         if brief.get("luminance"):
             _lo, _hi = brief["luminance"]
             lum_line = f"- Average luminance: {_lo}-{_hi} (out of 255), from the competition research."
         else:
             lum_line = "- Average luminance: 100-150 (out of 255)."
-        fam = brief.get("family")
-        warm_line = ("- Warm channel (R+G) minus cool channel (B): >= 15 on average."
-                     if fam in (None, "warm") else
-                     "- Keep ONE accent family (see COLOR SYSTEM); do not drift back to the default amber/red.")
+        warm_line = "- Keep the resolved scene and title palettes coherent; never impose amber/yellow on every topic."
         pal = brief.get("palette")
-        color_line = ("COLOR SYSTEM - Highlights: #f3c267, #e07a2b, #b32a1c - Mids: #6a3a1e, #2f3a44 - Shadows: #0e1318, #1a2330"
+        color_line = ("COLOR SYSTEM - Infer one scene palette from the subject, era, materials, mood and lighting. "
+                      "Choose explicit colors; no universal warm or teal palette."
                       if not pal else
                       f"COLOR SYSTEM ({pal['label']}, chosen to stand out from the competing thumbnails) - "
                       f"Highlights: {', '.join(pal['highlights'])} - Mids: {', '.join(pal['mids'])} - "
                       f"Shadows: {', '.join(pal['shadows'])}")
         script_block = (
-            f"\nScript excerpt (first 1200 chars):\n{script_excerpt[:1200]}"
+            f"\nScript excerpt (first 12000 chars):\n{script_excerpt[:12000]}"
             if script_excerpt else ""
         )
 
+        reglas = contextual_composition_rules(fmt, render_text)
         reglas_encuadre = "\n".join(
-            f"{i}. {regla}" for i, regla in enumerate(fmt.composition_rules, start=1)
+            f"{i}. {regla}" for i, regla in enumerate(reglas, start=1)
         )
 
         if render_text:
-            directivas = "\n".join(f"- {d}" for d in fmt.text_render_directives())
             bloque_texto = (
                 "TEXT RENDERING (the image generator MUST draw this text into the image):\n"
-                f"{directivas}\n"
+                "The application composes the title from ART DIRECTION exactly once. "
+                "Keep all typography out of POSITIVE PROMPT; reserve calm space for the title.\n"
             )
             prohibido_texto = (
                 "misspelled words, duplicated letters, garbled glyphs, extra text, "
-                "subtitles, captions, watermark, logo, signature"
+                "subtitles, captions, watermark, logo, signature, thin or light font weight, "
+                "small text, low-contrast text, excessive letter spacing, thick black text outline, "
+                "hard offset text shadow, sticker lettering, WordArt, beveled or extruded lettering, "
+                "second copy of the headline, numbers or words carved or painted on objects, "
+                "signs, plaques or inscriptions with writing"
             )
             nota_salida = (
-                "The [POSITIVE PROMPT] must include the literal short_text in quotes "
-                "and the typography directives, so the generator writes it."
+                "The [POSITIVE PROMPT] describes only the scene, with NO typography or headline. "
+                "Place the headline in TEXT and its resolved design in ART DIRECTION."
             )
         else:
-            directivas = ""
             bloque_texto = (
                 "TEXT RENDERING: none. Leave the reserved area as calm empty space; "
                 "the text is composited afterwards in post-production.\n"
@@ -731,11 +744,14 @@ From the video data, infer and fill these variables:
     * aftermath    -> the place empty, abandoned, weathered, nobody in frame
     * moment       -> the action mid-event, figures small and in motion
 - emotional_hook: one of - fear / betrayal / shock / loss / glory
-- short_text: 2-3 ALL CAPS words, punchy, ALWAYS IN ENGLISH regardless of the
+- short_text: 1-3 ALL CAPS words, punchy, ALWAYS IN ENGLISH regardless of the
   narration language, and plain ASCII only (no accents, no diacritics, no
   special characters). Image generators misspell accented words -- a Spanish
   hook came back rendered as "6 PIRAMIDAS" instead of "6 PIRAMIDES". Prefer a
-  concrete number or a hard noun over an abstraction.
+  concrete number or a hard noun over an abstraction. A number may stay inline
+  with its noun or become a hero line when its magnitude IS the visual story.
+  It must add a specific, script-supported detail beyond the title. Never use
+  standalone HOW, WHY or WHAT: those describe a question, not this video's hook.
 - era_anchor: one sentence with the period-accurate scene (clothing, weapons,
   architecture, light, season)
 
@@ -746,6 +762,7 @@ MANDATORY COMPOSITION RULES (all must be respected):
 {reglas_encuadre}
 
 {bloque_texto}
+{art_direction_brief(fmt)}
 QUANTITATIVE TARGETS:
 {lum_line}
 - Subject zone brighter than the calm zone by >= 20 luminance points.
@@ -773,51 +790,63 @@ competing, crowd as main subject
 
 {nota_salida}
 
-Return EXACTLY three blocks, with no extra text before, between or after them:
+Return EXACTLY four blocks, with no extra text before, between or after them:
 
 [TEXT]
 <the short_text, ALL CAPS, nothing else>
 
+[ART DIRECTION]
+<the resolved JSON object specified above; decisions and evidence, not a list of alternatives>
+
 [POSITIVE PROMPT]
-<one dense paragraph in English, comma-separated, all rules applied, ending with:
-{fmt.prompt_constraint}, photoreal, 50mm, shallow depth of field, dramatic lighting>
+<one dense scene-only paragraph in English, comma-separated, all scene rules applied.
+State the resolved lens and depth of field. End with: {fmt.prompt_constraint}, photoreal>
 
 [NEGATIVE PROMPT]
 <prohibited elements list, comma-separated>
 """
-        result = self._generate(prompt, max_tokens=1400, task_type="script_quality")
-        if not result or (isinstance(result, str) and result.startswith("ERROR")):
+        # Las directivas artisticas ya no caben holgadamente en 1400 tokens.
+        # Exigir los cuatro bloques: inventar un negativo por defecto ocultaba
+        # respuestas cortadas a mitad del positivo (caso real: 'wedge-').
+        # \s* tambien admite etiquetas pegadas, como las devuelve Groq.
+        validation_error = ""
+        for attempt, budget in enumerate((4096, 8192)):
+            request = prompt
+            if attempt:
+                request += (
+                    f"\nValidation of the previous response failed: {validation_error}. "
+                    "Regenerate all FOUR blocks in full with valid art direction and a scene-only positive. "
+                    "Use a concrete, script-supported headline. Do not continue a fragment. "
+                    "For evidence_quote copy words directly from the script. In visual_anchor explain "
+                    "the scene's connection to the headline; paraphrases are valid. "
+                    "Preserve the other valid decisions.\n"
+                    f"Previous response to repair:\n{str(result or '')[:16000]}"
+                )
+            result = self._generate(request, max_tokens=budget, task_type="script_quality")
+            try:
+                raw_hook, direction, positive, negative = parse_art_response(result, script_excerpt[:12000])
+                if direction.get("scene_cleanup"):
+                    print(f"   [Miniatura] se quitaron {len(direction['scene_cleanup'])} fragmento(s) con tipografia "
+                          f"de la escena (el texto lo agrega la app): {'; '.join(direction['scene_cleanup'])[:160]}")
+                hook = _ascii_hook(raw_hook).strip('\u201c\u201d')
+                generic_hook = hook.rstrip("?!.") in ("HOW", "WHY", "WHAT")
+                if not hook or generic_hook or not hook.isascii():
+                    raise ValueError("se requiere un titular concreto en ASCII, no HOW/WHY/WHAT")
+                if render_text:
+                    positive = f"{positive}, {compile_title(hook, fmt, direction)}"
+                break
+            except (ValueError, TypeError) as exc:
+                validation_error = str(exc)
+            print(f"   WARNING Super prompt no valido ({validation_error}); "
+                  + ("reintentando con mas margen" if not attempt else "no se mostrara como completo"))
+        else:
             return None
-
-        import re
-        # `\s*` y NO `\s*\n`: el modelo devuelve los bloques pegados a la
-        # etiqueta la mitad de las veces ("[TEXT]20,000 PEOPLE[POSITIVE...").
-        # Exigir el salto de linea hacia que el bloque no se reconociera y el
-        # prompt positivo se tragara las tres etiquetas.
-        txt_match = re.search(r"\[TEXT\]\s*(.*?)(?=\[POSITIVE PROMPT\]|\Z)", result, re.DOTALL)
-        pos_match = re.search(r"\[POSITIVE PROMPT\]\s*(.*?)(?=\[NEGATIVE PROMPT\]|\Z)", result, re.DOTALL)
-        neg_match = re.search(r"\[NEGATIVE PROMPT\]\s*(.*?)$", result, re.DOTALL)
-
-        positive = pos_match.group(1).strip() if pos_match else result.strip()
-        hook = _ascii_hook(txt_match.group(1)) if txt_match else ""
-        negative = neg_match.group(1).strip() if neg_match else (
-            "misspelled words, duplicated letters, garbled glyphs, extra text, "
-            "subtitles, captions, watermark, logo, signature, deformed hands, "
-            "extra fingers, extra limbs, modern clothing, wristwatch, smartphone, "
-            "neon, pastel colors, cartoon, anime, 3d render, cgi look, low contrast, "
-            "washed out, flat lighting, frame, border, blurry subject"
-        )
-
-        # Red de seguridad: si el LLM devolvio el hook pero no lo metio en el
-        # prompt, la IA de imagen nunca lo escribiria. Se agrega explicito.
-        if render_text and hook and f'"{hook}"' not in positive:
-            directivas = ", ".join(fmt.text_render_directives(hook))
-            positive = f"{positive}, {directivas}"
 
         return {
             "positive": positive,
             "negative": negative,
             "text": hook,
+            "art_direction": direction,
             "combined": build_copyable_prompt(positive, negative),
         }
 
@@ -1970,4 +1999,3 @@ REMEMBER:
                 visual_prompt = f"{visual_prompt.rstrip('. ')}. Absolutely no {neg}; strictly period-accurate."
 
         return visual_prompt
-

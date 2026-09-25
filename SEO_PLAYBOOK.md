@@ -226,6 +226,51 @@ página del canal y en la búsqueda. En el feed de Shorts, YouTube nunca la usa.
    los pilotos kaiten, que morían.
 4. El brief (paleta, luminancia, texto y motivos) reemplaza los valores fijos del
    "super prompt" que se pega en una IA de imágenes externa (`claude_client.generate_thumbnail_super_prompt(research_brief=...)`).
+5. **Texto con ritmo**: si en el guion la cifra viene con una frecuencia ("100 kilometers a
+   day"), el texto es `100 KM A DAY`. La abreviatura se valida contra la palabra completa del guion.
+
+### 5c. Cómo se ve el texto: tamaño, peso y color medidos (`thumbnail_typography.py`)
+El texto chico y fino no pega. Medido con visión (Gemini) sobre una miniatura propia: "100
+KILOMETERS" quedó a 2,6–3,3 % de alto de letra, en peso regular y sin contorno, sobre un cielo
+naranja. Se leía, pero no pegaba.
+
+**Qué hacen las que ganan**: se midieron las miniaturas verticales de los 60 shorts del nicho
+más vistos del mes. La URL `i.ytimg.com/vi/<id>/oardefault.jpg` da el 1080×1920, gratis y sin
+cuota. De 47 miniaturas, 31 llevan texto. Entre los rótulos de 1 a 3 palabras:
+- alto de letra: mediana 6 %, cuarto superior ~8 %;
+- 12 de 13 en bold o black;
+- 10 de 13 con contorno grueso o una caja detrás;
+- 4 de 13 con relleno de color.
+
+La miniatura propia medía menos que las 31.
+
+**Plan tipográfico** (puro, testeable):
+- **Jerarquía**: una cifra al frente va sola en su renglón, al 11 % de alto (en 9:16); el
+  resto va al 8 %. Sin cifra: uno o dos renglones parejos.
+- **Tamaño por largo**: el alto de letra se calcula para llenar el ancho útil sin pasarse
+  (86 % en vertical; el tercio derecho en 16:9), con ~0,56 × alto de letra por carácter en
+  una negrita condensada. Si no entra, se achica y avisa que conviene un texto más corto.
+- **Color**:
+  - el rótulo en blanco; la cifra en el acento de tono opuesto a la paleta de la imagen
+    (escena cálida → cian; fría → amarillo), con contraste WCAG ≥ 7:1 contra el fondo del texto;
+  - se evita el color de acento que más usan las miniaturas que compiten (se mide con visión);
+  - el cálculo explica el problema original: blanco sobre el cielo naranja da 1,65:1.
+- **Contorno oscuro** de 1/10 del alto de letra más sombra dura. Sin Impact, sin bisel, sin 3D.
+- **Zona**:
+  - en vertical, el texto va en y 11–34 % (el recorte 2:3 de la grilla se come el 7,8 %
+    superior, y el título se superpone desde el 71 %);
+  - el sujeto baja a y 34–71 %, y el fondo detrás del texto se pide oscuro y calmo;
+  - esto se reescribe solo en el prompt externo, para no romper el validador interno.
+
+**Revisión al elegir la miniatura** (`check_thumbnail_text`):
+- lee el texto a tamaño completo y "como en el teléfono" (recorte 2:3, 190 px de ancho);
+- mide el alto real de la letra, el peso y el contorno;
+- lo compara con el texto pedido: los generadores de imágenes escriben mal;
+- da un veredicto (con impacto / mejorable / débil) con motivos en el panel.
+
+Lección de proceso: una regla estética fija ("que el texto sea discreto") había salido de
+corregir el extremo opuesto (Impact, contorno grueso, 80 % del ancho). Medir a los que ganan
+dio el punto medio, con números.
 
 ---
 
@@ -390,6 +435,7 @@ estrategia se mide y entra a los prompts.
 | `youtube_uploader.py` | Orquesta la investigación, el título y los tags; verifica los tags guardados; publica la miniatura |
 | `thumbnail_publish.py` | Formato, reintentos, verificación de la miniatura servida |
 | `thumbnail_research.py` | Análisis de las miniaturas de la competencia y brief para el super prompt |
+| `thumbnail_typography.py`, `gemini_vision.py` | Plan tipográfico medido y revisión con visión de la miniatura elegida |
 | `facebook_metadata.py` | Motor de título, arranque y hashtags para Facebook e Instagram; encadenado de la investigación |
 | `facebook_uploader.py` | Aplica la optimización y pone la miniatura en reels y videos de página |
 | `instagram_uploader.py` | Aplica la optimización; portada vía `cover_url` + Cloudinary |

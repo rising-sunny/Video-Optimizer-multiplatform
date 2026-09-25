@@ -1045,6 +1045,15 @@ def upload_from_metadata(output_dir: str, video_state: str = "PUBLISHED", on_pro
         except Exception as exc:
             _notify(on_status, f"optimizacion no disponible ({type(exc).__name__}: {exc}); se usa la metadata tal cual")
 
+    # Atribucion de la musica (CC BY la exige): al final, despues de optimizar, para que no se recorte.
+    if metadata.get("music_attribution"):
+        try:
+            from music_license import with_attribution, DESCRIPTION_LIMITS
+            description = with_attribution(description, metadata["music_attribution"],
+                                           DESCRIPTION_LIMITS["facebook"])
+        except ImportError:
+            description = f"{description}\n\n{metadata['music_attribution']}".strip()
+
     thumb = _find_thumbnail(output_dir) if thumbnail else None
     uploader = upload_video_post if upload_type == "video" else upload_video
     result = uploader(

@@ -1,0 +1,22 @@
+{
+  "_about": "Temas/artistas de Jamendo que generaron reclamos de Content ID en YouTube. La app no los vuelve a ofrecer (music_license.is_blocked). Agregar: python music_license.py claim <id o URL> --claimants \"...\" o clic derecho en el buscador.",
+  "artists": [
+    {
+      "artist_id": "461414",
+      "name": "Paul Werner",
+      "claimants": "WAMI_CS, MINT, BMI - Broadcast Music Inc.",
+      "date": "2026-09-24",
+      "note": "The Prophecy: Short bloqueado en todo el mundo (CC BY-NC-ND, content_id_free=false)"
+    }
+  ],
+  "tracks": [
+    {
+      "track_id": "1506663",
+      "title": "The Prophecy",
+      "artist": "Paul Werner",
+      "claimants": "WAMI_CS, MINT, BMI - Broadcast Music Inc.",
+      "date": "2026-09-24",
+      "note": "Reclamo 0:03-1:06, video bloqueado en todo el mundo"
+    }
+  ]
+}

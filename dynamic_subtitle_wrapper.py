@@ -728,7 +728,8 @@ def patch_subtitle_generation(generator, subtitle_style='hormozi'):
             result['topic'] = base_result.get('topic', storyboard_data.get('topic', ''))
             result['category'] = base_result.get('category', storyboard_data.get('category', ''))
             result['music_attribution'] = base_result.get('music_attribution', '')
-            
+            result['music_used'] = base_result.get('music_used')   # atribucion al publicar (music_license)
+
             # Cleanup condicional
             if success and os.path.exists(ass_path):
                 try:

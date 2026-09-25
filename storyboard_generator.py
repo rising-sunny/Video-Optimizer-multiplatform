@@ -823,6 +823,37 @@ class StoryboardGenerator:
         except Exception:
             return None
 
+    def _fact_check_scenes(self, scenes, topic: str, language: str, research_context=None, title: str = ""):
+        """Verifica (y repara) los hechos de la narracion ANTES de la voz. Ver script_fact_check.
+
+        Devuelve (escenas, informe). Nunca lanza: si no hay juez, el informe dice
+        'unchecked' y la subida vuelve a verificar.
+        """
+        try:
+            from script_fact_check import fact_check_scenes, format_report, default_rewriter
+        except Exception as exc:
+            self.log(f"   [WARN] Verificacion de hechos no disponible: {exc}")
+            return scenes, None
+        fallback = None
+        generate_fn = getattr(self.gemini_client, "_generate", None) if self.gemini_client else None
+        if callable(generate_fn):
+            def fallback(prompt):
+                return generate_fn(prompt, max_tokens=8000, task_type="script_quality")
+        self.log("🔎 Verificando los hechos del guion (Wikipedia + juez externo) antes de la voz...")
+        try:
+            scenes, report = fact_check_scenes(
+                scenes, topic, language=language, research_context=research_context,
+                generate_fn=default_rewriter(fallback, log=self.log), log=self.log, title=title)
+        except Exception as exc:
+            self.log(f"   [WARN] La verificacion de hechos fallo: {exc}")
+            return scenes, None
+        for line in format_report(report):
+            self.log("   " + line)
+        if report.get("status") == "needs_review":
+            self.log("   ⛔ Quedan afirmaciones falsas o inventadas: corregilas en el timeline "
+                     "(la subida queda frenada hasta entonces).")
+        return scenes, report
+
     def _sanitize_script_text(self, script: str, language: str = 'es') -> str:
         """
         Limpia artefactos de guion no narrativos (hashtags, chapter labels, markdown, etc.).
@@ -1495,6 +1526,7 @@ REGLA FUNDAMENTAL — SOLO CASOS DOCUMENTADOS (NO INVENTES):
 - Para perfiles "documentary" y "dramatic_factual": cero contenido paranormal o conspiranoico, incluso disfrazado. Si dudas si algo está documentado, NO lo incluyas.
 - Para perfil "mystery": está permitido tratar reportes/testimonios/folklore como posibilidades, pero el caso o reporte mencionado debe haber existido realmente (no inventarlo completo).
 - Si mencionas una fecha, nombre o evento específico, debe ser real. Si no estás seguro, usa formulaciones como "según reportes de la época" o "testigos afirmaron que...", o directamente NO lo incluyas.
+- ERRORES QUE YA SALIERON PUBLICADOS Y NO PUEDEN REPETIRSE: atribuir una muerte, captura o victoria a quien no corresponde (ej.: "el Victory mató a Villeneuve", cuando Villeneuve fue capturado y el que murió fue Nelson); inventar advertencias, órdenes, diálogos o citas; mover un hecho de fecha o de orden; presentar un mito popular como hecho. Ante la duda, frase general verdadera. El guion se verifica contra Wikipedia antes de la voz.
 - Puedes plantear preguntas abiertas ("¿Y si esto fuera verdad?") SOLO en perfil "mystery". En documentary, las preguntas deben ser sobre hechos reales debatidos por historiadores ("¿qué ruta exacta tomó Aníbal por los Alpes?").
 - ESTRATEGIA SI TE QUEDAS SIN HECHOS NUEVOS: NO acortes inmediatamente. PRIMERO profundiza
   con material documentado adicional: contexto histórico previo, biografía relevante de los
@@ -1785,10 +1817,14 @@ REGLAS CRÍTICAS:
                     "RELEVANTES por escena, NO inventes):\n"
                     "  1. Contexto pre-evento: qué pasaba en las semanas/días previos\n"
                     "  2. Figuras reales nombradas y sus decisiones documentadas\n"
-                    "  3. Cronología precisa: hora exacta, magnitud, velocidad, víctimas\n"
-                    "  4. Sobrevivientes/testigos con nombre y testimonio\n"
+                    "  3. Cronología: el orden de los hechos y cifras que conozcas con certeza\n"
+                    "  4. Sobrevivientes o testigos REALES y lo que documentadamente vivieron\n"
                     "  5. Consecuencias verificables: a 1 día, 1 año, décadas\n"
                     "  6. Legado: qué cambió permanentemente en historia/ciencia\n\n"
+                    "⛔ Si NO estás SEGURO de un detalle (hora exacta, cita textual, quién murió,\n"
+                    "mató o capturó a quién, una advertencia u orden), NO lo pongas: una frase\n"
+                    "general verdadera vale más que un detalle falso. El guion se verifica después\n"
+                    "contra Wikipedia y lo inventado se reescribe o frena la subida.\n\n"
                     "Escenas QUE NECESITAN DOBLAR/TRIPLICAR longitud:\n" + short_block + "\n\n"
                     "⚠️ EJEMPLO DE EXPANSIÓN CORRECTA:\n"
                     "   ANTES (4 palabras): 'The volcano erupted suddenly.'\n"
@@ -1905,6 +1941,8 @@ REGLAS CRÍTICAS:
             language=language,
             rate=rate,
             max_duration=180.0,
+            topic=topic,
+            research_context=research_context,
         )
         if not result:
             self.log("   ⚠️ process_manual_json falló — fallback al flujo clásico")
@@ -1953,38 +1991,27 @@ REGLAS CRÍTICAS:
             except Exception as e:
                 self.log(f"   ⚠️ Error buscando música: {e}")
 
-        # 7. Cover frame injection (same as legacy path)
+        # 7. Arranque (video_opening): sin placa quieta por defecto; el texto de gancho va
+        # encima de la escena 1 y la voz arranca en 0.0 s. La placa vieja solo si el Bible
+        # apaga `hook_overlay` y deja `cover_frame.enabled`.
         try:
-            from channel_strategy import get_cover_frame_config
-            cf_config = get_cover_frame_config()
-            if cf_config.get("enabled", False):
-                from cover_frame_generator import select_cover_text
-                cover_text = select_cover_text(
-                    topic, category,
-                    llm_suggestion=_meta_cover_text or None,
-                )
-                cf_duration = float(cf_config.get("duration_seconds", 0.7))
-                cover_segment = {
-                    "start": 0.0,
-                    "end": cf_duration,
-                    "text": "",
-                    "narration_text": "",
-                    "visual_prompt": f"Cinematic dark vertical cover frame for: {topic}",
-                    "sfx_tag": "none",
-                    "overlay_tag": "none",
-                    "assigned_filename": "cover_frame",
-                    "cover_frame": True,
-                    "cover_text": cover_text,
-                }
-                segments = result.get("segments", [])
-                for seg in segments:
-                    seg["start"] = float(seg.get("start", 0) or 0) + cf_duration
-                    seg["end"] = float(seg.get("end", 0) or 0) + cf_duration
-                segments.insert(0, cover_segment)
-                result["cover_frame"] = {"cover_text": cover_text, "duration": cf_duration}
-                self.log(f"   [Cover Frame] Inserted: '{cover_text}' ({cf_duration}s)")
-        except ImportError:
-            pass
+            from video_opening import apply_opening
+            try:
+                from channel_strategy import get_active_archetype
+                _arche_now = get_active_archetype() or ""
+            except Exception:
+                _arche_now = ""
+            _segs, _opening = apply_opening(
+                result.get("segments", []), script=str(result.get("script") or ""),
+                topic=topic, category=category, llm_cover_text=_meta_cover_text,
+                archetype=_arche_now, log=self.log,
+            )
+            result["segments"] = _segs
+            result["opening"] = _opening
+            if _opening.get("style") == "cover_card":
+                result["cover_frame"] = {"cover_text": _opening["cover_text"], "duration": _opening["duration"]}
+        except Exception as exc:
+            self.log(f"   [Arranque] no se pudo preparar ({exc}); sin texto de gancho")
 
         self.log("✅ STORYBOARD ESTRUCTURADO COMPLETADO (JSON unificado)")
         return result
@@ -2037,6 +2064,8 @@ REGLAS CRÍTICAS:
             language=language,
             rate=rate,
             max_duration=0,  # no limit for long videos
+            topic=topic,
+            research_context=research_context,
         )
         if not result:
             self.log("   ⚠️ process_manual_json falló — fallback al flujo clásico")
@@ -2395,7 +2424,7 @@ Sin explicaciones antes ni después. Solo JSON válido."""
         return result
 
     def process_manual_json(self, json_data, voice_id=None, language='es', rate="+0%",
-                            max_duration: float = 0):
+                            max_duration: float = 0, topic: str = "", research_context=None):
         """
         Procesa el JSON manual: genera UN audio completo y segmenta con Whisper.
         Usa el mismo flujo probado que generate_storyboard_data.
@@ -2436,6 +2465,18 @@ Sin explicaciones antes ni después. Solo JSON válido."""
                 self.log(f" {unusable_json}")
                 return None
         
+        # 0.5 Hechos verificados ANTES de la voz (script_fact_check). Aca pasan los
+        # tres caminos: short automatico, largo por lotes y el JSON pegado a mano.
+        # Sin esto salio publicado "el Victory mato a Villeneuve" (Trafalgar, 2026-09-23).
+        scenes, fact_report = self._fact_check_scenes(
+            scenes, topic or str(json_data.get('title') or ''), language, research_context,
+            title=str(json_data.get('title') or ''))
+        # El titulo tambien se verifica (Cannae: "86,000 Dead" cuando pelearon 86.000). El JSON es
+        # el mismo objeto que usa quien llamo: result["topic"] sale corregido.
+        if fact_report and fact_report.get("title") and fact_report["title"] != fact_report.get("title_original"):
+            self.log(f"   Titulo corregido: '{fact_report['title_original']}' -> '{fact_report['title']}'")
+            json_data['title'] = fact_report["title"]
+
         # 1. Combinar todas las narraciones en un guión completo
         full_script = ""
         scene_metadata = []
@@ -2536,6 +2577,7 @@ Sin explicaciones antes ni después. Solo JSON válido."""
             "language": language,
             "segment_timing_source": timing_source,
             "generated_at": time.time(),
+            "fact_check": fact_report,
         }
     
     def generate_storyboard_data(self, topic: str, category: str, platform: str = 'youtube',
@@ -2788,6 +2830,13 @@ Sin explicaciones antes ni después. Solo JSON válido."""
             script = self._sanitize_script_text(script, language=language)
             self.log("   â„¹ï¸ Revisión IA no aplicó cambios relevantes; se usa limpieza local.")
 
+        # --- 2.6. Hechos verificados antes de la voz (script_fact_check) ---
+        # Guion en texto plano: cada frase es una "escena" para verificar y reparar.
+        _frases = [f for f in re.split(r'(?<=[.!?])\s+', script) if f.strip()]
+        _frases, fact_report_classic = self._fact_check_scenes(_frases, topic, language, research_context)
+        if fact_report_classic and fact_report_classic.get("corrections"):
+            script = " ".join(str(f) for f in _frases if str(f).strip())
+
         # --- 3. Generar Audio (Voz) ---
         self.log(f"ðŸŽ™ï¸ Generando narraciÃ³n ({language})...")
         # Abortar si el guion sigue siendo críticamente corto tras la revisión.
@@ -2902,6 +2951,11 @@ Sin explicaciones antes ni después. Solo JSON válido."""
                         language=language,
                         duration_target=duration_target
                     )
+                    # El guion del reintento es nuevo: tambien pasa por la verificacion de hechos.
+                    _frases_retry = [f for f in re.split(r'(?<=[.!?])\s+', retry_script) if f.strip()]
+                    _frases_retry, _retry_report = self._fact_check_scenes(
+                        _frases_retry, topic, language, research_context)
+                    retry_script = " ".join(str(f) for f in _frases_retry if str(f).strip()) or retry_script
                     retry_audio_filename = f"auto_retry_{int(time.time())}.mp3"
                     retry_audio_path_str = str(VideoConfig.AUDIO_DIR / retry_audio_filename)
                     retry_audio_path = self.tts.generate_narration(
@@ -2930,6 +2984,7 @@ Sin explicaciones antes ni después. Solo JSON válido."""
                             self.log(f" Gate retención (reintento): {retry_score}/100")
                             if retry_score >= intro_score:
                                 script = retry_script
+                                fact_report_classic = _retry_report
                                 audio_path = retry_audio_path
                                 segments = retry_segments
                                 intro_score = retry_score
@@ -3040,42 +3095,28 @@ Sin explicaciones antes ni después. Solo JSON válido."""
             except Exception as e:
                 self.log(f"   âš ï¸ Error en mÃ³dulo de mÃºsica: {e}")
 
-        # --- Cover frame injection for Shorts ---
+        # --- Arranque de los Shorts (video_opening): sin placa, texto de gancho en la escena 1 ---
         cover_frame_data = None
+        opening_data = None
         if self._is_short_form_platform(platform):
             try:
-                from channel_strategy import get_cover_frame_config
-                cf_config = get_cover_frame_config()
-                if cf_config.get("enabled", False):
-                    from cover_frame_generator import select_cover_text
-                    llm_cover_text = getattr(self.gemini_client, '_last_cover_text', None) if hasattr(self, 'gemini_client') else None
-                    if not llm_cover_text and hasattr(self, 'gemini_client') and hasattr(self.gemini_client, 'backend'):
-                        llm_cover_text = getattr(self.gemini_client.backend, '_last_cover_text', None)
-                    cover_text = select_cover_text(topic, category, llm_suggestion=llm_cover_text)
-                    cf_duration = float(cf_config.get("duration_seconds", 0.7))
-
-                    cover_segment = {
-                        "start": 0.0,
-                        "end": cf_duration,
-                        "text": "",
-                        "narration_text": "",
-                        "visual_prompt": f"Cinematic dark vertical cover frame for: {topic}",
-                        "sfx_tag": "none",
-                        "overlay_tag": "none",
-                        "assigned_filename": "cover_frame",
-                        "cover_frame": True,
-                        "cover_text": cover_text,
-                    }
-
-                    for seg in segments_with_prompts:
-                        seg["start"] = float(seg.get("start", 0) or 0) + cf_duration
-                        seg["end"] = float(seg.get("end", 0) or 0) + cf_duration
-
-                    segments_with_prompts.insert(0, cover_segment)
-                    cover_frame_data = {"cover_text": cover_text, "duration": cf_duration}
-                    self.log(f"   [Cover Frame] Inserted: '{cover_text}' ({cf_duration}s)")
-            except ImportError:
-                pass
+                from video_opening import apply_opening
+                llm_cover_text = getattr(self.gemini_client, '_last_cover_text', None) if hasattr(self, 'gemini_client') else None
+                if not llm_cover_text and hasattr(self, 'gemini_client') and hasattr(self.gemini_client, 'backend'):
+                    llm_cover_text = getattr(self.gemini_client.backend, '_last_cover_text', None)
+                try:
+                    from channel_strategy import get_active_archetype
+                    _arche_now = get_active_archetype() or ""
+                except Exception:
+                    _arche_now = ""
+                segments_with_prompts, opening_data = apply_opening(
+                    segments_with_prompts, script=str(script or ""), topic=topic, category=category,
+                    llm_cover_text=llm_cover_text or "", archetype=_arche_now, log=self.log,
+                )
+                if opening_data.get("style") == "cover_card":
+                    cover_frame_data = {"cover_text": opening_data["cover_text"], "duration": opening_data["duration"]}
+            except Exception as exc:
+                self.log(f"   [Arranque] no se pudo preparar ({exc}); sin texto de gancho")
 
         self.log("âœ… PASO 1: STORYBOARD COMPLETADO")
         self.log("â„¹ï¸ NOTA: Las imÃ¡genes NO se generan en este paso.")
@@ -3096,7 +3137,9 @@ Sin explicaciones antes ni después. Solo JSON válido."""
             "language": language,
             "visual_context": visual_context,
             "cover_frame": cover_frame_data,
+            "opening": opening_data,
             "script_metadata": self._extract_llm_script_metadata(),
+            "fact_check": fact_report_classic,
         }
     
     def generate_short_teaser_from_long_video(self, long_video_storyboard, language='es', voice_id=None,

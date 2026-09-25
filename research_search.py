@@ -44,7 +44,10 @@ def topic_search_queries(topic: str) -> List[str]:
     "Muriq-Tidnim (Muro amorrita)" must try the Akkadian name first, not the
     parenthetical gloss — the gloss often matches the wrong article.
     """
-    raw = (topic or "").strip()
+    # Guiones y espacios tipograficos (U+2011 no separable, U+202F angosto) rompen la
+    # busqueda: "double‑envelopment in 216 BC" no encontraba nada (Cannae, 2026-09-25).
+    raw = (topic or "").translate({0x2010: "-", 0x2011: "-", 0x2012: "-", 0x2013: "-", 0x2014: "-",
+                                   0x00A0: " ", 0x202F: " ", 0x2009: " ", 0x2019: "'"}).strip()
     if not raw:
         return []
 
@@ -58,6 +61,12 @@ def topic_search_queries(topic: str) -> List[str]:
             queries.append(cleaned)
 
     _add(raw)
+    # "The Battle of Cannae: Hannibal's double-envelopment in 216 BC": el sujeto va antes
+    # de los dos puntos (o del guion largo) y suele ser el titulo exacto del articulo.
+    head = re.split(r"\s*(?::|\s-\s|\s—\s|\s–\s)\s*", raw, maxsplit=1)[0]
+    if head and head != raw:
+        _add(head)
+        _add(re.sub(r"^(?:the|el|la|los|las)\s+", "", head, flags=re.I))
     outside = re.sub(r"\([^)]*\)", " ", raw)
     _add(outside)
     if outside and "-" in outside:

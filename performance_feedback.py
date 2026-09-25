@@ -171,6 +171,11 @@ def load_projects(roots: Iterable[Path] = ()) -> list[dict[str, Any]]:
                     continue
                 cfg = data.get("config") or {}
                 sb = data.get("storyboard") if isinstance(data.get("storyboard"), dict) else data
+                try:
+                    from video_opening import opening_style
+                    opening = opening_style(sb)
+                except Exception:
+                    opening = ""
                 gv = data.get("generated_video_data") or {}
                 pub = data.get("publish_results") or {}
                 out.append({
@@ -183,6 +188,7 @@ def load_projects(roots: Iterable[Path] = ()) -> list[dict[str, Any]]:
                     "video_format": cfg.get("video_format") or sb.get("video_format") or "",
                     "platform_key": cfg.get("platform_key") or cfg.get("platform") or "",
                     "channel_profile": cfg.get("channel_profile") or "",
+                    "opening": opening,
                     "youtube_video_id": (pub.get("youtube") or {}).get("video_id") or "",
                     "facebook_reel_id": (pub.get("facebook") or {}).get("id") or (pub.get("facebook") or {}).get("video_id") or "",
                 })
@@ -234,6 +240,8 @@ def enrich_rows(rows: list[dict[str, Any]], projects: list[dict[str, Any]], plat
         arche = (p or {}).get("format_archetype") or classify_archetype(row.get("title", ""), row.get("description", ""))
         row["archetype"] = arche if arche in ARCHETYPES else "unknown"
         row["risk_tags"] = tag_risks(row.get("title", ""))
+        # Arranque del video (video_opening): placa vieja vs texto de gancho, para el A/B.
+        row["opening"] = (p or {}).get("opening") or "unknown"
         row["duration_bucket"] = duration_bucket(row.get("duration", 0))
         row["is_vertical"] = bool(row.get("is_vertical", True))
         if platform == "youtube":
@@ -371,10 +379,12 @@ def build_snapshot(yt_rows: list[dict[str, Any]], fb_rows: list[dict[str, Any]],
         "by_category": summarize(yt, "category", "youtube"),
         "by_duration": summarize(yt, "duration_bucket", "youtube"),
         "by_risk": summarize([dict(r, risk_tags=r["risk_tags"] or ["none"]) for r in yt], "risk_tags", "youtube"),
+        "by_opening": summarize(yt, "opening", "youtube"),
     }
     fb_summary = {
         "by_archetype": summarize(fb, "archetype", "facebook"),
         "by_duration": summarize(fb, "duration_bucket", "facebook"),
+        "by_opening": summarize(fb, "opening", "facebook"),
     }
     winners = sorted(yt, key=lambda r: -float(r.get("views") or 0))[:8]
     losers = sorted([r for r in yt if r.get("dead")], key=lambda r: float(r.get("views") or 0))[:8]
@@ -558,6 +568,27 @@ def run(days: int = 30, with_youtube: bool = True, with_facebook: bool = True,
     return snap
 
 
+OPENING_LABELS = {"cover_card": "placa quieta de 0.7 s", "hook_overlay_v1": "texto de gancho sobre la escena 1",
+                  "plain": "sin placa ni gancho"}
+MIN_OPENING_N = 8
+
+
+def compare_openings(by_opening: dict[str, dict[str, Any]]) -> Optional[str]:
+    """El A/B del arranque (video_opening): retencion tras los primeros segundos (engagedViews/views)
+    por estilo. None si todavia no hay de los dos."""
+    old, new = by_opening.get("cover_card"), by_opening.get("hook_overlay_v1")
+    if not old or not new:
+        return None
+    txt = (f"ARRANQUE: {OPENING_LABELS['cover_card']} (n={old['n']}, se quedan {old['median_engaged_pct']}%, "
+           f"despegan {int(old['takeoff_rate'] * 100)}%) vs {OPENING_LABELS['hook_overlay_v1']} (n={new['n']}, "
+           f"se quedan {new['median_engaged_pct']}%, despegan {int(new['takeoff_rate'] * 100)}%)")
+    if min(old["n"], new["n"]) < MIN_OPENING_N:
+        return txt + f" -- todavia pocos videos (hacen falta {MIN_OPENING_N} de cada uno para juzgar)"
+    diff = round(float(new["median_engaged_pct"]) - float(old["median_engaged_pct"]), 1)
+    verdict = ("el gancho retiene mas" if diff >= 3 else "la placa retenia mas" if diff <= -3 else "sin diferencia clara")
+    return f"{txt} -> {verdict} ({diff:+} puntos)"
+
+
 def format_summary(snap: dict[str, Any]) -> str:
     lines = [f"RENDIMIENTO (ventana {snap.get('window_days')} dias, {snap.get('generated_at')})"]
     ch = snap.get("youtube", {}).get("channel") or {}
@@ -577,6 +608,9 @@ def format_summary(snap: dict[str, Any]) -> str:
             lines.append(f"    - {x['label']}: {x['why']}")
     for n in rec.get("notes", []):
         lines.append(f"  NOTA: {n}")
+    ab = compare_openings((snap.get("youtube") or {}).get("by_opening") or {})
+    if ab:
+        lines.append(f"  {ab}")
     return "\n".join(lines)
 
 

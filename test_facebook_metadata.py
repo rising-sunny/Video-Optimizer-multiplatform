@@ -231,6 +231,26 @@ class _FakeGraph:
         return {}
 
 
+class TituloMalRedactadoNoPisa(unittest.TestCase):
+    """Trafalgar (24-09): Facebook e Instagram tenian "How Nelson Won Trafalgar Against a Bigger
+    Fleet" y lo cambiaron por el de YouTube, "Nelson Trafalgar how the victory secured British seas"."""
+
+    def test_se_queda_el_titulo_que_se_lee_bien(self):
+        r = fm.optimize_facebook_metadata({"title": "How Nelson Won Trafalgar Against a Bigger Fleet",
+                                           "description": "How did Admiral Nelson break a bigger fleet?"},
+                                          research_title="Nelson Trafalgar how the victory secured British seas",
+                                          keyword="nelson trafalgar", subject="nelson", brand=BRAND)
+        self.assertEqual(r["title"], "How Nelson Won Trafalgar Against a Bigger Fleet")
+        self.assertFalse(r["title_changed"])
+        self.assertIn("mal redactado", r["summary"])
+
+    def test_un_titulo_investigado_bien_redactado_si_reemplaza(self):
+        r = fm.optimize_facebook_metadata({"title": "Trafalgar", "description": "x"},
+                                          research_title="Nelson at Trafalgar: the double-column that broke the line",
+                                          keyword="nelson trafalgar", brand=BRAND)
+        self.assertEqual(r["title"], "Nelson at Trafalgar: the double-column that broke the line")
+
+
 class Miniatura(unittest.TestCase):
 
     def setUp(self):

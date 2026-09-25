@@ -200,9 +200,9 @@ class ThumbnailsMixin:
         # Obtener fragmento del guion si está disponible
         script_excerpt = ""
         if hasattr(self, 'storyboard_data') and self.storyboard_data:
-            script_excerpt = str(self.storyboard_data.get('script', ''))[:1200]
+            script_excerpt = str(self.storyboard_data.get('script', ''))[:12000]
         elif hasattr(self, 'script_text') and self.script_text:
-            script_excerpt = str(self.script_text)[:1200]
+            script_excerpt = str(self.script_text)[:12000]
 
         self.btn_super_prompt.setEnabled(False)
         self.btn_super_prompt.setText("Generando...")
@@ -280,4 +280,3 @@ class ThumbnailsMixin:
         layout.addWidget(btn_close)
 
         dialog.exec()
-

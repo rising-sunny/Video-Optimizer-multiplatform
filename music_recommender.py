@@ -6,7 +6,10 @@ Analiza guiones con IA para recomendar mÃºsica apropiada
 """
 
 import os
+import re
 import json
+import time
+import threading
 import requests
 from typing import List, Dict, Optional
 from dotenv import load_dotenv
@@ -292,12 +295,9 @@ def extract_cc_license_code(license_url: str) -> str:
 
 
 def is_youtube_safe_cc_license(license_url: str) -> bool:
-    """
-    Determina si una licencia CC es apta para publicarse en YouTube
-    (respetando restricciones NC/ND cuando existan).
-    """
-    code = extract_cc_license_code(license_url)
-    return code != "UNKNOWN"
+    """Apta para un video de YouTube: solo CC0, CC BY y CC BY-SA (ver music_license)."""
+    from music_license import license_code, license_problem
+    return license_problem(license_code(license_url)) is None
 
 
 def build_default_jamendo_share_url(track_id) -> str:
@@ -311,105 +311,205 @@ def build_default_jamendo_share_url(track_id) -> str:
 
 def search_jamendo_api(tags, client_id, limit=1):
     """
-    Llama a la API de Jamendo. VersiÃ³n robusta.
+    Busca pistas en Jamendo que se puedan usar en un video de YouTube.
+
+    Solo CC BY / CC BY-SA (ccnc=false, ccnd=false): NC no se puede monetizar y
+    ND no se puede sincronizar con imagen (Creative Commons lo considera obra
+    derivada). Tambien descarta los artistas que ya generaron reclamos de
+    Content ID (daily_shorts/music_claims.json). Ver music_license.py.
+    Cada pista trae `attribution_text` (ingles) para la descripcion.
     """
+    from music_license import JAMENDO_SAFE_PARAMS, filter_tracks
+
     if not client_id or "TU_CLIENT_ID" in client_id:
         print("\nERROR: JAMENDO_CLIENT_ID no configurado.")
         return []
-    
-    # Limpiar ID por si acaso
-    clean_id = client_id.strip()
-    
-    # Estrategia 1: BÃºsqueda Fuzzy (MÃ¡s flexible)
-    tag_str = " ".join(tags)
-    print(f"[Jamendo] Buscando: '{tag_str}'...")
-    
-    params = {
-       "client_id": clean_id, 
-       "format": "json", 
-       "fuzzytags": tag_str,
-       "limit": limit, 
-       "include": "musicinfo"
-       # Quitamos 'audioformat' y 'order' aquÃ­ para maximizar compatibilidad inicial
-    }
-    
-    try:
-        response = requests.get("https://api.jamendo.com/v3.0/tracks/", params=params, timeout=15)
-        
-        if response.status_code != 200:
-            print(f"âš ï¸ Jamendo API Error: {response.status_code} - {response.text}")
-            return []
 
-        data = response.json()
-        results = data.get('results', [])
-        
-        # Estrategia 2: Fallback a bÃºsqueda estricta simple si falla la fuzzy
-        if not results:
-            print(f"[Jamendo] Sin resultados. Probando bÃºsqueda simple por tag: '{tags[0]}'")
-            # Intentamos con el endpoint base sin filtros extraÃ±os, solo 1 tag
+    clean_id = client_id.strip()
+    # Se piden de mas: los artistas bloqueados se descartan despues.
+    fetch = max(int(limit or 1) * 4, 20)
+    fetch = min(fetch, 200)
+
+    tag_str = " ".join(tags)
+    print(f"[Jamendo] Buscando (solo CC BY / CC BY-SA): '{tag_str}'...")
+
+    params = {
+        "client_id": clean_id,
+        "format": "json",
+        "fuzzytags": tag_str,
+        "limit": fetch,
+        "include": "musicinfo licenses",
+        **JAMENDO_SAFE_PARAMS,
+    }
+
+    try:
+        results = []
+        # Jamendo a veces devuelve 0 resultados de forma pasajera: un reintento.
+        for attempt in range(2):
+            response = requests.get("https://api.jamendo.com/v3.0/tracks/", params=params, timeout=20)
+            if response.status_code != 200:
+                print(f"[Jamendo] Error de API: {response.status_code} - {response.text[:200]}")
+                return []
+            results = response.json().get('results', [])
+            if results:
+                break
+            time.sleep(1.0)
+
+        # Fallback: busqueda simple por un solo tag (mismos filtros de licencia).
+        if not results and tags:
+            print(f"[Jamendo] Sin resultados. Probando busqueda simple por tag: '{tags[0]}'")
             params_fallback = {
                 "client_id": clean_id,
                 "format": "json",
-                "tags": tags[0], # Tag estricto
-                "limit": limit
+                "tags": tags[0],
+                "limit": fetch,
+                "include": "licenses",
+                **JAMENDO_SAFE_PARAMS,
             }
             res_fallback = requests.get("https://api.jamendo.com/v3.0/tracks/", params=params_fallback, timeout=15)
             if res_fallback.status_code == 200:
                 results = res_fallback.json().get('results', [])
 
         if not results:
-            print("âŒ Jamendo no devolviÃ³ pistas. Verifica tu Client ID.")
+            print("[Jamendo] No devolvio pistas aptas para video (CC BY / CC BY-SA).")
             return []
-            
+
         tracks = []
         for tr in results:
-            if tr.get('audio') and tr.get('license_ccurl'):
-                track_id = tr.get('id')
-                license_url = tr.get('license_ccurl', '')
-                license_code = extract_cc_license_code(license_url)
-                share_url = tr.get('shareurl') or build_default_jamendo_share_url(track_id)
-                short_url = tr.get('shorturl', '')
+            if not (tr.get('audio') and tr.get('license_ccurl')):
+                continue
+            track_id = tr.get('id')
+            license_url = tr.get('license_ccurl', '')
+            tracks.append({
+                "title": tr.get('name', 'Desconocido'),
+                "artist": tr.get('artist_name', 'Artista'),
+                "artist_id": tr.get('artist_id', ''),
+                "audio_url": tr['audio'],
+                "license_url": license_url,
+                "license_code": extract_cc_license_code(license_url),
+                "content_id_free": tr.get('content_id_free'),
+                "duration": tr.get('duration', 0),  # Duracion en segundos
+                "track_id": track_id,
+                "share_url": tr.get('shareurl') or build_default_jamendo_share_url(track_id),
+                "short_url": tr.get('shorturl', ''),
+                "source": "jamendo",
+            })
 
-                tracks.append({
-                    "title": tr.get('name', 'Desconocido'),
-                    "artist": tr.get('artist_name', 'Artista'),
-                    "audio_url": tr['audio'],
-                    "license_url": license_url,
-                    "license_code": license_code,
-                    "youtube_safe": is_youtube_safe_cc_license(license_url),
-                    "attribution_required": license_code not in {"CC0", "UNKNOWN"},
-                    "duration": tr.get('duration', 0),  # Duracion en segundos
-                    "track_id": track_id,
-                    "share_url": share_url,
-                    "short_url": short_url,
-                })
-        return tracks
-        
+        kept, dropped = filter_tracks(tracks)
+        if dropped:
+            reasons = sorted({why for _, why in dropped})
+            print(f"[Jamendo] Descartadas {len(dropped)} pista(s): {'; '.join(reasons)[:200]}")
+        return kept[:max(1, int(limit or 1))]
+
     except Exception as e:
-        print(f"Error conexiÃ³n Jamendo: {e}")
+        print(f"Error conexion Jamendo: {e}")
         return []
 
-def download_track(audio_url, save_path):
+_DOWNLOAD_LOCKS = {}
+_DOWNLOAD_LOCKS_GUARD = threading.Lock()
+
+
+def jamendo_mirrors(url):
+    """La URL original y el espejo mp3l.jamendo.com del mismo tema y formato.
+
+    prod-1.storage.jamendo.com a veces no resuelve (DNS) o entrega a goteo; el
+    espejo sirve el mismo archivo (2026-09-24: 3.1 MB en 2.6 s contra 6.1 s).
     """
-    Descarga una pista de audio desde URL
+    urls = [url] if url else []
+    m = re.search(r"trackid=(\d+)", str(url or ""))
+    if m:
+        fmt = re.search(r"format=(\w+)", str(url or ""))
+        alt = f"https://mp3l.jamendo.com/?trackid={m.group(1)}&format={fmt.group(1) if fmt else 'mp31'}"
+        if alt not in urls:
+            urls.append(alt)
+    return urls
+
+
+def download_audio(url, dest, progress=None, cancelled=None, attempts=4, timeout=(10, 30),
+                   http_get=None, sleep=time.sleep, reuse_existing=True):
+    """Descarga robusta de un audio: reintenta, reanuda y prueba el espejo.
+
+    - Cortes de DNS/conexion y lecturas lentas ("Read timed out") se reintentan;
+      lo ya bajado se reanuda con Range en vez de empezar de cero.
+    - Intentos: original, original (reanuda), espejo, espejo (reanuda).
+    - Un solo download por archivo: si la forma de onda y la vista previa piden
+      el mismo tema a la vez, el segundo espera y usa el archivo del primero.
+    - Se baja a `dest + ".part"` y se renombra al terminar: nunca queda un mp3
+      cortado con el nombre final.
+
+    progress(pct) y cancelled() son opcionales. reuse_existing=False baja de nuevo
+    aunque el archivo exista (rutas fijas como temp_bgm.mp3: si no, un video se
+    quedaria con la musica del anterior). Devuelve dest, None si se cancelo, o
+    lanza RuntimeError con el ultimo error.
     """
-    try:
-        print(f"ðŸ“¥ Descargando desde: {audio_url}")
-        response = requests.get(audio_url, timeout=(10, 30), stream=True)
-        
-        if response.status_code == 200:
-            with open(save_path, 'wb') as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    if chunk:
+    http_get = http_get or requests.get
+    key = os.path.abspath(dest)
+    with _DOWNLOAD_LOCKS_GUARD:
+        lock = _DOWNLOAD_LOCKS.setdefault(key, threading.Lock())
+    with lock:
+        if not reuse_existing and os.path.exists(dest):
+            os.remove(dest)
+        if os.path.exists(dest) and os.path.getsize(dest) > 0:
+            if progress:
+                progress(100)
+            return dest
+        part = dest + ".part"
+        mirrors = jamendo_mirrors(url)
+        plan = [mirrors[0], mirrors[0]] + ([mirrors[1], mirrors[1]] if len(mirrors) > 1 else [mirrors[0]] * 2)
+        part_src = None
+        last_error = None
+        for attempt, src in enumerate(plan[:max(1, attempts)]):
+            if part_src != src and os.path.exists(part):
+                os.remove(part)                     # otro servidor: no se mezclan bytes
+            have = os.path.getsize(part) if os.path.exists(part) else 0
+            headers = {"Range": f"bytes={have}-"} if have else {}
+            try:
+                response = http_get(src, stream=True, timeout=timeout, headers=headers)
+                if response.status_code not in (200, 206):
+                    raise RuntimeError(f"HTTP {response.status_code}")
+                if have and response.status_code == 200:
+                    have = 0                        # el servidor ignoro el Range: de cero
+                part_src = src
+                length = int(response.headers.get("content-length") or 0)
+                total = have + length if length else 0
+                done = have
+                with open(part, "ab" if have else "wb") as f:
+                    for chunk in response.iter_content(chunk_size=65536):
+                        if cancelled and cancelled():
+                            return None
+                        if not chunk:
+                            continue
                         f.write(chunk)
-            print(f"âœ… Descargado: {save_path}")
-            return save_path
-        else:
-            print(f"âŒ Error HTTP: {response.status_code}")
-            return None
-            
+                        done += len(chunk)
+                        if progress and total:
+                            progress(min(99, int(done * 100 / total)))
+                if total and done < total:
+                    raise RuntimeError(f"descarga incompleta ({done}/{total} bytes)")
+                if done <= 0:
+                    raise RuntimeError("descarga vacia")
+                os.replace(part, dest)
+                if progress:
+                    progress(100)
+                return dest
+            except Exception as exc:
+                last_error = exc
+                if part_src is None:
+                    part_src = src
+                print(f"[Jamendo] intento {attempt + 1} fallo ({type(exc).__name__}: {str(exc)[:120]}); reintentando")
+                if attempt + 1 < min(len(plan), max(1, attempts)):
+                    sleep(min(2 * (attempt + 1), 6))
+        raise RuntimeError(f"No se pudo descargar el audio de Jamendo: {last_error}")
+
+
+def download_track(audio_url, save_path):
+    """Descarga una pista de audio (con reintentos, reanudacion y espejo). None si falla."""
+    try:
+        print(f"[Jamendo] Descargando: {audio_url}")
+        path = download_audio(audio_url, save_path, reuse_existing=False)
+        print(f"[Jamendo] Descargado: {save_path}")
+        return path
     except Exception as e:
-        print(f"âŒ Error descarga: {e}")
+        print(f"[Jamendo] Error de descarga: {e}")
         return None
 
 # --- 4. FUNCIÃ“N PRINCIPAL ---

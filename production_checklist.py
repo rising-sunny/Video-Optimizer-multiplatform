@@ -159,13 +159,34 @@ def run_pre_publish_checklist(
     else:
         results.append({"check": "hook_valid", "passed": False, "message": "No script found in storyboard."})
 
+    # Arranque (video_opening, 2026-09-23): lo nuevo es el texto de gancho sobre la escena 1; la
+    # placa quieta de 0.7 s queda para proyectos viejos. Cualquiera de los dos cuenta.
     cf = storyboard.get("cover_frame")
-    has_cf = cf is not None and cf.get("cover_text")
-    results.append({
-        "check": "cover_frame_present",
-        "passed": has_cf,
-        "message": f"Cover frame: '{cf.get('cover_text', '')}'" if has_cf else "No cover frame in storyboard.",
-    })
+    has_cf = bool(cf and cf.get("cover_text"))
+    try:
+        from video_opening import get_hook_overlay
+        hook = get_hook_overlay(storyboard)
+    except Exception:
+        hook = None
+    if hook:
+        msg = f"Texto de gancho: '{hook['text']}' ({hook['duration']:.1f}s sobre la escena 1)"
+    elif has_cf:
+        msg = f"Cover frame (placa vieja): '{cf.get('cover_text', '')}'"
+    else:
+        msg = "Sin texto de gancho: el arranque queda solo con los subtitulos."
+    results.append({"check": "opening_hook_present", "passed": bool(hook or has_cf), "message": msg})
+
+    # Hechos verificados (script_fact_check, 2026-09-24). Solo lee el informe guardado
+    # (sin red): si falta o la narracion cambio desde entonces, la subida vuelve a verificar.
+    try:
+        from script_fact_check import report_is_current, status_line
+        fc = storyboard.get("fact_check") or {}
+        current = report_is_current(storyboard)
+        fc_ok = current and fc.get("status") in ("verified", "corrected", "verified_with_notes")
+        fc_msg = status_line(fc) if current else "Hechos sin verificar para la narracion actual (se verifica al subir)."
+    except Exception as e:
+        fc_ok, fc_msg = False, f"No se pudo leer la verificacion de hechos: {e}"
+    results.append({"check": "facts_verified", "passed": bool(fc_ok), "message": fc_msg})
 
     meta = metadata or {}
     title = (meta.get("title") or "").strip()

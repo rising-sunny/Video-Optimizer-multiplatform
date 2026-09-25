@@ -558,8 +558,117 @@ class TimelineEditorWidget(QWidget):
         if self.studio_tab and hasattr(self.studio_tab, 'update_status'):
             self.studio_tab.update_status(message)
 
+    def _art_directed_prompts(self, indices):
+        """{indice: {'prompt', 'negative_prompt'}} con direccion de arte (visual_art_direction).
+
+        El prompt copiado va a una IA de imagen externa: biblia visual del video +
+        un plano por segmento segun su narracion. Si hace falta consultar al modelo,
+        lo hace en un hilo con un dialogo de espera. {} si esta apagado o falla:
+        entonces se copia el prompt del proveedor interno, como antes.
+        """
+        ready = self._ensure_art_view(indices)
+        if not ready:
+            return {}
+        vad, view, aspect, style = ready
+        out = {}
+        for i in indices:
+            data = vad.prompt_for_segment(view, i, aspect=aspect, style=style)
+            if data and data.get('prompt'):
+                out[i] = data
+        return out
+
+    def copy_video_prompt_for_segment(self, segment_index):
+        """Copia el prompt de video del segmento (para una IA de video externa).
+
+        Sale del mismo plano que el prompt de imagen: arranca en ese cuadro y le suma
+        movimiento de camara, del sujeto y del ambiente, la duracion del segmento y
+        el sonido. Trae tambien una version 'solo movimiento' para animar la imagen.
+        Si la direccion de arte no esta disponible, arma uno con el visual_prompt y
+        el motion_prompt del segmento.
+        """
+        if not (0 <= segment_index < len(self.segments)):
+            return
+        try:
+            import visual_art_direction as vad
+        except Exception as exc:
+            QMessageBox.warning(self, "Prompt de video", f"No disponible: {exc}")
+            return
+        data = None
+        ready = self._ensure_art_view([segment_index])
+        if ready:
+            _, view, aspect, style = ready
+            data = vad.video_prompt_for_segment(view, segment_index, aspect=aspect, style=style)
+        label = "Prompt de video con direccion de arte"
+        if not data:
+            seg = self.segments[segment_index]
+            data = vad.fallback_video_prompt(seg, aspect=self._get_selected_image_aspect_ratio(),
+                                             is_opening=segment_index == 0 or bool(seg.get('hook_overlay')))
+            label = "Prompt de video (basico: la direccion de arte no respondio)"
+        self._copy_text_to_clipboard(
+            vad.video_clipboard_text(data, self._format_label_for_copied_prompts()), label, segment_index)
+
+    def _ensure_art_view(self, indices):
+        """(vad, vista, aspecto, estilo) con la direccion de arte al dia para esos segmentos, o None."""
+        try:
+            import visual_art_direction as vad
+        except Exception as exc:
+            print(f"[TimelineEditor] Direccion de arte no disponible: {exc}")
+            return None
+        if not vad.enabled() or not self.segments:
+            return None
+        studio = self.studio_tab
+        base = getattr(studio, 'last_storyboard_data', None) if studio else None
+        base = base if isinstance(base, dict) else {}
+        view = {
+            'topic': base.get('topic') or base.get('title') or '',
+            'visual_bible': base.get('visual_bible'),
+            'segments': self.segments,          # los dicts vivos: el plano queda guardado en cada segmento
+        }
+        aspect = self._get_selected_image_aspect_ratio()
+        style = self._get_recraft_prompt_style()
+        if vad.needs_work(view, indices):
+            import threading
+            from PyQt6.QtWidgets import QProgressDialog
+            logs, box = [], {}
+
+            def _work():
+                try:
+                    box['ready'] = vad.ensure_art_direction(view, indices, aspect=aspect, style=style,
+                                                            log=logs.append)
+                except Exception as exc:
+                    logs.append(f"   [Arte] fallo: {exc}")
+
+            dlg = QProgressDialog("Disenando los planos (biblia visual, luz, paleta, lente)...", None, 0, 0, self)
+            dlg.setWindowTitle("Direccion de arte")
+            dlg.setWindowModality(Qt.WindowModality.ApplicationModal)
+            dlg.setMinimumDuration(0)
+            dlg.show()
+            worker = threading.Thread(target=_work, daemon=True)
+            worker.start()
+            while worker.is_alive():
+                QApplication.processEvents()
+                worker.join(0.05)
+            dlg.close()
+            for line in logs:
+                print(line)
+                if studio and hasattr(studio, 'log'):
+                    studio.log(line)
+            if view.get('visual_bible') and studio is not None and isinstance(getattr(studio, 'last_storyboard_data', None), dict):
+                studio.last_storyboard_data['visual_bible'] = view['visual_bible']
+            self._trigger_auto_save("direccion de arte de los prompts")
+        return vad, view, aspect, style
+
     def copy_recraft_prompts_for_segment(self, segment_index):
         """Copia al portapapeles el prompt y negative prompt Recraft del segmento."""
+        # Primero el prompt con direccion de arte (para IAs externas); si no hay, el de siempre.
+        art = self._art_directed_prompts([segment_index]).get(segment_index)
+        if art:
+            text_to_copy = (f"Formato: {self._format_label_for_copied_prompts()}\n\n"
+                            f"Prompt:\n{art['prompt']}\n\n"
+                            f"Negative Prompt:\n{art['negative_prompt']}")
+            self._copy_text_to_clipboard(text_to_copy.strip(), "Prompt con direccion de arte", segment_index)
+            return
+
         prompt_data = self._resolve_recraft_prompt_for_segment(segment_index)
         prompt = (prompt_data or {}).get('prompt', '').strip()
         negative_prompt = (prompt_data or {}).get('negative_prompt', '').strip()
@@ -648,11 +757,24 @@ class TimelineEditorWidget(QWidget):
         lines = header[:]
         has_content = False
 
+        # Prompts con direccion de arte para todos (una biblia visual + planos por tandas).
+        progress.hide()
+        art_prompts = self._art_directed_prompts(list(range(len(self.segments))))
+        progress.show()
+
         for i in range(len(self.segments)):
             if progress.wasCanceled():
                 return
             progress.setValue(i)
             progress.setLabelText(f"Resolviendo segmento {i + 1} de {len(self.segments)}...")
+
+            if i in art_prompts:
+                has_content = True
+                lines.append(f"=== Segmento {i + 1} ===")
+                lines.append(f"Prompt:\n{art_prompts[i]['prompt']}")
+                lines.append(f"Neg prompt: {art_prompts[i]['negative_prompt']}")
+                lines.append("")
+                continue
 
             prompt_data = self._resolve_recraft_prompt_for_segment(i)
             prompt = str((prompt_data or {}).get('prompt') or '').strip()
@@ -1285,6 +1407,7 @@ class TimelineEditorWidget(QWidget):
                 wrapper.grouped_image_dropped.connect(self._on_grouped_image_dropped)
                 wrapper.grouped_video_dropped.connect(self._on_grouped_video_dropped)
                 wrapper.grouped_copy_prompts_requested.connect(self.copy_recraft_prompts_for_segment)
+                wrapper.grouped_copy_video_prompt_requested.connect(self.copy_video_prompt_for_segment)
                 wrapper.grouped_paste_clipboard_requested.connect(self._paste_clipboard_image_to_group)
                 wrapper.grouped_strip_watermark_requested.connect(self._on_grouped_strip_watermark_requested)
                 wrapper.grouped_generate_fal_image_requested.connect(self._on_grouped_generate_fal_image)
@@ -1378,6 +1501,7 @@ class TimelineEditorWidget(QWidget):
         widget.local_video_dropped.connect(self._handle_local_video_dropped)
         widget.regenerate_text_requested.connect(self.regenerate_single_segment_text)
         widget.recraft_prompts_copy_requested.connect(self.copy_recraft_prompts_for_segment)
+        widget.video_prompt_copy_requested.connect(self.copy_video_prompt_for_segment)
         widget.generate_fal_image_requested.connect(
             lambda idx: self.regenerate_ai_image(idx, skip_confirmation=True, force_provider='fal')
         )

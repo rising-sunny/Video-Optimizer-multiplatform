@@ -248,6 +248,15 @@ def normalize_phrase(text: str) -> str:
     return re.sub(r"\s+", " ", re.sub(r"[^0-9a-z ]+", " ", _ascii(text).lower())).strip()
 
 
+def _writing_issues(title: str, keyword: str = "") -> list[str]:
+    """Redaccion rota (youtube_titles.readability_issues); sin el modulo (VPS), nada."""
+    try:
+        from youtube_titles import readability_issues
+    except Exception:
+        return []
+    return readability_issues(title, keyword)
+
+
 def optimize_facebook_metadata(meta: dict[str, Any], *, research_title: str = "", keyword: str = "",
                                subject: str = "", research_tags: Iterable[str] = (), brand: str = "",
                                title_mode: str = "optimize", platform: str = "facebook") -> dict[str, Any]:
@@ -259,6 +268,13 @@ def optimize_facebook_metadata(meta: dict[str, Any], *, research_title: str = ""
     original_title = str(meta.get("title") or "").strip()
     research_title = str(research_title or "").strip()
     title, changed = original_title, False
+    # Trafalgar (2026-09-24): Facebook tenia "How Nelson Won Trafalgar Against a Bigger Fleet" y lo
+    # piso con el de YouTube, "Nelson Trafalgar how the victory secured British seas". Un titulo
+    # investigado mal redactado no reemplaza a uno que se lee bien.
+    rejected_research = ""
+    if research_title and original_title and _writing_issues(research_title, keyword) \
+            and not _writing_issues(original_title, keyword):
+        rejected_research, research_title = research_title, ""
     if research_title and research_title != original_title and (title_mode == "optimize" or not original_title):
         title, changed = research_title, True
 
@@ -285,6 +301,8 @@ def optimize_facebook_metadata(meta: dict[str, Any], *, research_title: str = ""
     parts = [f"titulo '{title}'" + (f" <- antes '{original_title}'" if changed and original_title else "")]
     if title_mode == "suggest" and research_title and research_title != original_title:
         parts.append(f"titulo del usuario se mantiene; alternativa investigada: '{research_title}'")
+    if rejected_research:
+        parts.append(f"no se uso el titulo investigado '{rejected_research}' (mal redactado)")
     parts.append("hashtags " + (tag_line or "(ninguno)"))
     if dropped:
         parts.append("quitados: " + " ".join("#" + t for t in dropped))

@@ -43,8 +43,37 @@ class SegmentEditor(QWidget):
             'motion_prompt': self.motion_edit.toPlainText(),
             'sfx_tag': self.sfx_edit.text().strip() or 'none',
             'overlay_tag': self.overlay_edit.text().strip() or 'none',
-            'assigned_filename': self.filename_edit.text().strip()
+            'assigned_filename': self.filename_edit.text().strip(),
+            'hook_overlay': self._hook_snapshot(),
         }
+
+    # --- Texto de gancho (video_opening): solo en la escena 1 -------------------------
+    @staticmethod
+    def _is_opening_segment(segment_data):
+        """La escena 1: la que trae el gancho, o la que arranca en 0 s (proyectos viejos sin el)."""
+        if not isinstance(segment_data, dict) or segment_data.get('cover_frame'):
+            return False
+        if 'hook_overlay' in segment_data:
+            return True
+        try:
+            return float(segment_data.get('start', 0) or 0) <= 0.05
+        except (TypeError, ValueError):
+            return False
+
+    def _hook_snapshot(self):
+        if not getattr(self, 'hook_group', None) or not self.hook_group.isVisible():
+            return None
+        text = self.hook_text_edit.text().strip().upper()
+        return {'enabled': bool(self.hook_enabled_check.isChecked() and text), 'text': text,
+                'duration': round(float(self.hook_duration_spin.value()), 2)}
+
+    def _hook_changed(self, snap_hook):
+        if snap_hook is None:
+            return False
+        cur = self.current_segment.get('hook_overlay') or {}
+        return (bool(cur.get('enabled', False)) != snap_hook['enabled']
+                or str(cur.get('text') or '').strip().upper() != snap_hook['text']
+                or abs(float(cur.get('duration') or 0) - snap_hook['duration']) > 0.001)
 
     def _has_unsaved_changes(self):
         """Determina si hay diferencias reales entre UI y current_segment."""
@@ -70,6 +99,8 @@ class SegmentEditor(QWidget):
         if str(self.current_segment.get('overlay_tag', 'none') or 'none') != snap['overlay_tag']:
             return True
         if str(self.current_segment.get('assigned_filename', '') or '') != snap['assigned_filename']:
+            return True
+        if self._hook_changed(snap['hook_overlay']):
             return True
 
         return False
@@ -127,7 +158,38 @@ class SegmentEditor(QWidget):
         text_layout.addWidget(self.text_edit)
         
         content_layout.addWidget(text_group)
-        
+
+        # Texto de gancho (video_opening): arriba, grande, encima de la escena 1 desde el
+        # cuadro 0. Reemplaza a la placa quieta de 0.7 s. Solo se muestra en la escena 1.
+        self.hook_group = QGroupBox("Texto de gancho (primeros segundos)")
+        hook_layout = QVBoxLayout(self.hook_group)
+        hook_row = QHBoxLayout()
+        self.hook_enabled_check = QCheckBox("Mostrar")
+        self.hook_enabled_check.stateChanged.connect(self._trigger_auto_save)
+        hook_row.addWidget(self.hook_enabled_check)
+        self.hook_text_edit = QLineEdit()
+        self.hook_text_edit.setMaxLength(24)
+        self.hook_text_edit.setPlaceholderText("Ej: 50,000 TROOPS  (1-3 palabras; la cifra primero)")
+        self.hook_text_edit.textChanged.connect(self._trigger_auto_save)
+        hook_row.addWidget(self.hook_text_edit, 1)
+        hook_row.addWidget(QLabel("Dura:"))
+        self.hook_duration_spin = QDoubleSpinBox()
+        self.hook_duration_spin.setRange(0.5, 4.0)
+        self.hook_duration_spin.setSingleStep(0.1)
+        self.hook_duration_spin.setDecimals(1)
+        self.hook_duration_spin.setSuffix(" s")
+        self.hook_duration_spin.setValue(1.8)
+        self.hook_duration_spin.valueChanged.connect(self._trigger_auto_save)
+        hook_row.addWidget(self.hook_duration_spin)
+        hook_layout.addLayout(hook_row)
+        hook_info = QLabel("Va arriba, grande y con contorno, encima de la escena en movimiento, "
+                           "con la voz desde el cuadro 0. Sale de la cifra de las primeras frases del guion.")
+        hook_info.setWordWrap(True)
+        hook_info.setStyleSheet("color: #6f7c89; font-size: 8pt;")
+        hook_layout.addWidget(hook_info)
+        self.hook_group.setVisible(False)
+        content_layout.addWidget(self.hook_group)
+
         # Prompt visual
         visual_group = QGroupBox("Prompt visual (imagen)")
         visual_layout = QVBoxLayout(visual_group)
@@ -303,6 +365,18 @@ class SegmentEditor(QWidget):
         self.overlay_edit.setText(segment_data.get('overlay_tag', 'none'))
         self.filename_edit.setText(segment_data.get('assigned_filename', ''))
 
+        # Texto de gancho: visible solo en la escena 1.
+        es_arranque = self._is_opening_segment(segment_data)
+        self.hook_group.setVisible(es_arranque)
+        hook = segment_data.get('hook_overlay') or {}
+        for w in (self.hook_enabled_check, self.hook_text_edit, self.hook_duration_spin):
+            w.blockSignals(True)
+        self.hook_enabled_check.setChecked(bool(hook.get('enabled', False)))
+        self.hook_text_edit.setText(str(hook.get('text') or ''))
+        self.hook_duration_spin.setValue(float(hook.get('duration') or 1.8))
+        for w in (self.hook_enabled_check, self.hook_text_edit, self.hook_duration_spin):
+            w.blockSignals(False)
+
         # Desbloquear señales
         self.start_spin.blockSignals(False)
         self.end_spin.blockSignals(False)
@@ -364,6 +438,10 @@ class SegmentEditor(QWidget):
             self.current_segment['sfx_tag'] = snap['sfx_tag']
             self.current_segment['overlay_tag'] = snap['overlay_tag']
             self.current_segment['assigned_filename'] = snap['assigned_filename']
+            if snap['hook_overlay'] is not None:
+                previo = self.current_segment.get('hook_overlay') or {}
+                self.current_segment['hook_overlay'] = dict(previo, **snap['hook_overlay'],
+                                                            edited_in_timeline=True)
 
             # IMPORTANTE: Preservar campos de video/imagen que no se editan aquÃ­
             # Estos campos se mantienen automÃ¡ticamente porque self.current_segment es una referencia
@@ -399,6 +477,7 @@ class SegmentEditor(QWidget):
         self.sfx_edit.clear()
         self.overlay_edit.clear()
         self.filename_edit.clear()
+        self.hook_group.setVisible(False)
 
         # Desbloquear señales
         self.start_spin.blockSignals(False)

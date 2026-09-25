@@ -151,53 +151,14 @@ class ThumbnailFormat:
         tipografica y un tamano relativo. Lo que los hace fallar es pedir texto
         "generico" o dejarlo librado.
 
-        Existe porque el super prompt pedia un `short_text`, reservaba espacio
-        para el, y despues prohibia todo texto en la imagen: la palabra se
-        calculaba y se tiraba.
+        2026-09-23: el tamano, el peso, el color y el contorno ya no son fijos
+        ("small and restrained" daba 2.6% de alto de letra): salen del plan de
+        `thumbnail_typography`, calibrado con los shorts de historia mas vistos.
         """
-        if self.is_vertical:
-            zona = (
-                "the TOP edge of the text must sit between 13% and 18% of the frame "
-                "height, horizontally centered; nothing above 13% (the Shorts grid "
-                "crops that away) and no text below 71%"
-            )
-            tamano = (
-                "small and restrained: cap height about 6% of the frame height, the "
-                "text block spanning no more than 60% of the frame width, on ONE "
-                "single line"
-            )
-        else:
-            zona = (
-                "place the text block in the RIGHT third of the frame, vertically "
-                "centered, over the calm negative space"
-            )
-            tamano = (
-                "small and restrained: cap height about 7% of the frame height, "
-                "the text block spanning no more than one third of the frame width"
-            )
-
-        return (
-            f'render exactly these words and nothing else: "{hook}"',
-            "the text must be in ENGLISH and plain ASCII: no accents, no diacritics, "
-            "no special characters -- image generators misspell accented words",
-            "ALL CAPS, spelled exactly as written; no other words, captions, "
-            "subtitles, watermarks or invented glyphs anywhere in the image",
-            # Minimalista a proposito: el poster face con contorno grueso hace que
-            # la miniatura parezca de clickbait y le come la foto, que es lo que
-            # de verdad vende el tema.
-            "typeface: clean geometric sans-serif, medium weight (Inter / Montserrat "
-            "/ Helvetica Now family) with generous letter spacing -- NOT Impact, NOT "
-            "Anton, NOT a heavy condensed poster face",
-            tamano,
-            zona,
-            "flat pure white, no gradient, no bevel, no thick outline: only a soft "
-            "low-opacity drop shadow for legibility over the image",
-            "editorial and understated -- the photograph carries the impact, the "
-            "text only labels it",
-            "the text sits flat ON TOP of the image: never behind the subject, "
-            "never warped by perspective, never on a curved path, never cropped "
-            "by the frame edge",
-        )
+        from thumbnail_typography import generic_directives, plan_typography, typography_directives
+        if not hook or hook == "{short_text}":
+            return generic_directives(self, hook=hook or "{short_text}")
+        return typography_directives(plan_typography(hook, self))
 
     def text_alignment(self, composition: Optional[str]) -> str:
         """Centrado cuando la caja ocupa casi todo el ancho; si no, izquierda."""
