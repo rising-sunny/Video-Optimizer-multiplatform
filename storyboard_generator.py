@@ -1610,6 +1610,7 @@ REGLAS CRÍTICAS:
         research_context: list,
         find_auto_music: bool,
         rate: str,
+        opening_style: str,
     ) -> Optional[Dict]:
         """Generate a Short storyboard via the unified JSON prompt.
 
@@ -2004,7 +2005,7 @@ REGLAS CRÍTICAS:
             _segs, _opening = apply_opening(
                 result.get("segments", []), script=str(result.get("script") or ""),
                 topic=topic, category=category, llm_cover_text=_meta_cover_text,
-                archetype=_arche_now, log=self.log,
+                archetype=_arche_now, opening_style_id=opening_style, log=self.log,
             )
             result["segments"] = _segs
             result["opening"] = _opening
@@ -2028,6 +2029,7 @@ REGLAS CRÍTICAS:
         find_auto_music: bool,
         style: str,
         rate: str,
+        opening_style: str,
     ) -> Optional[Dict]:
         """Generate a long-form storyboard via batched JSON (same prompt quality as manual).
 
@@ -2100,6 +2102,29 @@ REGLAS CRÍTICAS:
                         self.log(f"   ✅ Música encontrada: '{tracks[0]['title']}'")
             except Exception as e:
                 self.log(f"   ⚠️ Error buscando música: {e}")
+
+        try:
+            from video_opening import apply_opening
+            try:
+                from channel_strategy import get_active_archetype
+                _arche_now = get_active_archetype() or ""
+            except Exception:
+                _arche_now = ""
+            _segs, _opening = apply_opening(
+                result.get("segments", []), script=str(result.get("script") or ""),
+                topic=topic, category=category,
+                llm_cover_text=str((result.get("script_metadata") or {}).get("cover_text") or ""),
+                archetype=_arche_now, opening_style_id=opening_style, log=self.log,
+            )
+            result["segments"] = _segs
+            result["opening"] = _opening
+            if _opening.get("style") == "cover_card":
+                result["cover_frame"] = {
+                    "cover_text": _opening["cover_text"],
+                    "duration": _opening["duration"],
+                }
+        except Exception as exc:
+            self.log(f"   [Arranque] no se pudo preparar ({exc}); sin texto de gancho")
 
         self.log("✅ STORYBOARD LARGO ESTRUCTURADO COMPLETADO (JSON batched)")
         return result
@@ -2588,7 +2613,8 @@ Sin explicaciones antes ni después. Solo JSON válido."""
                                  language: str = 'es',
                                  pre_research_snippets: list = None,
                                  rate: str = "+0%",
-                                 format_archetype: str = ""):
+                                 format_archetype: str = "",
+                                 opening_style: str = "hook_overlay_v1"):
         """
         PASO 1: Genera todos los datos de pre-producción (guion, audio, prompts).
         
@@ -2718,6 +2744,7 @@ Sin explicaciones antes ni después. Solo JSON válido."""
                 research_context=research_context,
                 find_auto_music=find_auto_music,
                 rate=rate,
+                opening_style=opening_style,
             )
             if structured_result:
                 if _arche:
@@ -2737,6 +2764,7 @@ Sin explicaciones antes ni después. Solo JSON válido."""
                 find_auto_music=find_auto_music,
                 style=style,
                 rate=rate,
+                opening_style=opening_style,
             )
             if structured_result:
                 if _arche:
@@ -3095,28 +3123,28 @@ Sin explicaciones antes ni después. Solo JSON válido."""
             except Exception as e:
                 self.log(f"   âš ï¸ Error en mÃ³dulo de mÃºsica: {e}")
 
-        # --- Arranque de los Shorts (video_opening): sin placa, texto de gancho en la escena 1 ---
+        # --- Arranque (video_opening): sin placa, texto de gancho en la escena 1 ---
         cover_frame_data = None
         opening_data = None
-        if self._is_short_form_platform(platform):
+        try:
+            from video_opening import apply_opening
+            llm_cover_text = getattr(self.gemini_client, '_last_cover_text', None) if hasattr(self, 'gemini_client') else None
+            if not llm_cover_text and hasattr(self, 'gemini_client') and hasattr(self.gemini_client, 'backend'):
+                llm_cover_text = getattr(self.gemini_client.backend, '_last_cover_text', None)
             try:
-                from video_opening import apply_opening
-                llm_cover_text = getattr(self.gemini_client, '_last_cover_text', None) if hasattr(self, 'gemini_client') else None
-                if not llm_cover_text and hasattr(self, 'gemini_client') and hasattr(self.gemini_client, 'backend'):
-                    llm_cover_text = getattr(self.gemini_client.backend, '_last_cover_text', None)
-                try:
-                    from channel_strategy import get_active_archetype
-                    _arche_now = get_active_archetype() or ""
-                except Exception:
-                    _arche_now = ""
-                segments_with_prompts, opening_data = apply_opening(
-                    segments_with_prompts, script=str(script or ""), topic=topic, category=category,
-                    llm_cover_text=llm_cover_text or "", archetype=_arche_now, log=self.log,
-                )
-                if opening_data.get("style") == "cover_card":
-                    cover_frame_data = {"cover_text": opening_data["cover_text"], "duration": opening_data["duration"]}
-            except Exception as exc:
-                self.log(f"   [Arranque] no se pudo preparar ({exc}); sin texto de gancho")
+                from channel_strategy import get_active_archetype
+                _arche_now = get_active_archetype() or ""
+            except Exception:
+                _arche_now = ""
+            segments_with_prompts, opening_data = apply_opening(
+                segments_with_prompts, script=str(script or ""), topic=topic, category=category,
+                llm_cover_text=llm_cover_text or "", archetype=_arche_now,
+                opening_style_id=opening_style, log=self.log,
+            )
+            if opening_data.get("style") == "cover_card":
+                cover_frame_data = {"cover_text": opening_data["cover_text"], "duration": opening_data["duration"]}
+        except Exception as exc:
+            self.log(f"   [Arranque] no se pudo preparar ({exc}); sin texto de gancho")
 
         self.log("âœ… PASO 1: STORYBOARD COMPLETADO")
         self.log("â„¹ï¸ NOTA: Las imÃ¡genes NO se generan en este paso.")

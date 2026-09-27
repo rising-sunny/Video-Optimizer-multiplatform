@@ -66,7 +66,7 @@ class AutoVideoGeneratorPyQt6(QObject):
         supported_params = {
             'topic', 'category', 'platform', 'custom_duration', 
             'voice_id', 'find_auto_music', 'style', 'language',
-            'pre_research_snippets', 'rate', 'format_archetype'
+            'pre_research_snippets', 'rate', 'format_archetype', 'opening_style'
         }
         
         # Remover parámetros no soportados

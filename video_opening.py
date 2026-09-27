@@ -35,8 +35,83 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Optional
 
 OPENING_STYLE = "hook_overlay_v1"
+MAP_ZOOM_STYLE = "map_zoom_v1"
+ARTIFACT_REVEAL_STYLE = "artifact_reveal_v1"
+BEFORE_AFTER_STYLE = "before_after_v1"
+OUTCOME_TEASER_STYLE = "outcome_teaser_v1"
 LEGACY_STYLE = "cover_card"
 PLAIN_STYLE = "plain"
+
+# IDs estables: se guardan en el proyecto y alimentan el informe de rendimiento.
+# El cold open conserva el ID historico para que los proyectos existentes sigan
+# siendo comparables con los nuevos.
+OPENING_STYLE_SPECS = {
+    OPENING_STYLE: {
+        "label": "Cold open cinematográfico",
+        "short_label": "Cold open",
+        "description": "Empieza en el instante de mayor impacto y entra directo a la historia.",
+        "motion": "fast_push_in",
+        "motion_amount": 0.12,
+        "min_first_shot_seconds": 1.8,
+        "prompt": (
+            "Opening shot: the highest-stakes moment already in progress, immediate visual impact, "
+            "dynamic cinematic composition, no establishing preamble"
+        ),
+    },
+    MAP_ZOOM_STYLE: {
+        "label": "Zoom cartográfico",
+        "short_label": "Mapa",
+        "description": "Viaja desde el territorio hasta el punto exacto donde comienza la historia.",
+        "motion": "map_dive",
+        "motion_amount": 0.32,
+        "min_first_shot_seconds": 2.2,
+        "prompt": (
+            "Opening shot: a richly detailed cinematic historical map centered on the exact location "
+            "of the story, terrain and coastlines readable through shape alone, a luminous destination "
+            "marker, designed for a rapid camera dive, no written labels"
+        ),
+    },
+    ARTIFACT_REVEAL_STYLE: {
+        "label": "Artefacto revelado",
+        "short_label": "Artefacto",
+        "description": "Un objeto emerge de la oscuridad y revela la escala de la historia.",
+        "motion": "artifact_reveal",
+        "motion_amount": 0.20,
+        "min_first_shot_seconds": 2.0,
+        "prompt": (
+            "Opening shot: extreme macro view of the story's most meaningful physical artifact, "
+            "emerging from darkness under a narrow museum-quality beam of light, tactile material, "
+            "dust in the air, composed for a dramatic pull-back reveal"
+        ),
+    },
+    BEFORE_AFTER_STYLE: {
+        "label": "Antes y después temporal",
+        "short_label": "Antes / después",
+        "description": "El mismo encuadre conecta dos epocas mediante un barrido temporal.",
+        "motion": "era_wipe",
+        "motion_amount": 0.12,
+        "min_first_shot_seconds": 2.4,
+        "prompt": (
+            "Opening shot: one perfectly aligned location shown across two eras in a seamless split-time "
+            "composition, ruins on one side and the historically reconstructed place at its peak on the "
+            "other, matched camera angle and architecture, designed for a lateral time-wipe"
+        ),
+    },
+    OUTCOME_TEASER_STYLE: {
+        "label": "Teaser del desenlace",
+        "short_label": "Desenlace",
+        "description": "Muestra un destello del momento culminante antes de volver al comienzo.",
+        "motion": "outcome_punch",
+        "motion_amount": 0.20,
+        "min_first_shot_seconds": 1.6,
+        "prompt": (
+            "Opening shot: a spoiler-free flash-forward to the story's climactic consequence, the decisive "
+            "moment frozen at peak tension, bold silhouette and immediate stakes, cinematic contrast, "
+            "designed as a brief future glimpse before the story begins"
+        ),
+    },
+}
+OPENING_STYLE_CHOICES = tuple(OPENING_STYLE_SPECS)
 DEFAULTS = {
     "enabled": True,
     "duration_seconds": 1.8,          # el texto de gancho, hasta ~el primer corte
@@ -54,6 +129,7 @@ HOOK_GOLD = "#CDB58A"
 HOOK_INK = "#101820"
 TOP_CLEAR_HINT = ("Composition: main subject in the middle and lower part of the frame; "
                   "the top third is calm, uncluttered background (sky, haze or shadow) for a headline")
+NO_TEXT_HINT = "no text, no writing, no signs, no captions, no watermarks"
 
 
 # ----------------------------------------------------------------------------
@@ -69,6 +145,29 @@ def get_opening_config(bible: Optional[dict[str, Any]] = None) -> dict[str, Any]
     cfg = dict(DEFAULTS)
     cfg.update({k: v for k, v in ((bible or {}).get("hook_overlay") or {}).items() if k in DEFAULTS})
     return cfg
+
+
+def normalize_opening_style(style: str = "") -> str:
+    """Devuelve un ID moderno valido; vacio y valores viejos conservan el cold open."""
+    candidate = str(style or "").strip()
+    aliases = {
+        "cold_open": OPENING_STYLE,
+        "map_zoom": MAP_ZOOM_STYLE,
+        "artifact_reveal": ARTIFACT_REVEAL_STYLE,
+        "before_after": BEFORE_AFTER_STYLE,
+        "outcome_teaser": OUTCOME_TEASER_STYLE,
+    }
+    candidate = aliases.get(candidate, candidate)
+    return candidate if candidate in OPENING_STYLE_SPECS else OPENING_STYLE
+
+
+def opening_style_spec(style: str = "") -> dict[str, Any]:
+    """Copia defensiva de la receta visual de una apertura."""
+    return dict(OPENING_STYLE_SPECS[normalize_opening_style(style)])
+
+
+def is_modern_opening(style: str = "") -> bool:
+    return str(style or "") in OPENING_STYLE_SPECS
 
 
 # ----------------------------------------------------------------------------
@@ -109,27 +208,45 @@ def pick_hook_text(script: str, llm_text: str = "", archetype: str = "") -> tupl
 # ----------------------------------------------------------------------------
 def apply_opening(segments: list[dict[str, Any]], *, script: str, topic: str = "", category: str = "",
                   llm_cover_text: str = "", archetype: str = "", bible: Optional[dict[str, Any]] = None,
+                  opening_style_id: str = OPENING_STYLE,
                   log: Callable[[str], None] = print) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Devuelve (segmentos, opening). Por defecto: texto de gancho en el segmento 0, sin placa.
     La placa vieja solo si `hook_overlay.enabled` es false y `cover_frame.enabled` es true."""
     cfg = get_opening_config(bible)
     if cfg["enabled"] and segments:
+        selected_style = normalize_opening_style(opening_style_id)
+        spec = opening_style_spec(selected_style)
         text, why = pick_hook_text(script, llm_cover_text, archetype)
         hook = None
         if text:
-            hook = {"enabled": True, "text": text, "duration": float(cfg["duration_seconds"]), "source": why}
+            hook = {"enabled": True, "text": text, "duration": float(cfg["duration_seconds"]),
+                    "source": why, "style": selected_style}
             segments[0]["hook_overlay"] = hook
-            # La imagen de la escena 1 se genera despues: que deje arriba lugar para el texto
-            # (en la primera prueba 'TROOPS' rozaba la cabeza del jinete).
-            vp = str(segments[0].get("visual_prompt") or "")
-            if vp and TOP_CLEAR_HINT not in vp:
-                segments[0]["visual_prompt"] = f"{vp.rstrip(' .')}. {TOP_CLEAR_HINT}"
-            log(f"   [Arranque] sin placa; texto de gancho '{text}' ({why}), {cfg['duration_seconds']}s")
+        # La primera imagen expresa el tipo de entrada y reserva la zona del titulo.
+        # Se anade una sola vez porque un proyecto puede reabrirse y guardarse varias veces.
+        vp = str(segments[0].get("visual_prompt") or "")
+        additions = []
+        if spec["prompt"] not in vp:
+            additions.append(spec["prompt"])
+        if TOP_CLEAR_HINT not in vp:
+            additions.append(TOP_CLEAR_HINT)
+        if additions:
+            base = vp.rstrip(" .")
+            if base.lower().endswith(NO_TEXT_HINT):
+                base = base[:-len(NO_TEXT_HINT)].rstrip(" .,;")
+            parts = [part for part in (base, *additions, NO_TEXT_HINT) if part]
+            segments[0]["visual_prompt"] = ". ".join(parts)
+        if text:
+            log(f"   [Arranque] {spec['short_label']}; texto de gancho '{text}' ({why}), "
+                f"{cfg['duration_seconds']}s")
         else:
-            log(f"   [Arranque] sin placa; {why}")
-        return segments, {"style": OPENING_STYLE, "hook": hook,
-                          "min_first_shot_seconds": float(cfg["min_first_shot_seconds"]),
-                          "push_in_zoom": float(cfg["push_in_zoom"])}
+            log(f"   [Arranque] {spec['short_label']}; {why}")
+        return segments, {"style": selected_style, "label": spec["label"], "hook": hook,
+                          "motion": spec["motion"],
+                          "min_first_shot_seconds": float(spec["min_first_shot_seconds"]),
+                          "motion_amount": float(spec["motion_amount"]),
+                          # Compatibilidad con storyboards hook_overlay_v1 previos.
+                          "push_in_zoom": float(spec["motion_amount"])}
 
     cover_cfg = (bible if bible is not None else _bible()).get("cover_frame") or {}
     if cover_cfg.get("enabled", False) and segments is not None:
@@ -181,11 +298,13 @@ def get_hook_overlay(storyboard: dict[str, Any]) -> Optional[dict[str, Any]]:
     hook = first.get("hook_overlay")
     if hook is None:
         op = (storyboard or {}).get("opening") or {}
-        hook = op.get("hook") if op.get("style") == OPENING_STYLE else None
+        hook = op.get("hook") if is_modern_opening(op.get("style")) else None
     if not isinstance(hook, dict) or not hook.get("enabled", True) or not str(hook.get("text") or "").strip():
         return None
+    op_style = ((storyboard or {}).get("opening") or {}).get("style")
     return {"text": str(hook["text"]).strip().upper(),
-            "duration": max(0.5, float(hook.get("duration") or DEFAULTS["duration_seconds"]))}
+            "duration": max(0.5, float(hook.get("duration") or DEFAULTS["duration_seconds"])),
+            "style": normalize_opening_style(hook.get("style") or op_style)}
 
 
 # ----------------------------------------------------------------------------
@@ -215,6 +334,33 @@ def push_in_filter(frames: int, width: int, height: int, zoom: float = DEFAULTS[
     p = f"(on/{n - 1})"
     return (f"zoompan=z='1+{zoom:.4f}*(1-(1-{p})*(1-{p}))'"
             f":x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d={n}:s={int(width)}x{int(height)}")
+
+
+def opening_motion_filter(frames: int, width: int, height: int,
+                          style: str = OPENING_STYLE, amount: Optional[float] = None) -> str:
+    """Movimiento FFmpeg distintivo para la primera imagen de cada entrada."""
+    selected = normalize_opening_style(style)
+    spec = opening_style_spec(selected)
+    strength = float(spec["motion_amount"] if amount is None else amount)
+    n = max(2, int(frames))
+    p = f"(on/{n - 1})"
+    size = f"d={n}:s={int(width)}x{int(height)}"
+    center = "x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
+
+    if selected == MAP_ZOOM_STYLE:
+        z = f"1+{strength:.4f}*(1-(1-{p})*(1-{p})*(1-{p}))"
+        return f"zoompan=z='{z}':{center}:{size}"
+    if selected == ARTIFACT_REVEAL_STYLE:
+        z = f"1+{strength:.4f}*(1-{p})*(1-{p})"
+        return f"zoompan=z='{z}':{center}:{size}"
+    if selected == BEFORE_AFTER_STYLE:
+        z = f"1+{strength:.4f}"
+        x = f"(iw-iw/zoom)*(1-{p})"
+        return f"zoompan=z='{z}':x='{x}':y='ih/2-(ih/zoom/2)':{size}"
+    if selected == OUTCOME_TEASER_STYLE:
+        z = f"1+{strength * 0.45:.4f}+{strength * 0.55:.4f}*(1-(1-{p})*(1-{p}))"
+        return f"zoompan=z='{z}':{center}:{size}"
+    return push_in_filter(n, width, height, strength)
 
 
 # ----------------------------------------------------------------------------
@@ -305,6 +451,7 @@ def hook_ass_lines(hook: dict[str, Any], width: int, height: int,
     duration = max(0.01, float(hook["duration"]))
     fade_ms = round(min(max(0, fade_out), duration * 0.3) * 1000)
     motion_ms = round(min(0.45, duration * 0.4) * 1000)
+    selected_style = normalize_opening_style(hook.get("style"))
     fade = f"\\fad(0,{fade_ms})"  # legible desde el cuadro 0
     style = (f"Style: Hook,{plan['font']},100,{_ass_color(HOOK_IVORY)},&H00FFFFFF,"
              f"{_ass_color(HOOK_INK)},{_ass_color(HOOK_INK)},0,0,0,0,100,100,0,0,1,0,0,8,40,40,0,1")
@@ -331,8 +478,21 @@ def hook_ass_lines(hook: dict[str, Any], width: int, height: int,
     for ln in lines:
         cap_px = ln["cap_pct"] / 100 * height
         x = width // 2
-        placement = f"\\an8\\move({x},{y + height * 0.004:.1f},{x},{y:.1f},0,{motion_ms})"
-        common = f"{placement}\\q2\\fs{ln['font_size']:.2f}\\fsp{ln['spacing']:.2f}{fade}"
+        if selected_style == BEFORE_AFTER_STYLE:
+            placement = f"\\an8\\move({x - width * 0.025:.1f},{y:.1f},{x},{y:.1f},0,{motion_ms})"
+        elif selected_style == ARTIFACT_REVEAL_STYLE:
+            placement = (f"\\an8\\pos({x},{y:.1f})\\fscx108\\fscy108"
+                         f"\\t(0,{motion_ms},\\fscx100\\fscy100)")
+        elif selected_style == OUTCOME_TEASER_STYLE:
+            placement = (f"\\an8\\pos({x},{y:.1f})\\fscx116\\fscy116"
+                         f"\\t(0,{motion_ms},\\fscx100\\fscy100)")
+        elif selected_style == MAP_ZOOM_STYLE:
+            placement = (f"\\an8\\pos({x},{y:.1f})\\fsp0"
+                         f"\\t(0,{motion_ms},\\fsp{ln['spacing']:.2f})")
+        else:
+            placement = f"\\an8\\move({x},{y + height * 0.004:.1f},{x},{y:.1f},0,{motion_ms})"
+        spacing = "" if selected_style == MAP_ZOOM_STYLE else f"\\fsp{ln['spacing']:.2f}"
+        common = f"{placement}\\q2\\fs{ln['font_size']:.2f}{spacing}{fade}"
         text = _ass_literal(ln["text"])
         events.append(event(9, f"{common}\\1c{ink}\\3c{ink}\\alpha&H99&"
                             f"\\bord{cap_px * 0.012:.2f}\\blur{cap_px * 0.060:.2f}\\shad1", text))

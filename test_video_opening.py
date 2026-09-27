@@ -48,6 +48,31 @@ class ElTextoDeGancho(unittest.TestCase):
 
 class LaDecision(unittest.TestCase):
 
+    def test_hay_cinco_entradas_cinematograficas(self):
+        self.assertEqual(len(vo.OPENING_STYLE_CHOICES), 5)
+        self.assertEqual(vo.OPENING_STYLE_CHOICES[0], vo.OPENING_STYLE)
+        self.assertEqual(
+            set(vo.OPENING_STYLE_CHOICES),
+            {vo.OPENING_STYLE, vo.MAP_ZOOM_STYLE, vo.ARTIFACT_REVEAL_STYLE,
+             vo.BEFORE_AFTER_STYLE, vo.OUTCOME_TEASER_STYLE},
+        )
+
+    def test_cada_entrada_modifica_el_primer_prompt_y_guarda_su_receta(self):
+        for style in vo.OPENING_STYLE_CHOICES:
+            segs, op = vo.apply_opening(
+                _segs(), script=HANNIBAL, bible=BIBLE_NEW,
+                opening_style_id=style, log=lambda m: None,
+            )
+            spec = vo.opening_style_spec(style)
+            self.assertEqual(op["style"], style)
+            self.assertEqual(op["motion"], spec["motion"])
+            self.assertIn(spec["prompt"], segs[0]["visual_prompt"])
+            self.assertTrue(segs[0]["visual_prompt"].endswith(vo.NO_TEXT_HINT))
+            self.assertEqual(segs[0]["hook_overlay"]["style"], style)
+
+    def test_un_estilo_desconocido_vuelve_al_cold_open(self):
+        self.assertEqual(vo.normalize_opening_style("inventado"), vo.OPENING_STYLE)
+
     def test_por_defecto_no_hay_placa_y_la_escena_1_arranca_en_0(self):
         segs, op = vo.apply_opening(_segs(), script=HANNIBAL, bible=BIBLE_NEW, log=lambda m: None)
         self.assertEqual(len(segs), 2, "no se inserta ningun segmento de placa")
@@ -84,7 +109,9 @@ class ElGanchoADibujar(unittest.TestCase):
     def test_manda_lo_editado_en_el_timeline(self):
         sb = {"opening": {"style": vo.OPENING_STYLE, "hook": {"enabled": True, "text": "50,000 TROOPS"}},
               "segments": [{"hook_overlay": {"enabled": True, "text": "30,000 oxen", "duration": 2.2}}]}
-        self.assertEqual(vo.get_hook_overlay(sb), {"text": "30,000 OXEN", "duration": 2.2})
+        self.assertEqual(vo.get_hook_overlay(sb), {
+            "text": "30,000 OXEN", "duration": 2.2, "style": vo.OPENING_STYLE,
+        })
 
     def test_apagado_en_el_timeline_no_se_dibuja(self):
         sb = {"opening": {"style": vo.OPENING_STYLE, "hook": {"enabled": True, "text": "50,000 TROOPS"}},
@@ -124,6 +151,15 @@ class PrimerPlanoYMovimiento(unittest.TestCase):
         f = vo.push_in_filter(90, 1080, 1920, 0.12)
         self.assertIn("z='1+0.1200*(1-(1-(on/89))*(1-(on/89)))'", f)
         self.assertIn("d=90:s=1080x1920", f)
+
+    def test_cada_entrada_tiene_un_movimiento_ffmpeg_distinto(self):
+        filters = {
+            style: vo.opening_motion_filter(90, 1080, 1920, style)
+            for style in vo.OPENING_STYLE_CHOICES
+        }
+        self.assertEqual(len(set(filters.values())), 5)
+        self.assertTrue(all(value.startswith("zoompan=") for value in filters.values()))
+        self.assertIn("iw-iw/zoom", filters[vo.BEFORE_AFTER_STYLE])
 
 
 class ElEventoASS(unittest.TestCase):
@@ -262,9 +298,9 @@ class Cableado(unittest.TestCase):
         with open(name, encoding="utf-8", errors="replace") as fh:
             return fh.read()
 
-    def test_el_storyboard_usa_el_arranque_nuevo_en_los_dos_caminos(self):
+    def test_el_storyboard_usa_el_arranque_nuevo_en_todos_los_caminos(self):
         s = self._src("storyboard_generator.py")
-        self.assertEqual(s.count("apply_opening("), 2)
+        self.assertEqual(s.count("apply_opening("), 3)
         self.assertNotIn('"cover_frame": True,', s, "la placa solo la inserta video_opening (modo viejo)")
         self.assertIn('"opening": opening_data,', s)
 
@@ -273,7 +309,18 @@ class Cableado(unittest.TestCase):
         self.assertEqual(s.count("self._add_hook_to_ass(ass_path, storyboard_data, res)"), 2)
         self.assertGreaterEqual(s.count("self._burn_hook_only("), 3)
         self.assertIn("_vo.enforce_min_first_shot(", s)
+        self.assertIn("_vo.is_modern_opening(", s)
+        self.assertIn("opening_motion_filter", s)
         self.assertIn("if clip_data.get('opening_push_in'):", s)
+
+    def test_la_gui_guarda_y_envia_la_entrada_elegida(self):
+        ui = self._src("auto_video_integration_pyqt6.py")
+        projects = self._src("studio_project_manager.py")
+        handler = self._src("studio_storyboard_handlers.py")
+        self.assertIn("self.opening_style_combo = QComboBox()", ui)
+        self.assertIn("OpeningStylePreview", ui)
+        self.assertIn("'opening_style': self.studio_tab.get_selected_opening_style()", projects)
+        self.assertIn("opening_style=opening_style", handler)
 
     def test_timeline_y_checklist(self):
         self.assertIn("self.hook_label", self._src("timeline_segment_widget.py"))

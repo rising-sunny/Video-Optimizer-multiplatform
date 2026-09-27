@@ -506,6 +506,10 @@ class AutoVideoStudioTab(QWidget):
             self.style_combo.currentIndexChanged.connect(
                 lambda: self._trigger_config_auto_save("cambio de estilo visual"))
 
+        if hasattr(self, 'opening_style_combo'):
+            self.opening_style_combo.currentIndexChanged.connect(
+                lambda: self._trigger_config_auto_save("cambio de entrada del video"))
+
         # image_provider_combo ya conectado en _on_image_provider_changed()
 
         if hasattr(self, 'images_per_segment_spin'):
@@ -583,6 +587,23 @@ class AutoVideoStudioTab(QWidget):
         # Fallback legacy
         text = (self.platform_combo.currentText() or '').strip().lower()
         return self._legacy_platform_to_format(text)
+
+    def get_selected_opening_style(self):
+        """ID estable de la entrada seleccionada en la GUI."""
+        from video_opening import OPENING_STYLE, normalize_opening_style
+        if not hasattr(self, 'opening_style_combo'):
+            return OPENING_STYLE
+        return normalize_opening_style(self.opening_style_combo.currentData())
+
+    def _on_opening_style_changed(self, _index=None):
+        """Actualiza al instante la animacion y la descripcion de la entrada."""
+        from video_opening import opening_style_spec
+        selected = self.get_selected_opening_style()
+        spec = opening_style_spec(selected)
+        if hasattr(self, 'opening_style_preview'):
+            self.opening_style_preview.set_style(selected)
+        if hasattr(self, 'opening_style_description'):
+            self.opening_style_description.setText(spec['description'])
 
     @staticmethod
     def _is_short_form_platform_key(platform_key: str) -> bool:
@@ -2389,6 +2410,48 @@ Respond ONLY with valid JSON."""
         platform_layout.addStretch()
 
         layout.addLayout(platform_layout)
+
+        # Entrada cinematografica: la animacion se dibuja en vivo (tipo GIF)
+        # y el ID elegido viaja hasta el storyboard y el ensamblado final.
+        from opening_style_preview import OpeningStylePreview
+        from video_opening import OPENING_STYLE_CHOICES, OPENING_STYLE_SPECS
+
+        opening_layout = QHBoxLayout()
+        opening_layout.setSpacing(18)
+        opening_controls = QVBoxLayout()
+        opening_controls.setSpacing(7)
+
+        opening_label = QLabel("Entrada del video:")
+        opening_label.setStyleSheet("font-weight: 600; color: #1f2831;")
+        opening_controls.addWidget(opening_label)
+
+        self.opening_style_combo = QComboBox()
+        for style_id in OPENING_STYLE_CHOICES:
+            self.opening_style_combo.addItem(OPENING_STYLE_SPECS[style_id]["label"], style_id)
+        self.opening_style_combo.setMaximumWidth(330)
+        self.opening_style_combo.setToolTip(
+            "Define la puesta en escena, el prompt visual y el movimiento de los primeros segundos."
+        )
+        opening_controls.addWidget(self.opening_style_combo)
+
+        self.opening_style_description = QLabel()
+        self.opening_style_description.setWordWrap(True)
+        self.opening_style_description.setMaximumWidth(420)
+        self.opening_style_description.setStyleSheet("color: #5d6873;")
+        opening_controls.addWidget(self.opening_style_description)
+        opening_controls.addStretch()
+
+        self.opening_style_preview = OpeningStylePreview()
+        opening_layout.addLayout(opening_controls)
+        opening_layout.addWidget(
+            self.opening_style_preview,
+            alignment=Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop,
+        )
+        opening_layout.addStretch()
+        layout.addLayout(opening_layout)
+
+        self.opening_style_combo.currentIndexChanged.connect(self._on_opening_style_changed)
+        self._on_opening_style_changed()
 
         # Idioma
         lang_layout = QHBoxLayout()
@@ -6213,6 +6276,10 @@ Respond ONLY with valid JSON."""
             # Resetear estilo visual al primer estilo de Recraft.
             if hasattr(self, 'style_combo'):
                 self.style_combo.setCurrentIndex(0)
+
+            # El cold open conserva el comportamiento de los proyectos previos.
+            if hasattr(self, 'opening_style_combo'):
+                self.opening_style_combo.setCurrentIndex(0)
             
             # Resetear proveedor de imÃ¡genes a Recraft (primer item).
             if hasattr(self, 'image_provider_combo'):

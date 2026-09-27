@@ -923,13 +923,15 @@ Reglas:
                                  language: str = 'es',
                                  rate: str = "+0%",
                                  pre_research_snippets: list = None,
-                                 format_archetype: str = ""):
+                                 format_archetype: str = "",
+                                 opening_style: str = "hook_overlay_v1"):
         """Delega a StoryboardGenerator si esta disponible"""
         if self.storyboard_generator:
             return self.storyboard_generator.generate_storyboard_data(
                 topic, category, platform, custom_duration, voice_id, find_auto_music, style, language,
                 rate=rate, pre_research_snippets=pre_research_snippets,
                 format_archetype=format_archetype,
+                opening_style=opening_style,
             )
         self.log("âš ï¸ StoryboardGenerator no disponible, usando fallback bÃ¡sico")
         return None
@@ -1511,8 +1513,16 @@ Reglas:
         if clip_data.get('is_cover'):
             return f"zoompan=z=1:x=0:y=0:d={n}:s={width}x{height}"
 
-        # Arranque nuevo (video_opening): movimiento desde el cuadro 0. El zoom por defecto
-        # arranca lento y el primer medio segundo se ve quieto.
+        # Arranque nuevo (video_opening): cada estilo tiene un movimiento propio
+        # y todos empiezan a moverse desde el cuadro 0.
+        if clip_data.get('opening_style'):
+            from video_opening import opening_motion_filter
+            return opening_motion_filter(
+                n, width, height, str(clip_data['opening_style']),
+                float(clip_data.get('opening_motion_amount') or 0) or None,
+            )
+
+        # Compatibilidad con storyboards hook_overlay_v1 anteriores.
         if clip_data.get('opening_push_in'):
             from video_opening import push_in_filter
             return push_in_filter(n, width, height, float(clip_data['opening_push_in']))
@@ -2862,17 +2872,20 @@ Reglas:
         # y arranca con acercamiento. Solo en storyboards nuevos: los viejos renderizan igual.
         try:
             import video_opening as _vo
-            if generated_clips and _vo.opening_style(storyboard_data) == _vo.OPENING_STYLE:
+            _opening_style = _vo.opening_style(storyboard_data)
+            if generated_clips and _vo.is_modern_opening(_opening_style):
                 _op = storyboard_data.get('opening') or {}
                 _moved = _vo.enforce_min_first_shot(
                     generated_clips,
                     float(_op.get('min_first_shot_seconds') or _vo.DEFAULTS['min_first_shot_seconds']))
-                generated_clips[0]['opening_push_in'] = float(
-                    _op.get('push_in_zoom') or _vo.DEFAULTS['push_in_zoom'])
-                self._record_audio_qa('opening_style', _vo.OPENING_STYLE)
+                generated_clips[0]['opening_style'] = _opening_style
+                generated_clips[0]['opening_motion_amount'] = float(
+                    _op.get('motion_amount') or _op.get('push_in_zoom') or _vo.DEFAULTS['push_in_zoom'])
+                self._record_audio_qa('opening_style', _opening_style)
+                _opening_label = _vo.opening_style_spec(_opening_style)['short_label']
                 self.log(f"   Arranque: primer plano {generated_clips[0]['duration']:.2f}s"
                          + (f" (+{_moved:.2f}s tomados del segundo)" if _moved else "")
-                         + ", acercamiento desde el cuadro 0, voz en 0.0s")
+                         + f", {_opening_label}, voz en 0.0s")
         except Exception as exc:
             self.log(f"   [WARN] No se pudo preparar el arranque: {exc}")
 

@@ -485,6 +485,8 @@ class StudioProjectManager:
 
                 'style': self.studio_tab.style_combo.currentText(),
 
+                'opening_style': self.studio_tab.get_selected_opening_style() if hasattr(self.studio_tab, 'get_selected_opening_style') else 'hook_overlay_v1',
+
                 # Se guarda SIEMPRE, no solo con subtitulos activados: al
                 # apagarlos y volver a encenderlos se perdia el estilo elegido.
                 'subtitle_style': self.studio_tab.subtitle_style_combo.currentText() if hasattr(self.studio_tab, 'subtitle_style_combo') else None,
@@ -971,6 +973,9 @@ class StudioProjectManager:
 
                     config['style'] = self.studio_tab.style_combo.currentText()
 
+                    config['opening_style'] = self.studio_tab.get_selected_opening_style() if hasattr(
+                        self.studio_tab, 'get_selected_opening_style') else 'hook_overlay_v1'
+
                     config['subtitles_enabled'] = self.studio_tab.subtitles_check.isChecked(
 
                     ) if hasattr(self.studio_tab, 'subtitles_check') else False
@@ -1104,6 +1109,8 @@ class StudioProjectManager:
                 'duration': self.studio_tab.duration_slider.value(),
                 'language': 'es' if self.studio_tab.lang_es.isChecked() else 'en',
                 'style': self.studio_tab.style_combo.currentText(),
+
+                'opening_style': self.studio_tab.get_selected_opening_style() if hasattr(self.studio_tab, 'get_selected_opening_style') else 'hook_overlay_v1',
                 'subtitle_style': self.studio_tab.subtitle_style_combo.currentText() if hasattr(self.studio_tab, 'subtitle_style_combo') else None,
                 # Opciones de Auto Video Studio Pro
                 'image_provider': self.studio_tab.image_provider_combo.currentText() if hasattr(self.studio_tab, 'image_provider_combo') else "Auto (Inteligente)",
@@ -1541,6 +1548,14 @@ class StudioProjectManager:
                 index = self.studio_tab.style_combo.findText(config.get('style'))
                 if index >= 0:
                     self.studio_tab.style_combo.setCurrentIndex(index)
+
+            if hasattr(self.studio_tab, 'opening_style_combo'):
+                from video_opening import normalize_opening_style
+                opening_style = normalize_opening_style(config.get('opening_style'))
+                for index in range(self.studio_tab.opening_style_combo.count()):
+                    if self.studio_tab.opening_style_combo.itemData(index) == opening_style:
+                        self.studio_tab.opening_style_combo.setCurrentIndex(index)
+                        break
 
             if hasattr(self.studio_tab, 'visual_static') and hasattr(self.studio_tab, 'visual_mixed'):
                 visual_mode = config.get('visual_mode', 'mixed')

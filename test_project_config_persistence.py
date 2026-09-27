@@ -40,6 +40,7 @@ CLAVES_ESPERADAS = (
     "style",
     "visual_mode",
     "transition_type",
+    "opening_style",
 )
 
 

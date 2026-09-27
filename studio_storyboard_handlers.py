@@ -210,6 +210,11 @@ class StudioStoryboardHandlers:
         self.studio_tab.current_worker = VideoGenerationWorker(
             self.studio_tab.generator, "storyboard")
         voice_rate = self.studio_tab.get_selected_voice_rate() if hasattr(self.studio_tab, 'get_selected_voice_rate') else "+0%"
+        opening_style = (
+            self.studio_tab.get_selected_opening_style()
+            if hasattr(self.studio_tab, 'get_selected_opening_style')
+            else 'hook_overlay_v1'
+        )
         self.studio_tab.current_worker.set_params(
             topic=topic,
             category=category,
@@ -223,6 +228,7 @@ class StudioStoryboardHandlers:
             pre_research_snippets=pre_research_snippets if pre_research_snippets else None,
             rate=voice_rate,
             format_archetype=format_archetype,
+            opening_style=opening_style,
         )
         if hasattr(self.studio_tab, '_bind_current_worker_to_project'):
             self.studio_tab._bind_current_worker_to_project()
@@ -255,6 +261,26 @@ class StudioStoryboardHandlers:
             auto_search_images: Si True, busca imÃ¡genes automÃ¡ticamente por assigned_filename.
                                Ãštil al cargar proyectos guardados. Por defecto False.
         """
+        # El flujo de JSON pegado manualmente no pasa por generate_storyboard_data.
+        # Aplicar aqui la entrada elegida si el backend aun no la preparo.
+        if isinstance(result, dict) and not result.get('opening') and result.get('segments'):
+            try:
+                from video_opening import apply_opening
+                script = str(result.get('script') or ' '.join(
+                    str(seg.get('narration_text') or seg.get('text') or '')
+                    for seg in result.get('segments', []) if isinstance(seg, dict)
+                ))
+                result['segments'], result['opening'] = apply_opening(
+                    result['segments'],
+                    script=script,
+                    topic=str(result.get('topic') or ''),
+                    category=str(result.get('category') or ''),
+                    opening_style_id=self.studio_tab.get_selected_opening_style(),
+                    log=self.studio_tab.log,
+                )
+            except Exception as exc:
+                self.studio_tab.log(f" [Arranque] no se pudo aplicar al JSON manual: {exc}")
+
         self.studio_tab.log("\nâœ… PASO 1 COMPLETADO")
         self.studio_tab.last_storyboard_data = result
         from studio_channel_controls import project_channel_config
