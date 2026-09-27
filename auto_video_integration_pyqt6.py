@@ -1632,6 +1632,10 @@ Respond ONLY with valid JSON."""
         # Cada uploader la pega al final de la descripcion ya optimizada (music_license).
         for _meta in (_youtube_meta, _facebook_meta, _instagram_meta):
             _meta['music_attribution'] = _music_attribution or ''
+        # La pagina de Facebook y la cuenta de Instagram del canal elegido (claves con sufijo del
+        # canal en .env.txt; sin ellas, las globales). 2026-09-27: publicaba en el otro canal.
+        _facebook_meta['upload_channel'] = upload_channel
+        _instagram_meta['upload_channel'] = upload_channel
         _x_meta = instagram_meta or facebook_meta or youtube_meta or {}
         # TikTok parte del texto de Instagram (vertical, con hashtags): tiktok_uploader lo
         # pule con facebook_metadata y le pone la marca de la cuenta real de TikTok.
@@ -2022,7 +2026,11 @@ Respond ONLY with valid JSON."""
                              f"Titulo: {result.get('title_sent')} | Descripcion: {result.get('description_sent')}")
             elif result:
                 url = result.get('url') or result.get('permalink_url') or ''
-                self.log(f" {platform.capitalize()} publicado{': ' + url if url else '.'}")
+                # En que cuenta salio: publicar en la del otro canal no se nota hasta mirar la red.
+                cuenta = result.get('page_name') or (f"@{result['instagram_username']}"
+                                                     if result.get('instagram_username') else '')
+                self.log(f" {platform.capitalize()} publicado{' en ' + cuenta if cuenta else ''}"
+                         f"{': ' + url if url else '.'}")
                 if result.get('thumbnail_error'):
                     donde = {"youtube": "YouTube Studio",
                              "instagram": "la app de Instagram (Editar > portada)"}.get(platform, "Meta Business Suite")

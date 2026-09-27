@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 from datetime import datetime
 from pathlib import Path
@@ -62,6 +63,11 @@ def _env(name: str, default: Optional[str] = None) -> Optional[str]:
         return None
     text = str(value).strip()
     return text or default
+
+
+def _channel_suffix(channel: Optional[str]) -> str:
+    """'stunning-revelations' -> 'STUNNING_REVELATIONS' (sufijo de las claves del canal)."""
+    return re.sub(r"[^A-Z0-9]+", "_", str(channel or "").upper()).strip("_")
 
 
 def _default_api_version() -> str:
@@ -170,16 +176,36 @@ def _request_json(method: str, url: str, **kwargs) -> dict:
     return response.json()
 
 
-def _resolve_instagram_identity(api_version: Optional[str] = None) -> dict:
-    user_access_token = _env("INSTAGRAM_USER_ACCESS_TOKEN") or _env("FACEBOOK_USER_ACCESS_TOKEN")
+def _resolve_instagram_identity(api_version: Optional[str] = None, channel: Optional[str] = None) -> dict:
+    # Las claves del canal (sufijo, p. ej. INSTAGRAM_PAGE_ID_STUNNING_REVELATIONS) van ANTES que
+    # cualquier global: si no, un canal con FACEBOOK_PAGE_ID propio caia en el INSTAGRAM_PAGE_ID
+    # global y publicaba en la cuenta del otro canal (facebook_uploader._channel_env).
+    sufijo = _channel_suffix(channel)
+
+    def pick(*names: str, global_fallback: bool = True) -> tuple[Optional[str], bool]:
+        """(valor, vino_del_canal)."""
+        if sufijo:
+            for name in names:
+                value = _env(f"{name}_{sufijo}")
+                if value:
+                    return value, True
+        if global_fallback:
+            for name in names:
+                value = _env(name)
+                if value:
+                    return value, False
+        return None, False
+
+    user_access_token, _ = pick("INSTAGRAM_USER_ACCESS_TOKEN", "FACEBOOK_USER_ACCESS_TOKEN")
     if not user_access_token:
         raise RuntimeError(
             "Instagram auth not configured. Set INSTAGRAM_USER_ACCESS_TOKEN or "
             "FACEBOOK_USER_ACCESS_TOKEN in .env."
         )
 
-    page_id = _env("INSTAGRAM_PAGE_ID") or _env("FACEBOOK_PAGE_ID")
-    ig_user_id = _env("INSTAGRAM_BUSINESS_ACCOUNT_ID")
+    page_id, page_del_canal = pick("INSTAGRAM_PAGE_ID", "FACEBOOK_PAGE_ID")
+    # Con pagina propia del canal, la cuenta de Instagram global (la del otro canal) no sirve de respaldo.
+    ig_user_id, _ = pick("INSTAGRAM_BUSINESS_ACCOUNT_ID", global_fallback=not page_del_canal)
 
     if page_id:
         page_info = _request_json(
@@ -830,7 +856,8 @@ def upload_from_metadata(output_dir: str, share_to_feed: Optional[bool] = None, 
 
     title = metadata.get("title") or output_dir.name
     description = metadata.get("description") or ""
-    identity = _resolve_instagram_identity()
+    # La cuenta del canal elegido en el Studio (sus claves con sufijo) o la global.
+    identity = _resolve_instagram_identity(channel=str(metadata.get("upload_channel") or "").strip() or None)
     brand = identity.get("instagram_name") or identity.get("page_name") or ""
 
     seo = None
@@ -885,9 +912,9 @@ def upload_from_metadata(output_dir: str, share_to_feed: Optional[bool] = None, 
     return result
 
 
-def check_auth() -> dict:
+def check_auth(channel: Optional[str] = None) -> dict:
     try:
-        identity = _resolve_instagram_identity()
+        identity = _resolve_instagram_identity(channel=channel)
         limit_data = _content_publishing_limit(
             str(identity.get("ig_user_id") or ""),
             str(identity.get("access_token") or ""),

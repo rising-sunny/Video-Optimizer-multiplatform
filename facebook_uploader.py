@@ -95,6 +95,21 @@ def _env(name: str, default: Optional[str] = None) -> Optional[str]:
     return text or default
 
 
+def _channel_env(name: str, channel: Optional[str] = None) -> Optional[str]:
+    """La clave del canal si la tiene (FACEBOOK_PAGE_ID_STUNNING_REVELATIONS); si no, la global.
+
+    2026-09-27: una PC nueva con el .env.txt viejo publicaba lo de Stunning Facts of History en
+    Stunning Revelations. Las globales quedan para el canal por defecto; cada otro canal que
+    tenga pagina propia lleva sus claves con el sufijo del canal (upload_channel del Studio).
+    """
+    if channel:
+        sufijo = re.sub(r"[^A-Z0-9]+", "_", str(channel).upper()).strip("_")
+        propio = _env(f"{name}_{sufijo}")
+        if propio:
+            return propio
+    return _env(name)
+
+
 def _default_api_version() -> str:
     return str(_env("FACEBOOK_GRAPH_API_VERSION", "v23.0") or "v23.0")
 
@@ -333,10 +348,11 @@ def _page_token_help(page_id: Optional[str], user_access_token: str,
     return "\n".join(lines)
 
 
-def _resolve_page_access_token(api_version: Optional[str] = None) -> tuple[str, Optional[str]]:
-    page_access_token = _env("FACEBOOK_PAGE_ACCESS_TOKEN")
-    user_access_token = _env("FACEBOOK_USER_ACCESS_TOKEN")
-    page_id = _env("FACEBOOK_PAGE_ID")
+def _resolve_page_access_token(api_version: Optional[str] = None,
+                               channel: Optional[str] = None) -> tuple[str, Optional[str]]:
+    page_access_token = _channel_env("FACEBOOK_PAGE_ACCESS_TOKEN", channel)
+    user_access_token = _channel_env("FACEBOOK_USER_ACCESS_TOKEN", channel)
+    page_id = _channel_env("FACEBOOK_PAGE_ID", channel)
 
     if page_access_token:
         # El token puede ser PERFECTAMENTE VALIDO y aun asi ser de OTRA pagina.
@@ -760,8 +776,8 @@ def apply_thumbnail(video_id: str, page_access_token: str, thumbnail_path: Optio
     return out
 
 
-def _page_context(api_version: Optional[str] = None) -> tuple[str, str, dict]:
-    page_access_token, page_id = _resolve_page_access_token(api_version=api_version)
+def _page_context(api_version: Optional[str] = None, channel: Optional[str] = None) -> tuple[str, str, dict]:
+    page_access_token, page_id = _resolve_page_access_token(api_version=api_version, channel=channel)
     page_info = _get_page_identity(page_access_token, api_version=api_version)
     return page_access_token, str(page_info.get("id") or page_id).strip(), page_info
 
@@ -1028,8 +1044,10 @@ def upload_from_metadata(output_dir: str, video_state: str = "PUBLISHED", on_pro
 
     title = metadata.get("title") or output_dir.name
     description = metadata.get("description") or ""
-    page_context = _page_context()
+    # La pagina del canal elegido en el Studio (sus claves con sufijo) o la global.
+    page_context = _page_context(channel=str(metadata.get("upload_channel") or "").strip() or None)
     page_name = str(page_context[2].get("name") or "").strip()
+    _notify(on_status, f"pagina de Facebook: {page_name or page_context[1]}")
 
     seo = None
     if optimize and _seo_enabled():
@@ -1088,9 +1106,9 @@ def upload_from_metadata(output_dir: str, video_state: str = "PUBLISHED", on_pro
     return result
 
 
-def check_auth() -> dict:
+def check_auth(channel: Optional[str] = None) -> dict:
     try:
-        page_access_token, page_id = _resolve_page_access_token()
+        page_access_token, page_id = _resolve_page_access_token(channel=channel)
         page_info = _get_page_identity(page_access_token)
         return {
             "authenticated": True,

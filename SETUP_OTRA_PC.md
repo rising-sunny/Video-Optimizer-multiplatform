@@ -88,6 +88,11 @@ WHISPER_REMOTE_STRICT=1
 > `/opt/whisper-svc/.env`. Copialo de ahí.
 > Las demás claves (`GROQ_API_KEY`, `STABILITY_API_KEY`, OAuth Google, VAST…)
 > también copialas del `.env` de la PC principal — tampoco están en git.
+> Facebook e Instagram viven en el `.env.txt`: las claves globales son las de Stunning Facts of
+> History y las de Stunning Revelations llevan el sufijo `_STUNNING_REVELATIONS`. Después de
+> copiarlo, verificá a qué cuentas publica cada canal con
+> `facebook_uploader.check_auth(channel=...)` e `instagram_uploader.check_auth(channel=...)`: el
+> 2026-09-27 una copia vieja publicaba todo en Stunning Revelations.
 > TikTok y Telegram: `TIKTOK_CLIENT_KEY`, `TIKTOK_CLIENT_SECRET`, `TELEGRAM_BOT_TOKEN` y
 > `TELEGRAM_CHAT_ID` del `.env`, más el archivo `token_tiktok.json` (o volver a conectar
 > la cuenta con `.venv\Scripts\python.exe tiktok_uploader.py --auth`).

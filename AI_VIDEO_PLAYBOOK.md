@@ -282,6 +282,22 @@ concreta + sujeto nombrado**, duración corta. Ej: "72 Seconds: The Wow! Signal"
 
 ## Changelog
 
+- **2026-09-27** — **Facebook e Instagram publican en las cuentas del canal elegido.**
+  - **El problema:** en la PC nueva (`C:\repos`) los reels de Stunning Facts of History salían en
+    Stunning Revelations. El código estaba bien: el `.env.txt` se había copiado de la carpeta de Drive,
+    que tenía la configuración de antes del 2026-09-02 (página `533073909895353` = Stunning Revelations,
+    @stunning.revelations). Se corrigió el `.env.txt` de esta PC y el de Drive.
+  - **Cuentas por canal:** las claves globales (`FACEBOOK_PAGE_ID`, `FACEBOOK_PAGE_ACCESS_TOKEN`,
+    `INSTAGRAM_PAGE_ID`, `INSTAGRAM_BUSINESS_ACCOUNT_ID`) son las del canal por defecto (Stunning Facts
+    of History: página `1291553907375982`, @stunning.foh). Otro canal con cuentas propias lleva las
+    mismas claves con el sufijo del canal (`..._STUNNING_REVELATIONS`). El Studio manda `upload_channel`
+    en `facebook_metadata.json` e `instagram_metadata.json`; `facebook_uploader._channel_env` e
+    `instagram_uploader._resolve_instagram_identity(channel=...)` eligen las claves. Con página propia
+    del canal, la cuenta de Instagram global nunca sirve de respaldo: mejor fallar que publicar en la
+    del otro canal.
+  - **Se ve en el panel:** "Facebook publicado en <página>" / "Instagram publicado en @cuenta".
+    Verificar una PC: `facebook_uploader.check_auth(channel=...)` e `instagram_uploader.check_auth(channel=...)`.
+  - Guardas: `test_channel_accounts.py` (10).
 - **2026-09-26** — **TikTok: borrador en la bandeja y el texto por Telegram.**
   - **Por qué borrador:** publicar en público por API exige la auditoría de TikTok, y sus reglas
     rechazan las herramientas para subir a las cuentas propias. Sin auditoría, la publicación directa
