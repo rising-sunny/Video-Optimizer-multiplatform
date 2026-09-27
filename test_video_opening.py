@@ -68,10 +68,35 @@ class LaDecision(unittest.TestCase):
             self.assertEqual(op["motion"], spec["motion"])
             self.assertIn(spec["prompt"], segs[0]["visual_prompt"])
             self.assertTrue(segs[0]["visual_prompt"].endswith(vo.NO_TEXT_HINT))
+            self.assertIn(spec["followup_prompt"], segs[1]["visual_prompt"])
+            self.assertTrue(segs[1]["visual_prompt"].endswith(vo.NO_TEXT_HINT))
             self.assertEqual(segs[0]["hook_overlay"]["style"], style)
 
     def test_un_estilo_desconocido_vuelve_al_cold_open(self):
         self.assertEqual(vo.normalize_opening_style("inventado"), vo.OPENING_STYLE)
+
+    def test_las_cinco_recetas_tienen_aperturas_narrativas_distintas(self):
+        blocks = [vo.opening_script_instructions(style, language="es")
+                  for style in vo.OPENING_STYLE_CHOICES]
+        self.assertEqual(len(set(blocks)), 5)
+        for style, block in zip(vo.OPENING_STYLE_CHOICES, blocks):
+            self.assertIn(style, block)
+            self.assertIn(vo.opening_style_spec(style)["narrative"], block)
+            self.assertIn("Narration language: Spanish", block)
+            self.assertIn("factual and supported", block)
+
+    def test_el_prompt_json_estructura_guion_y_dos_primeros_visuales(self):
+        from storyboard_generator import StoryboardGenerator
+        generator = StoryboardGenerator(log_callback=lambda m: None)
+        for style in vo.OPENING_STYLE_CHOICES:
+            prompt = generator.generate_manual_prompt_text(
+                "Caral", "Historia", 60, language="es", video_format="9:16",
+                platform="youtube_short", opening_style=style,
+            )
+            spec = vo.opening_style_spec(style)
+            self.assertIn(f"SELECTED VIDEO OPENING: {spec['label']} ({style})", prompt)
+            self.assertIn(f"Scene 1 visual_prompt: {spec['prompt']}", prompt)
+            self.assertIn(f"Scene 2 visual_prompt: {spec['followup_prompt']}", prompt)
 
     def test_por_defecto_no_hay_placa_y_la_escena_1_arranca_en_0(self):
         segs, op = vo.apply_opening(_segs(), script=HANNIBAL, bible=BIBLE_NEW, log=lambda m: None)

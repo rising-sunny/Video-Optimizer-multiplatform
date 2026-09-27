@@ -1354,7 +1354,8 @@ CALIDAD NARRATIVA (OBLIGATORIO):
   "series_fit": "Serie a la que pertenece (ej: Lost Civilizations, Vanished Empires) o NONE","""
 
     def generate_manual_prompt_text(self, topic, category, duration, language='es',
-                                    research_context=None, video_format=None, platform=None):
+                                    research_context=None, video_format=None, platform=None,
+                                    opening_style="hook_overlay_v1"):
         """
         Genera el texto del prompt para modo manual (JSON).
         
@@ -1509,6 +1510,10 @@ FORMATO: Video horizontal 16:9 para YouTube.
         tone_profile = self._get_tone_profile_for_category(category)
         tone_header = self._build_tone_header(tone_profile)
         tone_section = self._build_tone_section(tone_profile, lang_label)
+        from video_opening import opening_script_instructions
+        opening_section = opening_script_instructions(
+            opening_style, language=language, include_visuals=True
+        )
 
         prompt = f"""{tone_header}
 {length_contract}
@@ -1519,6 +1524,8 @@ CATEGORÍA: {category}
 PERFIL DE TONO: {tone_profile}
 IDIOMA DE NARRACIÓN: {lang_label}
 {format_section}{research_section}
+{opening_section}
+
 REGLA FUNDAMENTAL — SOLO CASOS DOCUMENTADOS (NO INVENTES):
 - El guión debe basarse EXCLUSIVAMENTE en hechos, eventos, personajes, fechas, lugares y testimonios documentados que existan en la realidad.
 - NO inventes casos, nombres, fechas, lugares, eventos, citas, instituciones, programas, leyes ni iniciativas. Todo debe ser verificable.
@@ -1635,6 +1642,7 @@ REGLAS CRÍTICAS:
             research_context=research_context or None,
             video_format="9:16",
             platform=platform,
+            opening_style=opening_style,
         )
 
         # 2. Send to LLM with task_type='script_quality' so Groq prefers gpt-oss-120b
@@ -2051,6 +2059,7 @@ REGLAS CRÍTICAS:
             research_context=research_context or None,
             video_format="16:9",
             platform=platform,
+            opening_style=opening_style,
         )
         if not json_data or not json_data.get("scenes"):
             self.log("   ⚠️ generate_scenes_json_batched no produjo escenas")
@@ -2131,7 +2140,8 @@ REGLAS CRÍTICAS:
 
     def generate_scenes_json_batched(self, topic, category, duration, language='es',
                                      research_context=None, video_format=None, platform=None,
-                                     progress_callback=None):
+                                     progress_callback=None,
+                                     opening_style="hook_overlay_v1"):
         """
         Genera el JSON completo de escenas usando llamadas batch a Groq para evitar
         el límite de tokens de salida (~12 000 tokens).
@@ -2176,13 +2186,15 @@ REGLAS CRÍTICAS:
             script = self.gemini_client.generate_video_script_with_research(
                 topic, category, duration_int, research_context,
                 language=language,
-                narrative_profile="long_horizontal" if duration_int >= 600 else None
+                narrative_profile="long_horizontal" if duration_int >= 600 else None,
+                opening_style=opening_style,
             )
         else:
             script = self.gemini_client.generate_video_script(
                 topic, category, duration_int,
                 language=language,
-                narrative_profile="long_horizontal" if duration_int >= 600 else None
+                narrative_profile="long_horizontal" if duration_int >= 600 else None,
+                opening_style=opening_style,
             )
 
         if not script or (isinstance(script, str) and script.startswith("ERROR")):
@@ -2264,6 +2276,16 @@ REGLAS CRÍTICAS:
                 f"Esta es la primera parte del video — incluye un campo 'title' con el título del video en {lang_label}."
                 if idx == 0 else "NO incluyas campo 'title'."
             )
+            if idx == 0:
+                from video_opening import opening_script_instructions
+                opening_batch = opening_script_instructions(
+                    opening_style, language=language, include_visuals=True
+                )
+            else:
+                opening_batch = (
+                    "The selected opening was already completed in the first batch. "
+                    "Continue the chronology without restarting or repeating it."
+                )
             response_format = (
                 'Responde con JSON así: {"title": "...", "scenes": [...]}'
                 if idx == 0 else
@@ -2279,6 +2301,8 @@ CATEGORÍA: {category}
 PERFIL DE TONO: {tone_profile}
 IDIOMA DE NARRACIÓN: {lang_label}
 {prev_context}
+{opening_batch}
+
 FRAGMENTO DE GUION A CONVERTIR:
 {chunk_text}
 
@@ -2796,7 +2820,8 @@ Sin explicaciones antes ni después. Solo JSON válido."""
                 duration_target,
                 research_context,
                 language=language,
-                narrative_profile=generation_profile
+                narrative_profile=generation_profile,
+                opening_style=opening_style,
             )
         else:
             script = self.gemini_client.generate_video_script(
@@ -2804,7 +2829,8 @@ Sin explicaciones antes ni después. Solo JSON válido."""
                 category,
                 duration_target,
                 language=language,
-                narrative_profile=generation_profile
+                narrative_profile=generation_profile,
+                opening_style=opening_style,
             )
 
         if not script or script.startswith("ERROR"):
@@ -2960,7 +2986,8 @@ Sin explicaciones antes ni después. Solo JSON válido."""
                         duration_target,
                         research_context,
                         language=language,
-                        narrative_profile="long_horizontal_strict"
+                        narrative_profile="long_horizontal_strict",
+                        opening_style=opening_style,
                     )
                 else:
                     retry_script = self.gemini_client.generate_video_script(
@@ -2968,7 +2995,8 @@ Sin explicaciones antes ni después. Solo JSON válido."""
                         category,
                         duration_target,
                         language=language,
-                        narrative_profile="long_horizontal_strict"
+                        narrative_profile="long_horizontal_strict",
+                        opening_style=opening_style,
                     )
 
                 if retry_script and not str(retry_script).startswith("ERROR"):

@@ -1185,6 +1185,7 @@ State the resolved lens and depth of field. End with: {fmt.prompt_constraint}, p
         role_header,
         quality_block,
         research_snippets=None,
+        opening_block="",
     ):
         disambig = self._build_topic_disambiguation_block(topic)
         context = ""
@@ -1203,6 +1204,7 @@ State the resolved lens and depth of field. End with: {fmt.prompt_constraint}, p
         {context}
 
         {quality_block}
+        {opening_block}
 
         CRITICAL:
         - Output ONLY the narration. No apology, no meta-commentary, no "I can't".
@@ -1230,6 +1232,7 @@ State the resolved lens and depth of field. End with: {fmt.prompt_constraint}, p
         quality_block,
         is_short,
         research_snippets=None,
+        opening_block="",
     ):
         if script == "ERROR_QUOTA_EXCEEDED" or script == "ERROR_AUTH" or (script and str(script).startswith("ERROR")):
             return script
@@ -1254,6 +1257,7 @@ State the resolved lens and depth of field. End with: {fmt.prompt_constraint}, p
                 role_header=role_header,
                 quality_block=quality_block,
                 research_snippets=research_snippets,
+                opening_block=opening_block,
             )
             if retry and not str(retry).startswith("ERROR") and not is_llm_refusal(retry):
                 if is_short:
@@ -1283,6 +1287,7 @@ State the resolved lens and depth of field. End with: {fmt.prompt_constraint}, p
             Target length: ~{target_words} words.
             {self._build_topic_disambiguation_block(topic)}
             {quality_block}
+            {opening_block}
             {context}
 
             Additional rewrite constraints:
@@ -1323,7 +1328,8 @@ State the resolved lens and depth of field. End with: {fmt.prompt_constraint}, p
             script = self._maybe_append_cta(script, language)
         return script
 
-    def generate_video_script(self, topic, category, duration_seconds, language='es', narrative_profile=None):
+    def generate_video_script(self, topic, category, duration_seconds, language='es', narrative_profile=None,
+                              opening_style="hook_overlay_v1"):
         """Genera guion de video"""
         print(f"ðŸ¤– Claude: Generando guion ({language})...")
         words = int((duration_seconds / 60) * 150)
@@ -1370,6 +1376,8 @@ State the resolved lens and depth of field. End with: {fmt.prompt_constraint}, p
         """
         elif is_short:
             short_block = self._build_short_block()
+        from video_opening import opening_script_instructions
+        opening_block = opening_script_instructions(opening_style, language=language)
 
         prompt = f"""
         {role_header}
@@ -1393,6 +1401,7 @@ State the resolved lens and depth of field. End with: {fmt.prompt_constraint}, p
         - IF YOU RUN OUT OF NEW FACTS, DO NOT CUT THE SCRIPT SHORT. First go deeper with documented material: prior historical context, biographies of real protagonists, documented critical decisions, verifiable consequences (short-term and across years/decades), parallels with similar documented events, primary-source testimonies. Only if you genuinely exhausted documented material may you shorten. NEVER invent filler.
         {narrative_approach}
         {quality_block}
+        {opening_block}
         {long_block}
         {short_block}
 
@@ -1418,6 +1427,7 @@ State the resolved lens and depth of field. End with: {fmt.prompt_constraint}, p
             role_header=role_header,
             quality_block=quality_block,
             is_short=is_short,
+            opening_block=opening_block,
         )
 
     def _extract_historical_context(self, topic, full_script, research_context):
@@ -1547,7 +1557,8 @@ Output ONLY valid JSON (no explanations, no markdown):
         duration_seconds,
         research_snippets,
         language='es',
-        narrative_profile=None
+        narrative_profile=None,
+        opening_style="hook_overlay_v1",
     ):
         """Genera guion con investigaciÃ³n"""
         print(f"ðŸ¤– Claude: Guion investigado ({language})...")
@@ -1596,6 +1607,8 @@ Output ONLY valid JSON (no explanations, no markdown):
         """
         elif is_short:
             short_block = self._build_short_block()
+        from video_opening import opening_script_instructions
+        opening_block = opening_script_instructions(opening_style, language=language)
 
         prompt = f"""
         {role_header}
@@ -1621,6 +1634,7 @@ Output ONLY valid JSON (no explanations, no markdown):
         - IF YOU RUN OUT OF NEW FACTS, DO NOT CUT THE SCRIPT SHORT. First go deeper with documented material: prior historical context, biographies of real protagonists, documented critical decisions, verifiable consequences (short-term and across years/decades), parallels with similar documented events, primary-source testimonies. Only if you genuinely exhausted documented material may you shorten. NEVER invent filler.
         {narrative_approach}
         {quality_block}
+        {opening_block}
         {long_block}
         {short_block}
 
@@ -1647,6 +1661,7 @@ Output ONLY valid JSON (no explanations, no markdown):
             quality_block=quality_block,
             is_short=is_short,
             research_snippets=research_snippets,
+            opening_block=opening_block,
         )
 
     def generate_prompts_for_segment(self, segment_text, category, style, topic=None,

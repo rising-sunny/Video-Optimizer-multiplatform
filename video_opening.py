@@ -57,6 +57,15 @@ OPENING_STYLE_SPECS = {
             "Opening shot: the highest-stakes moment already in progress, immediate visual impact, "
             "dynamic cinematic composition, no establishing preamble"
         ),
+        "followup_prompt": (
+            "Second opening shot: reveal the immediate factual context behind the action while preserving "
+            "momentum, a complementary angle rather than a repeated establishing shot"
+        ),
+        "narrative": (
+            "Open in the middle of the most consequential documented action or decision. The first sentence "
+            "must state a concrete stake, danger or irreversible consequence; give essential context only "
+            "after the viewer is inside the event."
+        ),
     },
     MAP_ZOOM_STYLE: {
         "label": "Zoom cartográfico",
@@ -69,6 +78,15 @@ OPENING_STYLE_SPECS = {
             "Opening shot: a richly detailed cinematic historical map centered on the exact location "
             "of the story, terrain and coastlines readable through shape alone, a luminous destination "
             "marker, designed for a rapid camera dive, no written labels"
+        ),
+        "followup_prompt": (
+            "Second opening shot: ground-level arrival at the exact mapped location, matching its geography, "
+            "era and weather, with a human-scale subject that begins the documented event"
+        ),
+        "narrative": (
+            "Open by naming the exact documented place and why that location mattered. Move from geographic "
+            "scale to the people or event on the ground in the second sentence. Do not narrate camera movement "
+            "and do not say that a map is appearing."
         ),
     },
     ARTIFACT_REVEAL_STYLE: {
@@ -83,6 +101,15 @@ OPENING_STYLE_SPECS = {
             "emerging from darkness under a narrow museum-quality beam of light, tactile material, "
             "dust in the air, composed for a dramatic pull-back reveal"
         ),
+        "followup_prompt": (
+            "Second opening shot: the same documented object, structure or physical evidence in its original "
+            "historical context and scale, visually connecting the detail to the larger story"
+        ),
+        "narrative": (
+            "Open with a real physical object, structure or piece of evidence and immediately state what it "
+            "reveals about the story. If no specific artifact is documented, use the most concrete verified "
+            "site or physical evidence; never invent an object for the hook."
+        ),
     },
     BEFORE_AFTER_STYLE: {
         "label": "Antes y después temporal",
@@ -96,6 +123,15 @@ OPENING_STYLE_SPECS = {
             "composition, ruins on one side and the historically reconstructed place at its peak on the "
             "other, matched camera angle and architecture, designed for a lateral time-wipe"
         ),
+        "followup_prompt": (
+            "Second opening shot: complete the temporal comparison from the same visual axis, emphasizing one "
+            "specific documented change in architecture, landscape, power or daily life"
+        ),
+        "narrative": (
+            "Open with a sharp, factual contrast between the same place, institution or subject at two "
+            "documented moments. The first two sentences must name what changed and the time separating both "
+            "states; if an exact span is uncertain, do not invent one."
+        ),
     },
     OUTCOME_TEASER_STYLE: {
         "label": "Teaser del desenlace",
@@ -108,6 +144,15 @@ OPENING_STYLE_SPECS = {
             "Opening shot: a spoiler-free flash-forward to the story's climactic consequence, the decisive "
             "moment frozen at peak tension, bold silhouette and immediate stakes, cinematic contrast, "
             "designed as a brief future glimpse before the story begins"
+        ),
+        "followup_prompt": (
+            "Second opening shot: return to the documented starting point before the climax, quieter but tense, "
+            "with the causal detail that begins the chain of events"
+        ),
+        "narrative": (
+            "Open with a verified consequence or climactic outcome, without a false spoiler or invented quote. "
+            "The second sentence must pivot back to the documented origin of the chain of events, creating a "
+            "clear flash-forward and rewind structure."
         ),
     },
 }
@@ -170,6 +215,33 @@ def is_modern_opening(style: str = "") -> bool:
     return str(style or "") in OPENING_STYLE_SPECS
 
 
+def opening_script_instructions(style: str = OPENING_STYLE, language: str = "es",
+                                include_visuals: bool = False) -> str:
+    """Brief narrativo compartido por los generadores automatico, batched y manual."""
+    selected = normalize_opening_style(style)
+    spec = opening_style_spec(selected)
+    narration_language = "English" if str(language or "").lower() == "en" else "Spanish"
+    visual_block = ""
+    if include_visuals:
+        visual_block = f"""
+VISUAL HANDOFF FOR THE FIRST TWO SCENES:
+- Scene 1 visual_prompt: {spec['prompt']}.
+- Scene 2 visual_prompt: {spec['followup_prompt']}.
+- Both visuals must depict facts supported by the topic/script, obey the requested era and aspect ratio,
+  and end with the global no-text suffix. Never invent an artifact, location, date or outcome to fit the style.
+"""
+    return f"""
+SELECTED VIDEO OPENING: {spec['label']} ({selected})
+This choice is structural, not decorative. Shape the spoken opening and the first two scenes around it.
+- Narration language: {narration_language}.
+- First 8-12 seconds: {spec['narrative']}
+- Start the narration on frame zero. Do not add a title-card pause, production note, camera direction,
+  editing instruction, or phrases such as "we see", "the camera shows" or "on this map".
+- Keep every claim factual and supported. The opening style never authorizes invented evidence or drama.
+- After the opening beat, continue naturally into the normal chronology and tone of the documentary.
+{visual_block}""".strip()
+
+
 # ----------------------------------------------------------------------------
 # El texto de gancho
 # ----------------------------------------------------------------------------
@@ -222,20 +294,22 @@ def apply_opening(segments: list[dict[str, Any]], *, script: str, topic: str = "
             hook = {"enabled": True, "text": text, "duration": float(cfg["duration_seconds"]),
                     "source": why, "style": selected_style}
             segments[0]["hook_overlay"] = hook
-        # La primera imagen expresa el tipo de entrada y reserva la zona del titulo.
-        # Se anade una sola vez porque un proyecto puede reabrirse y guardarse varias veces.
-        vp = str(segments[0].get("visual_prompt") or "")
-        additions = []
-        if spec["prompt"] not in vp:
-            additions.append(spec["prompt"])
-        if TOP_CLEAR_HINT not in vp:
-            additions.append(TOP_CLEAR_HINT)
-        if additions:
+        # Los dos primeros visuales expresan entrada + transicion narrativa. Se
+        # anade una sola vez porque un proyecto puede reabrirse varias veces.
+        def enrich_prompt(segment: dict[str, Any], directions: list[str]) -> None:
+            vp = str(segment.get("visual_prompt") or "")
+            additions = [direction for direction in directions if direction not in vp]
+            if not additions:
+                return
             base = vp.rstrip(" .")
             if base.lower().endswith(NO_TEXT_HINT):
                 base = base[:-len(NO_TEXT_HINT)].rstrip(" .,;")
             parts = [part for part in (base, *additions, NO_TEXT_HINT) if part]
-            segments[0]["visual_prompt"] = ". ".join(parts)
+            segment["visual_prompt"] = ". ".join(parts)
+
+        enrich_prompt(segments[0], [spec["prompt"], TOP_CLEAR_HINT])
+        if len(segments) > 1 and isinstance(segments[1], dict):
+            enrich_prompt(segments[1], [spec["followup_prompt"]])
         if text:
             log(f"   [Arranque] {spec['short_label']}; texto de gancho '{text}' ({why}), "
                 f"{cfg['duration_seconds']}s")

@@ -897,13 +897,15 @@ Reglas:
 """
     def generate_scenes_json_batched(self, topic, category, duration, language='es',
                                      research_context=None, video_format=None, platform=None,
-                                     progress_callback=None):
+                                     progress_callback=None,
+                                     opening_style="hook_overlay_v1"):
         """Delega a StoryboardGenerator si esta disponible"""
         if self.storyboard_generator:
             return self.storyboard_generator.generate_scenes_json_batched(
                 topic, category, duration, language=language,
                 research_context=research_context, video_format=video_format,
-                platform=platform, progress_callback=progress_callback)
+                platform=platform, progress_callback=progress_callback,
+                opening_style=opening_style)
         self.log("StoryboardGenerator no disponible para generacion JSON en batches")
         return None
 

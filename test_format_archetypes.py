@@ -162,8 +162,10 @@ class LlegaAlGenerador(unittest.TestCase):
                 return kw
         ad = AutoVideoGeneratorPyQt6.__new__(AutoVideoGeneratorPyQt6)
         ad._generator = Fake()
-        out = ad.generate_storyboard(topic="t", category="c", format_archetype="discovery", duration_seconds=60)
+        out = ad.generate_storyboard(topic="t", category="c", format_archetype="discovery",
+                                     opening_style="map_zoom_v1", duration_seconds=60)
         self.assertEqual(out["format_archetype"], "discovery")
+        self.assertEqual(out["opening_style"], "map_zoom_v1")
         self.assertEqual(out["custom_duration"], 60)
 
     def test_el_wrapper_real_acepta_y_reenvia_el_parametro(self):
@@ -173,6 +175,7 @@ class LlegaAlGenerador(unittest.TestCase):
         import inspect
         from auto_video_generator_v2 import AutoVideoGenerator
         self.assertIn("format_archetype", inspect.signature(AutoVideoGenerator.generate_storyboard_data).parameters)
+        self.assertIn("opening_style", inspect.signature(AutoVideoGenerator.generate_storyboard_data).parameters)
 
         class FakeSB:
             def generate_storyboard_data(self, *a, **kw):
@@ -180,8 +183,11 @@ class LlegaAlGenerador(unittest.TestCase):
         gen = AutoVideoGenerator.__new__(AutoVideoGenerator)
         gen.storyboard_generator = FakeSB()
         gen.log = lambda m: None
-        out = gen.generate_storyboard_data("t", "c", format_archetype="human_story")
+        out = gen.generate_storyboard_data(
+            "t", "c", format_archetype="human_story", opening_style="artifact_reveal_v1"
+        )
         self.assertEqual(out["format_archetype"], "human_story")
+        self.assertEqual(out["opening_style"], "artifact_reveal_v1")
 
     def test_el_handler_lo_pasa_y_el_generador_lo_estampa(self):
         fuente = io.open("studio_storyboard_handlers.py", encoding="utf-8", errors="replace").read()

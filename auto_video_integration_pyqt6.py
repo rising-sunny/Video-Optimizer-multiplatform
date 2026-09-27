@@ -2430,7 +2430,7 @@ Respond ONLY with valid JSON."""
             self.opening_style_combo.addItem(OPENING_STYLE_SPECS[style_id]["label"], style_id)
         self.opening_style_combo.setMaximumWidth(330)
         self.opening_style_combo.setToolTip(
-            "Define la puesta en escena, el prompt visual y el movimiento de los primeros segundos."
+            "Define el guion, los dos primeros prompts visuales y el movimiento de los primeros segundos."
         )
         opening_controls.addWidget(self.opening_style_combo)
 
@@ -3281,7 +3281,8 @@ Respond ONLY with valid JSON."""
                 topic, category, duration, language=language,
                 research_context=research_context,
                 video_format=video_format,
-                platform=self.get_selected_platform_key())
+                platform=self.get_selected_platform_key(),
+                opening_style=self.get_selected_opening_style())
         else:
             prompt = (f"No se pudo generar el prompt: generador no disponible.\n"
                      f"Tema: {topic}\nCategoría: {category}\nDuración: {duration}s")
@@ -3336,7 +3337,7 @@ Respond ONLY with valid JSON."""
             progress = pyqtSignal(int, int)
 
             def __init__(self, generator, topic, category, duration, language,
-                         research_context, video_format, platform):
+                         research_context, video_format, platform, opening_style):
                 super().__init__()
                 self._gen = generator
                 self._topic = topic
@@ -3346,6 +3347,7 @@ Respond ONLY with valid JSON."""
                 self._research = research_context
                 self._fmt = video_format
                 self._platform = platform
+                self._opening_style = opening_style
 
             def run(self):
                 try:
@@ -3355,6 +3357,7 @@ Respond ONLY with valid JSON."""
                         research_context=self._research,
                         video_format=self._fmt,
                         platform=self._platform,
+                        opening_style=self._opening_style,
                         progress_callback=lambda cur, tot: self.progress.emit(cur, tot)
                     )
                     self.done.emit(result)
@@ -3364,7 +3367,7 @@ Respond ONLY with valid JSON."""
 
         self._json_batch_thread = _JsonBatchThread(
             gen, topic, category, duration, language,
-            research_context, video_format, platform
+            research_context, video_format, platform, self.get_selected_opening_style()
         )
 
         def _on_progress(cur, tot):

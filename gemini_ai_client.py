@@ -49,10 +49,12 @@ class GeminiAiClient:
             return self.backend.generate_thumbnail_prompt(topic, category, style, provider)
         return "ERROR: Groq no disponible"
 
-    def generate_video_script(self, topic, category, duration_seconds, language='es', narrative_profile=None):
+    def generate_video_script(self, topic, category, duration_seconds, language='es', narrative_profile=None,
+                              opening_style="hook_overlay_v1"):
         if self.backend:
             return self.backend.generate_video_script(
-                topic, category, duration_seconds, language, narrative_profile=narrative_profile
+                topic, category, duration_seconds, language, narrative_profile=narrative_profile,
+                opening_style=opening_style,
             )
         return "ERROR: Groq no disponible"
 
@@ -63,7 +65,8 @@ class GeminiAiClient:
         duration_seconds,
         research_snippets,
         language='es',
-        narrative_profile=None
+        narrative_profile=None,
+        opening_style="hook_overlay_v1",
     ):
         if self.backend:
             return self.backend.generate_video_script_with_research(
@@ -72,7 +75,8 @@ class GeminiAiClient:
                 duration_seconds,
                 research_snippets,
                 language,
-                narrative_profile=narrative_profile
+                narrative_profile=narrative_profile,
+                opening_style=opening_style,
             )
         return "ERROR: Groq no disponible"
 
