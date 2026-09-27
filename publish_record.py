@@ -15,7 +15,8 @@ from __future__ import annotations
 import datetime as _dt
 from typing import Any, Optional
 
-_ID_KEYS = ("video_id", "media_id", "reel_id", "id", "post_id", "tweet_id")
+# publish_id: TikTok (borrador en la bandeja; el id del post recien existe cuando se publica en la app).
+_ID_KEYS = ("video_id", "media_id", "reel_id", "id", "post_id", "tweet_id", "publish_id")
 _URL_KEYS = ("url", "permalink_url", "permalink", "video_url", "post_url")
 
 

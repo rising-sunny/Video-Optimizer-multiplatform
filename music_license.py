@@ -43,7 +43,7 @@ USABLE_LICENSES = ("CC0", "CC BY", "CC BY-SA")
 CLAIMS_PATH = Path(__file__).resolve().parent / "daily_shorts" / "music_claims.json"
 
 # Limites de descripcion por plataforma (la atribucion nunca se recorta).
-DESCRIPTION_LIMITS = {"youtube": 5000, "facebook": 2200, "instagram": 2200}
+DESCRIPTION_LIMITS = {"youtube": 5000, "facebook": 2200, "instagram": 2200, "tiktok": 2200}
 
 _TRACK_URL_RE = re.compile(r"(?:trackid=|/track/|jamen\.do/t/)(\d+)")
 

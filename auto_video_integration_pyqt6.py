@@ -1381,6 +1381,8 @@ class AutoVideoStudioTab(QWidget):
         do_facebook = self.chk_publish_facebook.isChecked()
         do_instagram = self.chk_publish_instagram.isChecked()
         do_x = self.chk_publish_x.isChecked() if hasattr(self, 'chk_publish_x') else False
+        # TikTok no publica: deja un borrador en la bandeja y manda el texto por Telegram.
+        do_tiktok = self.chk_publish_tiktok.isChecked() if hasattr(self, 'chk_publish_tiktok') else False
 
         publish_at_youtube = None
         if hasattr(self, 'chk_schedule_youtube') and self.chk_schedule_youtube.isChecked():
@@ -1394,7 +1396,7 @@ class AutoVideoStudioTab(QWidget):
             dt_utc = dt.toUTC()
             publish_at_facebook = dt_utc.toString(Qt.DateFormat.ISODate)
 
-        if not (do_youtube or do_facebook or do_instagram or do_x):
+        if not (do_youtube or do_facebook or do_instagram or do_x or do_tiktok):
             QMessageBox.warning(self, "Sin plataforma", "Selecciona al menos una plataforma para publicar.")
             return
 
@@ -1588,7 +1590,8 @@ Respond ONLY with valid JSON."""
                 }
         platforms_str = ", ".join(
             p for p, v in [("YouTube", do_youtube), ("Facebook", do_facebook),
-                           ("Instagram", do_instagram), ("X", do_x)] if v
+                           ("Instagram", do_instagram), ("X", do_x),
+                           ("TikTok (borrador)", do_tiktok)] if v
         )
         self.log(f" Publicando en: {platforms_str}")
         self.btn_publish.setEnabled(False)
@@ -1630,6 +1633,10 @@ Respond ONLY with valid JSON."""
         for _meta in (_youtube_meta, _facebook_meta, _instagram_meta):
             _meta['music_attribution'] = _music_attribution or ''
         _x_meta = instagram_meta or facebook_meta or youtube_meta or {}
+        # TikTok parte del texto de Instagram (vertical, con hashtags): tiktok_uploader lo
+        # pule con facebook_metadata y le pone la marca de la cuenta real de TikTok.
+        _tiktok_meta = dict(_instagram_meta)
+        _tiktok_meta['upload_channel'] = upload_channel
         _thumbnail_path = getattr(self, 'selected_thumbnail_path', None)
         if _thumbnail_path and os.path.exists(_thumbnail_path):
             self.log(f" Miniatura a publicar: {os.path.basename(_thumbnail_path)}")
@@ -1675,6 +1682,7 @@ Respond ONLY with valid JSON."""
                     ("facebook_metadata.json", _facebook_meta),
                     ("instagram_metadata.json", _instagram_meta),
                     ("x_metadata.json", _x_meta),
+                    ("tiktok_metadata.json", _tiktok_meta),
                 ]:
                     with open(staging / fname, "w", encoding="utf-8") as f:
                         json.dump(data, f, ensure_ascii=False, indent=2)
@@ -1761,6 +1769,31 @@ Respond ONLY with valid JSON."""
                         # tumbar las publicaciones que ya salieron bien.
                         self.log(f"️ X error: {x_err}")
                         results['x'] = None
+                # Ultimo a proposito: la primera vez abre el navegador para conectar la
+                # cuenta y espera hasta 5 min; asi no demora a las demas redes.
+                if do_tiktok:
+                    self.log(" Enviando a TikTok (borrador a tu bandeja)...")
+                    try:
+                        from facebook_metadata import research_for_next_platform
+                        _tt_research = research_for_next_platform(results.get('youtube'), results.get('facebook'))
+                        if _tt_research:
+                            _tiktok_meta['research'] = _tt_research
+                            with open(staging / "tiktok_metadata.json", "w", encoding="utf-8") as f:
+                                json.dump(_tiktok_meta, f, ensure_ascii=False, indent=2)
+                    except Exception as tt_seo_err:
+                        self.log(f"   TikTok: no se pudo reusar la investigacion ({tt_seo_err})")
+                    try:
+                        from tiktok_uploader import upload_from_metadata as _tt_up
+                        from upload_progress import make_byte_progress_reporter
+                        _tt_notify = self._publish_log_signal.emit
+                        results['tiktok'] = _tt_up(
+                            output_dir=str(staging),
+                            on_progress=make_byte_progress_reporter("   TikTok: subiendo", _tt_notify),
+                            on_status=lambda msg: _tt_notify(f"   TikTok: {msg}"),
+                        )
+                    except Exception as tt_err:
+                        self.log(f"⚠ TikTok error: {tt_err}")
+                        results['tiktok'] = None
             except Exception as e:
                 self.log(f" Error en publicación: {e}")
                 import traceback
@@ -1978,7 +2011,16 @@ Respond ONLY with valid JSON."""
         except Exception as exc:
             self.log(f" No se pudo registrar la publicacion en el proyecto: {exc}")
         for platform, result in results.items():
-            if result:
+            if result and platform == 'tiktok':
+                # No es una publicacion: el video espera en la bandeja de TikTok.
+                cuenta = f" ({result['account']})" if result.get('account') else ''
+                self.log(f" TikTok: borrador en tu bandeja{cuenta}. Terminalo en la app y publicalo.")
+                if result.get('telegram_sent'):
+                    self.log("   Titulo y descripcion enviados por Telegram.")
+                else:
+                    self.log(f"   ATENCION: no llegaron por Telegram ({result.get('telegram_error')}). "
+                             f"Titulo: {result.get('title_sent')} | Descripcion: {result.get('description_sent')}")
+            elif result:
                 url = result.get('url') or result.get('permalink_url') or ''
                 self.log(f" {platform.capitalize()} publicado{': ' + url if url else '.'}")
                 if result.get('thumbnail_error'):
@@ -1987,7 +2029,7 @@ Respond ONLY with valid JSON."""
                     self.log(f"   ATENCION: la miniatura NO se puso ({result['thumbnail_error']}). "
                              f"Se puede subir a mano en {donde}.")
             else:
-                self.log(f"️ {platform.capitalize()} falló.")
+                self.log(f"️ {'TikTok' if platform == 'tiktok' else platform.capitalize()} falló.")
 
     def _on_download_error(self, error):
         """MÃ©todo stub para seÃ±al _download_error_signal (no se usa actualmente en AutoVideoStudioTab)"""
@@ -2943,8 +2985,15 @@ Respond ONLY with valid JSON."""
             "Publica el video en X (Twitter) con las credenciales TWITTER_* del .env.\n"
             "Verificalas antes con: .venv\\Scripts\\python.exe x_video_uploader.py --check"
         )
+        self.chk_publish_tiktok = QCheckBox("TikTok")
+        self.chk_publish_tiktok.setToolTip(
+            "NO publica: deja el video como borrador en tu bandeja de TikTok y te manda\n"
+            "el titulo y la descripcion por Telegram para pegarlos al terminarlo en la app.\n"
+            "Primera vez: .venv\\Scripts\\python.exe tiktok_uploader.py --auth\n"
+            "Verificar:   .venv\\Scripts\\python.exe tiktok_uploader.py --check"
+        )
         for chk in (self.chk_publish_youtube, self.chk_publish_facebook,
-                    self.chk_publish_instagram, self.chk_publish_x):
+                    self.chk_publish_instagram, self.chk_publish_x, self.chk_publish_tiktok):
             chk.setEnabled(True)
             chk.setStyleSheet("font-size: 11px;")
             publish_checks_layout.addWidget(chk)

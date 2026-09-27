@@ -34,7 +34,9 @@
 - **Secretos** en `.env` (gitignored). Claves relevantes: `GROQ_API_KEY` (guiones),
   `FAL_KEY` (imágenes flux), `STABILITY_API_KEY`, `GOOGLE_API_KEY` (YouTube Data API,
   lectura de canales), credenciales OAuth en `token.json` (subida/edición YouTube),
-  `WHISPER_REMOTE_*` (subtítulos word-level via VPS). Si falta una, el paso degrada
+  `WHISPER_REMOTE_*` (subtítulos word-level via VPS), `TIKTOK_CLIENT_KEY`/`TIKTOK_CLIENT_SECRET`
+  (app de TikTok en sandbox; permiso en `token_tiktok.json`) y `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID`
+  (textos del borrador de TikTok al celular). Si falta una, el paso degrada
   o falla con log claro. **Nunca** escribas secretos en archivos versionados.
 - **Subtítulos word-level (hormozi)** usan Whisper en un VPS via túnel SSH
   (`start_whisper_tunnel.bat`). Si el túnel está caído, cae a timing por segmento
@@ -140,6 +142,10 @@ obligatorio con número/fecha en el cap. 1) → prompts visuales → TTS → sto
   ```
 - `is_short` se detecta **solo** (por metadata o por el video: vertical y ≤180s). Los
   documentales 16:9 ya NO se suben como Shorts. No lo fuerces.
+- **TikTok no publica:** `tiktok_uploader.upload_from_metadata` deja un **borrador** en la bandeja
+  de TikTok y manda título y descripción por Telegram (`telegram_notify`); el usuario lo termina
+  y publica desde la app. Es la única vía oficial sin auditoría (ver Changelog 2026-09-26).
+  Videos de hasta 10 min: los documentales largos no entran.
 - Editar metadata de un video ya subido = modificar contenido público → **confirmá primero**.
 - **Dónde está el video (desde 2026-09-15):** cada render existe UNA sola vez, en
   `auto_videos/output/<plataforma>_<fecha>_<tema>.mp4` (Drive). La carpeta del proyecto/draft
@@ -253,6 +259,8 @@ concreta + sujeto nombrado**, duración corta. Ej: "72 Seconds: The Wow! Signal"
 | `video_opening.py` | Arranque del video: sin placa, voz en 0 s, acercamiento, primer plano ≥1.8 s y texto de gancho (ASS) |
 | `thumbnail_typography.py` + `gemini_vision.py` | Plan tipográfico medido (tamaño, peso, color, contorno, zona) y revisión con visión de la miniatura elegida |
 | `facebook_metadata.py` | Título, arranque de la descripción y hashtags de Facebook e Instagram con la investigación de YouTube |
+| `tiktok_uploader.py` | Borrador a la bandeja de TikTok (sandbox, `video.upload`); `--auth` una vez, `--check`, `--upload` |
+| `telegram_notify.py` | Título y descripción del borrador de TikTok al celular, copiables con un toque; `--setup`, `--test` |
 | `build_derinkuyu_long.py` | Ejemplo one-off de documental (referencia; hardcodeado) |
 
 ---
@@ -274,6 +282,27 @@ concreta + sujeto nombrado**, duración corta. Ej: "72 Seconds: The Wow! Signal"
 
 ## Changelog
 
+- **2026-09-26** — **TikTok: borrador en la bandeja y el texto por Telegram.**
+  - **Por qué borrador:** publicar en público por API exige la auditoría de TikTok, y sus reglas
+    rechazan las herramientas para subir a las cuentas propias. Sin auditoría, la publicación directa
+    sale "Solo yo" y exige la cuenta en privado. El modo Upload (`video.upload`) anda en sandbox sin
+    auditoría: el video llega a la bandeja y se termina en la app. Límite: 5 borradores sin publicar
+    por día.
+  - **`tiktok_uploader.py`:** login de escritorio con PKCE (SHA256 en **hex**, no base64url como Google),
+    permiso en `token_tiktok.json` (se renueva solo; el de renovación dura 365 días), subida por trozos
+    (`video_size // chunk_size`, el último se lleva el resto) y espera de `SEND_TO_USER_INBOX`. Antes de
+    gastar un borrador chequea con ffprobe: ≤10 min, 23–60 fps, 360–4096 px. El texto sale del motor de
+    Instagram (`prepare_instagram_metadata`) con la marca de la cuenta real de TikTok y la atribución
+    de la música (`DESCRIPTION_LIMITS["tiktok"]`).
+  - **`telegram_notify.py`:** el borrador de video no acepta texto (solo los de fotos), así que el
+    título y la descripción llegan por Telegram, cada uno copiable con un toque. Si Telegram falla, el
+    borrador queda igual y el texto va al log del Studio.
+  - **Studio:** casilla **TikTok**, que corre última porque la primera vez abre el navegador. Queda en
+    `publish_results.tiktok` con el `publish_id` y `status: draft`. Setup: `tiktok_uploader.py --auth` /
+    `--check` y `telegram_notify.py --setup` / `--test`. Guardas: `test_tiktok_uploader.py` (42),
+    `test_telegram_notify.py` (14).
+  - **`--list`:** los videos públicos de la cuenta (`/v2/video/list/`, permiso `video.list`: en el sandbox,
+    Scopes → Add scopes; no es un producto aparte). Sirve para saber qué shorts ya están en TikTok.
 - **2026-09-25d** — **El título del video también se verifica, y los gentilicios sirven de gancho.**
   - **Título:** Cannae quedó con el título "86,000 Dead" mientras el guion corregido decía que 86.000
     pelearon. Ahora `fact_check_scenes(title=...)` juzga el título como un ítem más ("VIDEO TITLE") y lo

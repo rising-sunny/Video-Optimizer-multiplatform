@@ -103,6 +103,9 @@ WHISPER_REMOTE_STRICT=1
 
 > El `WHISPER_REMOTE_TOKEN` es secreto: no lo pongas en git ni en docs. Vive en el
 > `.env` de la PC principal y en el VPS (`/opt/whisper-svc/.env`).
+> Para los borradores de TikTok también hacen falta `TIKTOK_CLIENT_KEY`,
+> `TIKTOK_CLIENT_SECRET`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` y `token_tiktok.json`
+> (o reconectar con `.venv\Scripts\python.exe tiktok_uploader.py --auth`).
 
 ---
 
