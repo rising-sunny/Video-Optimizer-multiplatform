@@ -478,15 +478,20 @@ def list_public_videos(token: Dict[str, Any], http=None, max_pages: int = 100) -
 def plan_chunks(video_size: int, chunk_size: int = CHUNK_SIZE) -> Tuple[int, int]:
     """(chunk_size, total_chunk_count) con las reglas de TikTok.
 
-    - Menos de 5 MB, o hasta un trozo: el archivo entero en un solo pedazo.
+    - Si no llega a DOS trozos, va entero: un solo trozo con chunk_size = video_size.
+      Petra (2026-09-27, 20.885.618 bytes): 20,9 // 10,5 MiB = 1 y se declaro
+      chunk_size 10 MiB con un unico trozo de 20,9 MB; TikTok contesto invalid_params
+      "The chunk size is invalid". Con un trozo, TikTok exige que sea el archivo entero.
     - Si no, trozos de 5 a 64 MB; la cantidad es video_size // chunk_size (redondeo para
       abajo) y el ultimo trozo se lleva el resto (puede pasar de chunk_size, hasta 128 MB).
     """
     if video_size <= 0:
         raise ValueError("el video esta vacio")
     chunk = max(MIN_CHUNK, min(MAX_CHUNK, int(chunk_size)))
-    if video_size <= chunk:
-        return video_size, 1
+    if video_size // chunk < 2:
+        if video_size <= MAX_CHUNK:
+            return video_size, 1
+        chunk = min(MAX_CHUNK, video_size // 2)     # no entra entero: dos trozos
     return chunk, video_size // chunk
 
 

@@ -230,8 +230,22 @@ class Trozos(unittest.TestCase):
     def test_hasta_un_trozo_va_entero(self):
         self.assertEqual(tu.plan_chunks(7 * MB), (7 * MB, 1))
 
+    def test_el_short_de_petra_va_entero(self):
+        # 2026-09-27: 20.885.618 bytes con trozos de 10 MiB daba (10 MiB, 1) y TikTok
+        # contesto "The chunk size is invalid". Un solo trozo = el archivo entero.
+        self.assertEqual(tu.plan_chunks(20_885_618), (20_885_618, 1))
+
+    def test_entre_uno_y_dos_trozos_va_entero(self):
+        for size in (10 * MB + 1, 15 * MB, 20 * MB - 1):
+            self.assertEqual(tu.plan_chunks(size), (size, 1), size)
+
+    def test_si_no_entra_entero_van_al_menos_dos_trozos(self):
+        chunk, total = tu.plan_chunks(100 * MB, chunk_size=64 * MB)
+        self.assertEqual(total, 2)
+        self.assertLessEqual(chunk, tu.MAX_CHUNK)
+
     def test_nunca_pasa_los_limites_y_cubre_todos_los_bytes(self):
-        for size in (5 * MB, 10 * MB + 1, 25 * MB, 95 * MB + 7, 700 * MB, 4 * 1024 * MB):
+        for size in (5 * MB, 10 * MB + 1, 20_885_618, 25 * MB, 95 * MB + 7, 700 * MB, 4 * 1024 * MB):
             chunk, total = tu.plan_chunks(size)
             rangos = tu.chunk_ranges(size, chunk, total)
             self.assertEqual(rangos[0][0], 0)
@@ -241,6 +255,9 @@ class Trozos(unittest.TestCase):
             if total > 1:
                 self.assertTrue(tu.MIN_CHUNK <= chunk <= tu.MAX_CHUNK)
                 self.assertLessEqual(rangos[-1][1] - rangos[-1][0] + 1, 128 * MB)
+            else:
+                self.assertEqual(chunk, size, "un solo trozo tiene que ser el archivo entero")
+                self.assertLessEqual(size, tu.MAX_CHUNK)
             self.assertLessEqual(total, 1000)
 
 
