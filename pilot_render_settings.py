@@ -10,6 +10,7 @@ def pilot_render_settings(config, profile, root):
         'add_overlays': config.get('overlays_enabled', True),
         'apply_cinematic': config.get('cinematic_enabled', False),
         'cinematic_preset': str(config.get('cinematic_preset') or 'auto').lower(),
+        'cinematic_intensity': str(config.get('cinematic_intensity') or 'auto').lower(),
         'transition_type': config.get('transition_type') or profile.get('transition_type', 'Fade Smooth'),
         'transition_duration': config.get('transition_duration', profile.get('transition_duration', 0.3)),
         'enable_transition_sfx': config.get('transition_sfx_enabled', True),

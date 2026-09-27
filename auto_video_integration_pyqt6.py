@@ -528,6 +528,10 @@ class AutoVideoStudioTab(QWidget):
             self.cinematic_preset_combo.currentIndexChanged.connect(
                 lambda: self._trigger_config_auto_save("cambio de preset cinematogrÃ¡fico"))
 
+        if hasattr(self, 'cinematic_intensity_combo'):
+            self.cinematic_intensity_combo.currentIndexChanged.connect(
+                lambda: self._trigger_config_auto_save("cambio de intensidad cinematografica"))
+
         if hasattr(self, 'transition_type_combo'):
             self.transition_type_combo.currentIndexChanged.connect(
                 lambda: self._trigger_config_auto_save("cambio de tipo de transiciÃ³n"))
@@ -2694,6 +2698,21 @@ Respond ONLY with valid JSON."""
         )
         self.cinematic_preset_combo.setMaximumWidth(250)  # Limitar ancho
         cinematic_layout.addWidget(self.cinematic_preset_combo)
+
+        cinematic_layout.addWidget(QLabel("Nivel:"))
+        self.cinematic_intensity_combo = QComboBox()
+        self.cinematic_intensity_combo.addItem("Automatico", "auto")
+        self.cinematic_intensity_combo.addItem("Sutil", "subtle")
+        self.cinematic_intensity_combo.addItem("Cinematografico", "cinematic")
+        self.cinematic_intensity_combo.addItem("Epico", "epic")
+        self.cinematic_intensity_combo.setMaximumWidth(170)
+        self.cinematic_intensity_combo.setEnabled(self.cinematic_check.isChecked())
+        self.cinematic_intensity_combo.setToolTip(
+            "Controla cuantos momentos destacados reciben camara, atmosfera, "
+            "iluminacion, lente y acentos sonoros de alto impacto."
+        )
+        self.cinematic_check.toggled.connect(self.cinematic_intensity_combo.setEnabled)
+        cinematic_layout.addWidget(self.cinematic_intensity_combo)
 
         cinematic_layout.addStretch()
 
@@ -5823,6 +5842,20 @@ Respond ONLY with valid JSON."""
         self._storyboard_just_generated = True
         if isinstance(result, dict) and not result.get('generated_at'):
             result['generated_at'] = time.time()
+        if isinstance(result, dict) and result.get('segments'):
+            try:
+                from cinematic_director import direct_storyboard
+                level = (
+                    self.cinematic_intensity_combo.currentData()
+                    if hasattr(self, 'cinematic_intensity_combo') else 'auto'
+                )
+                preset = (
+                    self.cinematic_preset_combo.currentText().lower()
+                    if hasattr(self, 'cinematic_preset_combo') else 'auto'
+                )
+                direct_storyboard(result, level=level, preset=preset)
+            except Exception as direction_error:
+                self.log(f" [WARN] No se pudo preparar la direccion cinematografica: {direction_error}")
         self.last_storyboard_data = result
         segment_count = len((result or {}).get('segments') or [])
         print(f"[Storyboard] Aceptado en memoria: {segment_count} segmento(s)")
@@ -6308,6 +6341,8 @@ Respond ONLY with valid JSON."""
             # Resetear preset cinematogrÃ¡fico a "ðŸŽ¥ Auto-Detect (Inteligente)" (primer item)
             if hasattr(self, 'cinematic_preset_combo'):
                 self.cinematic_preset_combo.setCurrentIndex(0)
+            if hasattr(self, 'cinematic_intensity_combo'):
+                self.cinematic_intensity_combo.setCurrentIndex(0)
             
             # Resetear tipo de transiciÃ³n a "ðŸŒ… Fade Suave" (Ã­ndice 1, que es el segundo item)
             if hasattr(self, 'transition_type_combo'):

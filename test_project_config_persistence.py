@@ -35,6 +35,7 @@ CLAVES_ESPERADAS = (
     "image_provider",
     "cinematic_enabled",
     "cinematic_preset",
+    "cinematic_intensity",
     "subtitle_style",
     "subtitles_enabled",
     "style",
@@ -63,7 +64,8 @@ class ElGuardMiraElObjetoCorrecto(unittest.TestCase):
 
     def test_los_widgets_conocidos_se_leen_de_studio_tab(self):
         for widget in ("image_provider_combo", "cinematic_check",
-                       "cinematic_preset_combo", "subtitle_style_combo"):
+                       "cinematic_preset_combo", "cinematic_intensity_combo",
+                       "subtitle_style_combo"):
             usos = re.findall(r"hasattr\(\s*\n?\s*(self(?:\.studio_tab)?),\s*'%s'\)" % widget,
                               FUENTE)
             self.assertTrue(usos, "no se comprueba %s en ningun lado" % widget)

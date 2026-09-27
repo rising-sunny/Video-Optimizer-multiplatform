@@ -293,7 +293,7 @@ class ContextualVideoAssembler:
             # Fallback: resize directo (puede distorsionar ligeramente)
             return clip.resize(newsize=target_resolution)
 
-    def assemble_video_from_prompts(self, prompts_data, audio_path, target_resolution, images_dir, apply_ken_burns=True, zoom_intensity=0.02, apply_cinematic=False, cinematic_preset='auto', transition_type=' Fade Suave', transition_duration=0.5, segments=None, extra_duration_override=None):
+    def assemble_video_from_prompts(self, prompts_data, audio_path, target_resolution, images_dir, apply_ken_burns=True, zoom_intensity=0.02, apply_cinematic=False, cinematic_preset='auto', cinematic_intensity='auto', transition_type=' Fade Suave', transition_duration=0.5, segments=None, extra_duration_override=None):
         if not MOVIEPY_AVAILABLE: 
             return None, None
             
@@ -347,7 +347,10 @@ class ContextualVideoAssembler:
         # Inicializar motor de efectos cinematográficos
         cinematic_engine = None
         if apply_cinematic and CINEMATIC_AVAILABLE and segments:
-            cinematic_engine = CinematicEffectsEngine(video_size=target_resolution)
+            cinematic_engine = CinematicEffectsEngine(
+                video_size=target_resolution,
+                level=cinematic_intensity,
+            )
             print(f"\n Efectos cinematográficos activados: {cinematic_preset}")
         
         print("\n" + "=" * 70)
@@ -633,7 +636,8 @@ class ContextualVideoAssembler:
                                 segment_text=segment_text,
                                 duration=duration,
                                 auto_detect=True,
-                                force_filter=filter_for_preset(cinematic_preset)
+                                force_filter=filter_for_preset(cinematic_preset),
+                                cinematic_plan=segments[i].get('cinematic_plan'),
                             )
                             cinematic_applied += 1
                         except Exception as fx_error:

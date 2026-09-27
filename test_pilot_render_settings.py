@@ -13,11 +13,13 @@ class PilotRenderSettingsTests(unittest.TestCase):
             config = {'selected_music_path': 'music.mp3', 'music_enabled': False,
                       'transition_type': 'Film Burn (Overlay)', 'transition_duration': .25,
                       'cinematic_enabled': True, 'cinematic_preset': 'Noir (Dramatico)',
+                      'cinematic_intensity': 'epic',
                       'subtitles_enabled': False, 'transition_sfx_enabled': False}
             settings = pilot_render_settings(config, {'transition_type': 'Fade Smooth'}, root)
             self.assertEqual(settings['manual_bgm_path'], str((root / 'music.mp3').resolve()))
             self.assertTrue(settings['apply_cinematic'])
             self.assertEqual(settings['cinematic_preset'], 'noir (dramatico)')
+            self.assertEqual(settings['cinematic_intensity'], 'epic')
             from daily_short_pipeline import assemble_video
             generator = Mock()
             generator.assemble_video_from_storyboard.return_value = None

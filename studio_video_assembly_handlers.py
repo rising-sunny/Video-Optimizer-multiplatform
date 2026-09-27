@@ -953,6 +953,10 @@ class StudioVideoAssemblyHandlers:
             visual_mode=visual_mode,
             apply_cinematic=self.studio_tab.cinematic_check.isChecked(),
             cinematic_preset=self.studio_tab.cinematic_preset_combo.currentText().lower(),
+            cinematic_intensity=(
+                self.studio_tab.cinematic_intensity_combo.currentData()
+                if hasattr(self.studio_tab, 'cinematic_intensity_combo') else 'auto'
+            ),
             transition_type=self.studio_tab.transition_type_combo.currentText(),
             transition_duration=self.studio_tab.transition_duration_spin.value(),
             enable_transition_sfx=self.studio_tab.is_transition_sfx_enabled() if hasattr(self.studio_tab, "is_transition_sfx_enabled") else True,

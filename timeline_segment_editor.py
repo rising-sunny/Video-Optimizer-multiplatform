@@ -7,7 +7,7 @@ ExtraÃ­do de timeline_editor_widget.py para mejorar la organizaciÃ³n del cÃ
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTextEdit, QScrollArea, QGroupBox, QMessageBox, QLineEdit, QDoubleSpinBox,
-    QCheckBox
+    QCheckBox, QComboBox
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer
 
@@ -45,7 +45,34 @@ class SegmentEditor(QWidget):
             'overlay_tag': self.overlay_edit.text().strip() or 'none',
             'assigned_filename': self.filename_edit.text().strip(),
             'hook_overlay': self._hook_snapshot(),
+            'cinematic_plan': self._cinematic_plan_snapshot(),
         }
+
+    def _cinematic_plan_snapshot(self):
+        current = (self.current_segment or {}).get('cinematic_plan') or {}
+        locked = bool(self.cinematic_lock_check.isChecked())
+        if not current and not locked:
+            return None
+        plan = dict(current)
+        plan.update({
+            'version': plan.get('version') or 'cinematic_director_v1',
+            'camera': self.cinematic_camera_combo.currentData(),
+            'atmosphere': self.cinematic_atmosphere_combo.currentData(),
+            'lighting': self.cinematic_lighting_combo.currentData(),
+            'lens': self.cinematic_lens_combo.currentData(),
+            'intensity': round(float(self.cinematic_intensity_spin.value()), 2),
+            'locked': locked,
+        })
+        if locked:
+            plan['role'] = plan.get('role') or 'manual'
+        return plan
+
+    def _cinematic_control_changed(self, *_args):
+        if self.current_segment and not self.cinematic_lock_check.isChecked():
+            self.cinematic_lock_check.blockSignals(True)
+            self.cinematic_lock_check.setChecked(True)
+            self.cinematic_lock_check.blockSignals(False)
+        self._trigger_auto_save()
 
     # --- Texto de gancho (video_opening): solo en la escena 1 -------------------------
     @staticmethod
@@ -99,6 +126,8 @@ class SegmentEditor(QWidget):
         if str(self.current_segment.get('overlay_tag', 'none') or 'none') != snap['overlay_tag']:
             return True
         if str(self.current_segment.get('assigned_filename', '') or '') != snap['assigned_filename']:
+            return True
+        if (self.current_segment.get('cinematic_plan') or None) != snap['cinematic_plan']:
             return True
         if self._hook_changed(snap['hook_overlay']):
             return True
@@ -221,6 +250,90 @@ class SegmentEditor(QWidget):
         motion_layout.addWidget(motion_hint)
 
         content_layout.addWidget(motion_group)
+
+        cinematic_group = QGroupBox("Direccion cinematografica")
+        cinematic_layout = QVBoxLayout(cinematic_group)
+        cinematic_row = QHBoxLayout()
+
+        self.cinematic_camera_combo = QComboBox()
+        for label, value in (
+            ("Push con profundidad", "depth_push"),
+            ("Zoom de impacto", "crash_zoom"),
+            ("Descenso cartografico", "map_dive"),
+            ("Revelado macro", "macro_reveal"),
+            ("Revelado lateral", "lateral_reveal"),
+            ("Deriva lenta", "slow_drift"),
+            ("Paneo izquierda", "drift_left"),
+            ("Paneo derecha", "drift_right"),
+            ("Retirada", "pull_back"),
+        ):
+            self.cinematic_camera_combo.addItem(label, value)
+        cinematic_row.addWidget(QLabel("Camara:"))
+        cinematic_row.addWidget(self.cinematic_camera_combo)
+
+        self.cinematic_atmosphere_combo = QComboBox()
+        for label, value in (
+            ("Sin atmosfera", "none"),
+            ("Grano fino", "fine_grain"),
+            ("Polvo", "dust"),
+            ("Niebla", "mist"),
+            ("Brasas", "embers"),
+        ):
+            self.cinematic_atmosphere_combo.addItem(label, value)
+        cinematic_row.addWidget(QLabel("Atmosfera:"))
+        cinematic_row.addWidget(self.cinematic_atmosphere_combo)
+        cinematic_layout.addLayout(cinematic_row)
+
+        cinematic_row_2 = QHBoxLayout()
+        self.cinematic_lighting_combo = QComboBox()
+        for label, value in (
+            ("Sin pulso", "none"),
+            ("Pulso suave", "soft_pulse"),
+            ("Pulso de revelado", "reveal_pulse"),
+            ("Parpadeo de fuego", "fire_flicker"),
+        ):
+            self.cinematic_lighting_combo.addItem(label, value)
+        cinematic_row_2.addWidget(QLabel("Luz:"))
+        cinematic_row_2.addWidget(self.cinematic_lighting_combo)
+
+        self.cinematic_lens_combo = QComboBox()
+        for label, value in (
+            ("Limpia", "clean"),
+            ("Vineta", "cinematic_vignette"),
+            ("Enfoque dramatico", "focus_reveal"),
+            ("Respiracion de lente", "lens_breathing"),
+        ):
+            self.cinematic_lens_combo.addItem(label, value)
+        cinematic_row_2.addWidget(QLabel("Lente:"))
+        cinematic_row_2.addWidget(self.cinematic_lens_combo)
+        cinematic_layout.addLayout(cinematic_row_2)
+
+        cinematic_row_3 = QHBoxLayout()
+        self.cinematic_intensity_spin = QDoubleSpinBox()
+        self.cinematic_intensity_spin.setRange(0.0, 1.0)
+        self.cinematic_intensity_spin.setSingleStep(0.05)
+        self.cinematic_intensity_spin.setDecimals(2)
+        self.cinematic_intensity_spin.setValue(0.65)
+        cinematic_row_3.addWidget(QLabel("Intensidad:"))
+        cinematic_row_3.addWidget(self.cinematic_intensity_spin)
+
+        self.cinematic_lock_check = QCheckBox("Conservar direccion manual")
+        self.cinematic_lock_check.setToolTip(
+            "Impide que el director automatico reemplace estos valores al exportar."
+        )
+        cinematic_row_3.addWidget(self.cinematic_lock_check)
+        cinematic_row_3.addStretch()
+        cinematic_layout.addLayout(cinematic_row_3)
+        for combo in (
+            self.cinematic_camera_combo,
+            self.cinematic_atmosphere_combo,
+            self.cinematic_lighting_combo,
+            self.cinematic_lens_combo,
+        ):
+            combo.currentIndexChanged.connect(self._cinematic_control_changed)
+        self.cinematic_intensity_spin.valueChanged.connect(self._cinematic_control_changed)
+        self.cinematic_lock_check.stateChanged.connect(self._trigger_auto_save)
+        content_layout.addWidget(cinematic_group)
 
         # SFX
         sfx_group = QGroupBox("Efecto de sonido")
@@ -355,6 +468,13 @@ class SegmentEditor(QWidget):
         self.sfx_edit.blockSignals(True)
         self.overlay_edit.blockSignals(True)
         self.filename_edit.blockSignals(True)
+        cinematic_widgets = (
+            self.cinematic_camera_combo, self.cinematic_atmosphere_combo,
+            self.cinematic_lighting_combo, self.cinematic_lens_combo,
+            self.cinematic_intensity_spin, self.cinematic_lock_check,
+        )
+        for widget in cinematic_widgets:
+            widget.blockSignals(True)
 
         self.start_spin.setValue(segment_data.get('start', 0))
         self.end_spin.setValue(segment_data.get('end', 0))
@@ -364,6 +484,17 @@ class SegmentEditor(QWidget):
         self.sfx_edit.setText(segment_data.get('sfx_tag', 'none'))
         self.overlay_edit.setText(segment_data.get('overlay_tag', 'none'))
         self.filename_edit.setText(segment_data.get('assigned_filename', ''))
+        plan = segment_data.get('cinematic_plan') or {}
+        for combo, key, fallback in (
+            (self.cinematic_camera_combo, 'camera', 'depth_push'),
+            (self.cinematic_atmosphere_combo, 'atmosphere', 'none'),
+            (self.cinematic_lighting_combo, 'lighting', 'none'),
+            (self.cinematic_lens_combo, 'lens', 'clean'),
+        ):
+            index = combo.findData(plan.get(key, fallback))
+            combo.setCurrentIndex(index if index >= 0 else 0)
+        self.cinematic_intensity_spin.setValue(float(plan.get('intensity', 0.65)))
+        self.cinematic_lock_check.setChecked(bool(plan.get('locked', False)))
 
         # Texto de gancho: visible solo en la escena 1.
         es_arranque = self._is_opening_segment(segment_data)
@@ -386,6 +517,8 @@ class SegmentEditor(QWidget):
         self.sfx_edit.blockSignals(False)
         self.overlay_edit.blockSignals(False)
         self.filename_edit.blockSignals(False)
+        for widget in cinematic_widgets:
+            widget.blockSignals(False)
 
         # IMPORTANTE: Habilitar el editor y todos sus controles
         self.setEnabled(True)
@@ -438,6 +571,8 @@ class SegmentEditor(QWidget):
             self.current_segment['sfx_tag'] = snap['sfx_tag']
             self.current_segment['overlay_tag'] = snap['overlay_tag']
             self.current_segment['assigned_filename'] = snap['assigned_filename']
+            if snap['cinematic_plan'] is not None:
+                self.current_segment['cinematic_plan'] = snap['cinematic_plan']
             if snap['hook_overlay'] is not None:
                 previo = self.current_segment.get('hook_overlay') or {}
                 self.current_segment['hook_overlay'] = dict(previo, **snap['hook_overlay'],

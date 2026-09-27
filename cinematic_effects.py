@@ -554,9 +554,27 @@ class CinematicEffectsEngine:
     Motor principal que orquesta todos los efectos cinematográficos.
     """
     
-    def __init__(self, video_size: Tuple[int, int] = (1920, 1080)):
+    def __init__(self, video_size: Tuple[int, int] = (1920, 1080), level: str = "auto"):
         self.video_size = video_size
+        self.level = level
         self.context_detector = ContextDetector()
+
+    @staticmethod
+    def movement_for_plan(plan: Optional[Dict]) -> Optional[MovementType]:
+        """Map the shared direction plan to the closest MoviePy movement."""
+        if not plan:
+            return None
+        return {
+            "slow_drift": MovementType.PAN_RIGHT,
+            "drift_left": MovementType.PAN_LEFT,
+            "drift_right": MovementType.PAN_RIGHT,
+            "depth_push": MovementType.PAN_ZOOM_IN,
+            "macro_reveal": MovementType.ZOOM_OUT,
+            "lateral_reveal": MovementType.PAN_RIGHT,
+            "crash_zoom": MovementType.ZOOM_IN,
+            "map_dive": MovementType.ZOOM_IN,
+            "pull_back": MovementType.ZOOM_OUT,
+        }.get(str(plan.get("camera") or ""))
     
     def apply_effects_to_segment(self,
                                  clip,
@@ -564,7 +582,8 @@ class CinematicEffectsEngine:
                                  duration: float,
                                  auto_detect: bool = True,
                                  force_movement: Optional[MovementType] = None,
-                                 force_filter: Optional[FilterType] = None) -> object:
+                                 force_filter: Optional[FilterType] = None,
+                                 cinematic_plan: Optional[Dict] = None) -> object:
         """
         Aplica efectos cinematográficos a un clip basándose en su contexto.
         
@@ -581,8 +600,11 @@ class CinematicEffectsEngine:
         """
         
         # 1. Determinar movimiento
+        planned_movement = self.movement_for_plan(cinematic_plan)
         if force_movement:
             movement = force_movement
+        elif planned_movement:
+            movement = planned_movement
         elif auto_detect:
             movement = self.context_detector.suggest_movement(segment_text, duration)
         else:
@@ -590,10 +612,12 @@ class CinematicEffectsEngine:
         
         # 2. Aplicar movimiento (Pan & Zoom)
         if movement != MovementType.STATIC:
+            raw_strength = (cinematic_plan or {}).get("intensity", 0.65)
+            plan_strength = float(0.65 if raw_strength is None else raw_strength)
             positions = CameraMovement.calculate_positions(
                 movement,
                 self.video_size,
-                zoom_factor=1.2
+                zoom_factor=1.15 + (0.17 * max(0.0, min(1.0, plan_strength)))
             )
             
             clip = CameraMovement.apply_movement(

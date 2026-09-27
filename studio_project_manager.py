@@ -513,6 +513,8 @@ class StudioProjectManager:
 
                 'cinematic_preset': self.studio_tab.cinematic_preset_combo.currentText() if hasattr(self.studio_tab, 'cinematic_preset_combo') else " Auto-Detect (Inteligente)",
 
+                'cinematic_intensity': self.studio_tab.cinematic_intensity_combo.currentData() if hasattr(self.studio_tab, 'cinematic_intensity_combo') else "auto",
+
                 'transition_type': self.studio_tab.transition_type_combo.currentText() if hasattr(self.studio_tab, 'transition_type_combo') else " Fade Suave",
 
                 'transition_duration': self.studio_tab.transition_duration_spin.value() if hasattr(self.studio_tab, 'transition_duration_spin') else 0.5,
@@ -945,6 +947,10 @@ class StudioProjectManager:
 
                         self.studio_tab, 'cinematic_preset_combo') else " Auto-Detect (Inteligente)"
 
+                    config['cinematic_intensity'] = self.studio_tab.cinematic_intensity_combo.currentData() if hasattr(
+
+                        self.studio_tab, 'cinematic_intensity_combo') else "auto"
+
                     config['transition_type'] = self.studio_tab.transition_type_combo.currentText(
 
                     ) if hasattr(self.studio_tab, 'transition_type_combo') else " Fade Suave"
@@ -1117,6 +1123,7 @@ class StudioProjectManager:
                 'visual_mode': 'static' if (hasattr(self.studio_tab, 'visual_static') and self.studio_tab.visual_static.isChecked()) else 'mixed',
                 'cinematic_enabled': self.studio_tab.cinematic_check.isChecked() if hasattr(self.studio_tab, 'cinematic_check') else True,
                 'cinematic_preset': self.studio_tab.cinematic_preset_combo.currentText() if hasattr(self.studio_tab, 'cinematic_preset_combo') else " Auto-Detect (Inteligente)",
+                'cinematic_intensity': self.studio_tab.cinematic_intensity_combo.currentData() if hasattr(self.studio_tab, 'cinematic_intensity_combo') else "auto",
                 'transition_type': self.studio_tab.transition_type_combo.currentText() if hasattr(self.studio_tab, 'transition_type_combo') else " Fade Suave",
                 'transition_duration': self.studio_tab.transition_duration_spin.value() if hasattr(self.studio_tab, 'transition_duration_spin') else 0.5,
                 'transition_sfx_enabled': self.studio_tab.is_transition_sfx_enabled() if hasattr(self.studio_tab, 'is_transition_sfx_enabled') else True,
@@ -1572,6 +1579,16 @@ class StudioProjectManager:
                     if index >= 0:
                         self.studio_tab.cinematic_preset_combo.setCurrentIndex(index)
                     self.studio_tab.cinematic_preset_combo.setEnabled(self.studio_tab.cinematic_check.isChecked())
+
+                if hasattr(self.studio_tab, 'cinematic_intensity_combo'):
+                    intensity = str(config.get('cinematic_intensity', 'auto') or 'auto')
+                    index = self.studio_tab.cinematic_intensity_combo.findData(intensity)
+                    if index < 0:
+                        index = 0
+                    self.studio_tab.cinematic_intensity_combo.setCurrentIndex(index)
+                    self.studio_tab.cinematic_intensity_combo.setEnabled(
+                        self.studio_tab.cinematic_check.isChecked()
+                    )
 
             if hasattr(self.studio_tab, 'transition_type_combo') and config.get('transition_type'):
                 transition_text = config.get('transition_type')

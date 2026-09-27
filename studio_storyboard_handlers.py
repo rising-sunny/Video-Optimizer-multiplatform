@@ -282,6 +282,22 @@ class StudioStoryboardHandlers:
                 self.studio_tab.log(f" [Arranque] no se pudo aplicar al JSON manual: {exc}")
 
         self.studio_tab.log("\nâœ… PASO 1 COMPLETADO")
+        if isinstance(result, dict) and result.get('segments'):
+            try:
+                from cinematic_director import direct_storyboard
+                level = (
+                    self.studio_tab.cinematic_intensity_combo.currentData()
+                    if hasattr(self.studio_tab, 'cinematic_intensity_combo') else 'auto'
+                )
+                preset = (
+                    self.studio_tab.cinematic_preset_combo.currentText().lower()
+                    if hasattr(self.studio_tab, 'cinematic_preset_combo') else 'auto'
+                )
+                direct_storyboard(result, level=level, preset=preset)
+            except Exception as direction_error:
+                self.studio_tab.log(
+                    f" [WARN] No se pudo preparar la direccion cinematografica: {direction_error}"
+                )
         self.studio_tab.last_storyboard_data = result
         from studio_channel_controls import project_channel_config
         result.setdefault('channel_profile', project_channel_config(self.studio_tab)['channel_profile'])

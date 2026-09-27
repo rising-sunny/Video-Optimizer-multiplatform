@@ -1531,6 +1531,15 @@ Reglas:
 
         if apply_cinematic and CINEMATIC_AVAILABLE:
             try:
+                cinematic_plan = clip_data.get('cinematic_plan')
+                if cinematic_plan:
+                    from cinematic_director import build_ffmpeg_motion_filter, plan_summary
+                    self._record_audio_qa(
+                        'cinematic_plan_%d' % index, plan_summary(cinematic_plan)
+                    )
+                    return build_ffmpeg_motion_filter(
+                        cinematic_plan, n, (width, height)
+                    )
                 from cinematic_effects import CameraMovement, ContextDetector
                 texto = str(clip_data.get('segment_text') or '')
                 movimiento = ContextDetector.suggest_movement(texto, float(duration))
@@ -1560,7 +1569,8 @@ Reglas:
                                 transition_duration=0.5,
                                 enable_transition_sfx=True,
                                 transition_sfx_path=None,
-                                apply_cinematic=False):
+                                apply_cinematic=False,
+                                cinematic_preset='auto'):
         """
         Ensambla video directamente con FFmpeg desde imÃ¡genes y/o videos.
         Mucho mÃ¡s rÃ¡pido y robusto que MoviePy.
@@ -1824,6 +1834,15 @@ Reglas:
                 # Construir filtro de video base - preservar aspect ratio sin crop agresivo
                 vf = (f'scale={width}:{height}:force_original_aspect_ratio=decrease,'
                       f'pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,fps={fps}')
+                cinematic_look = ''
+                if apply_cinematic and item.get('cinematic_plan'):
+                    try:
+                        from cinematic_director import build_ffmpeg_look_filter
+                        cinematic_look = build_ffmpeg_look_filter(
+                            item.get('cinematic_plan'), float(duration), cinematic_preset
+                        )
+                    except Exception as look_exc:
+                        self.log(f"      [WARN] Look cinematografico omitido: {look_exc}")
 
                 # Fade-out del ultimo clip. Se calcula aca pero se agrega DESPUES
                 # del zoompan: en una imagen fija el input tiene un solo cuadro en
@@ -1837,6 +1856,8 @@ Reglas:
                     self.log(f"      ðŸŽ¬ Fade-out de video: {fade_duration:.1f}s al final del Ãºltimo clip")
 
                 if is_video:
+                    if cinematic_look:
+                        vf += f',{cinematic_look}'
                     vf += fade_suffix
                     # Si el video es mÃ¡s corto que el segmento, ralentizarlo para cubrirlo completo
                     # (evita repeticiones visibles por loop).
@@ -1890,7 +1911,10 @@ Reglas:
                         apply_cinematic=apply_cinematic,
                         index=i,
                     )
-                    kb_vf = f"{vf},{motion_vf},fps={fps}{fade_suffix}"
+                    kb_vf = f"{vf},{motion_vf},fps={fps}"
+                    if cinematic_look:
+                        kb_vf += f',{cinematic_look}'
+                    kb_vf += fade_suffix
 
                     # El Film Burn va MEZCLADO sobre el arranque del clip cuando
                     # este inicia una escena nueva. `repeatlast=0` corta el blend
@@ -2403,6 +2427,7 @@ Reglas:
                                        manual_bgm_metadata=None,
                                        assembly_mode='auto', visual_mode='mixed',
                                        apply_cinematic=False, cinematic_preset='auto',
+                                       cinematic_intensity='auto',
                                        transition_type='ðŸŒ… Fade Suave', transition_duration=0.5,
                                        generate_short_teaser=False, use_wikimedia=False,
                                        disable_wikimedia=False, use_real_images=True,
@@ -2522,6 +2547,23 @@ Reglas:
             teaser_thread = threading.Thread(target=generate_teaser, daemon=True)
             teaser_thread.start()
         segments = storyboard_data['segments']
+        if apply_cinematic:
+            try:
+                from cinematic_director import direct_storyboard
+                direction = direct_storyboard(
+                    storyboard_data,
+                    level=cinematic_intensity,
+                    preset=cinematic_preset,
+                )
+                camera_counts = ", ".join(
+                    f"{name}:{count}" for name, count in direction['camera_counts'].items()
+                )
+                self.log(
+                    f"   Director cinematografico: {direction['label']} "
+                    f"({direction['segments']} escenas; {camera_counts})"
+                )
+            except Exception as director_exc:
+                self.log(f"   [WARN] Director cinematografico omitido: {director_exc}")
         # PolÃ­tica YouTube Shorts: evitar pistas Jamendo en shorts >60s para reducir bloqueos/reclamaciones.
         short_duration_hint_sec = 0.0
         try:
@@ -2828,6 +2870,7 @@ Reglas:
                     # Lo usa la ruta FFmpeg para elegir el movimiento de camara
                     # segun el contexto, igual que hace la ruta MoviePy.
                     'segment_text': (seg.get('narration_text') or seg.get('text') or ''),
+                    'cinematic_plan': seg.get('cinematic_plan'),
                 })
             else:
                 self.log(f"      âš ï¸ No se generÃ³ visual para: {fname}")
@@ -2850,7 +2893,9 @@ Reglas:
                 last = _merged[-1]
                 last_tail = last.get('_vsplit_tail', last["filename"])
                 last_vn   = _vsplit_n(last_tail)
-                if last["filename"] == fn:
+                if (last["filename"] == fn
+                        and last.get('cinematic_plan') == _clip.get('cinematic_plan')
+                        and last.get('sfx_path') == _clip.get('sfx_path')):
                     # Misma fuente: acumular duración (p.ej. misma imagen en varios segmentos)
                     last["duration"] += _clip["duration"]
                     continue
@@ -3019,6 +3064,39 @@ Reglas:
             except Exception as e:
                 self._record_audio_qa('sfx_error', str(e))
                 self.log(f"   ⚠️ Error inyectando SFX de transicion: {e}")
+
+        # Los SFX contextuales ya se descargaban por segmento, pero la ruta
+        # rapida de FFmpeg nunca los mezclaba. Se integran en la misma linea de
+        # tiempo de la voz para que lleguen tanto al render directo como al mix
+        # posterior con musica y ducking.
+        if PYDUB_AVAILABLE and _will_use_direct_ffmpeg:
+            contextual_sfx = [
+                clip for clip in generated_clips
+                if clip.get('sfx_path') and os.path.exists(str(clip.get('sfx_path')))
+            ]
+            if contextual_sfx:
+                try:
+                    voice_with_sfx = AudioSegment.from_file(voice_path).set_sample_width(4)
+                    mixed_count = 0
+                    for clip in contextual_sfx:
+                        effect = AudioSegment.from_file(str(clip['sfx_path'])).set_sample_width(4)
+                        try:
+                            if effect.max_dBFS > -90 and voice_with_sfx.max_dBFS > -90:
+                                target_peak = voice_with_sfx.max_dBFS - 16.0
+                                effect = effect.apply_gain(target_peak - effect.max_dBFS)
+                        except Exception:
+                            effect = effect - 16
+                        position_ms = max(0, int(float(clip.get('timestamp_start', 0) or 0) * 1000))
+                        voice_with_sfx = voice_with_sfx.overlay(effect, position=position_ms)
+                        mixed_count += 1
+                    contextual_path = str(self.generated_media_dir / "voice_contextual_sfx.wav")
+                    voice_with_sfx.export(contextual_path, format="wav")
+                    voice_path = contextual_path
+                    self._record_audio_qa('contextual_sfx_injected', mixed_count)
+                    self.log(f"   [OK] {mixed_count} SFX contextuales sincronizados con el timeline.")
+                except Exception as contextual_exc:
+                    self._record_audio_qa('contextual_sfx_error', str(contextual_exc))
+                    self.log(f"   [WARN] No se pudieron mezclar los SFX contextuales: {contextual_exc}")
 
         audio_has_outro = False  # Flag para indicar que el audio ya tiene el outro integrado
 
@@ -3250,6 +3328,7 @@ Reglas:
                 enable_transition_sfx=enable_transition_sfx,
                 transition_sfx_path=transition_sfx_path,
                 apply_cinematic=apply_cinematic,
+                cinematic_preset=cinematic_preset,
             )
 
             if direct_ok:
@@ -3370,6 +3449,7 @@ Reglas:
         final, audio = self.contextual_assembler.assemble_video_from_prompts(
             generated_clips, final_audio_path, res, self.generated_media_dir,
             apply_cinematic=apply_cinematic, cinematic_preset=cinematic_preset,
+            cinematic_intensity=cinematic_intensity,
             transition_type=transition_type, transition_duration=transition_duration,
             segments=storyboard_data['segments'],
             extra_duration_override=0 if audio_has_outro else None
