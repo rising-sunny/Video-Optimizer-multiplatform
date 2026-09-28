@@ -199,6 +199,21 @@ class EffectsTest(unittest.TestCase):
         _, drop = ce.music_analysis(self.tmp / "drop.wav", 36)
         self.assertAlmostEqual(drop, 26, delta=0.5)
 
+    def test_una_pista_larga_arranca_donde_su_caida_cae_en_el_quiebre(self):
+        if importlib.util.find_spec("librosa") is None:
+            self.skipTest("sin librosa")
+        from scipy.io import wavfile
+        sr = 22050
+        t = np.arange(120 * sr) / sr
+        amp = np.where(t < 5, 0.01, np.where(t < 70, 0.15, 0.8))   # intro casi muda, cuerpo y caida a los 70 s
+        wavfile.write(self.tmp / "long.wav", sr, (np.sin(2 * np.pi * 110 * t) * amp * 32767).astype(np.int16))
+        start, drop = ce.find_music_start(self.tmp / "long.wav", 30)
+        self.assertAlmostEqual(drop, 70, delta=0.5)
+        self.assertAlmostEqual(start, 70 - ce.DROP_AT * 30, delta=0.5)
+        self.assertAlmostEqual(ce.music_analysis(self.tmp / "long.wav", 30, start)[1], ce.DROP_AT * 30, delta=0.5)
+        inputs, _ = ce._audio_graph([], self.tmp / "long.wav", None, 30, 1, music_start=start)
+        self.assertEqual(inputs[:2], ["-ss", f"{start:.3f}"])
+
     def test_la_secuencia_trae_los_efectos(self):
         p = ce.normalize_project(SCRIPT, self.tmp, 40)
         seq = ce.auto_sequence(p, drop=33.0)
@@ -212,6 +227,14 @@ class EffectsTest(unittest.TestCase):
         shots, _ = ce.build_shots(p, seq)
         self.assertEqual(sum(s.frames for s in shots), 40 * ce.FPS)
         self.assertTrue(any(s.text_layer is not None for s in shots))
+
+    def test_sin_frases_la_subida_es_de_imagenes(self):
+        p = ce.normalize_project({"media": SCRIPT["images"], "cards": {"opening": "Who am I?"}}, self.tmp, 30)
+        seq = ce.auto_sequence(p)
+        climax = sum(s["seconds"] for s in seq if s["act"] == "climax")
+        self.assertAlmostEqual(climax, (ce.CLIMAX_END - ce.RISE_END) * 30, delta=0.5)   # no se come la subida
+        self.assertGreaterEqual(sum(1 for s in seq if s["act"] == "rise" and s["kind"] == "media"), 3)
+        self.assertFalse([s for s in seq if s["kind"] == "card" and not s.get("text") and s["act"] == "rise"])
 
     def test_sin_efectos_vuelve_al_arco_simple(self):
         p = ce.normalize_project(SCRIPT, self.tmp, 30)

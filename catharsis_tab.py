@@ -53,7 +53,7 @@ def _pixmap(img) -> QPixmap:
 
 
 class _SequenceWorker(QThread):
-    done = pyqtSignal(list, int, object)
+    done = pyqtSignal(list, int, object, float)
     failed = pyqtSignal(str)
 
     def __init__(self, project):
@@ -62,10 +62,13 @@ class _SequenceWorker(QThread):
 
     def run(self):
         try:
-            music = self.project.get("music")
-            beats, drop = ce.music_analysis(music, self.project["seconds"]) if music else ([], None)
+            music, T = self.project.get("music"), self.project["seconds"]
+            start = float(self.project.get("music_start") or 0.0)
+            if music and self.project.get("music_auto", True):
+                start = ce.find_music_start(music, T)[0]
+            beats, drop = ce.music_analysis(music, T, start) if music else ([], None)
             seq = ce.auto_sequence(self.project, beats, seed=int(time.time()) % 1000, drop=drop)
-            self.done.emit(seq, len(beats), drop if self.project["style"].get("drop") else None)
+            self.done.emit(seq, len(beats), drop if self.project["style"].get("drop") else None, start)
         except Exception as exc:
             self.failed.emit(f"{type(exc).__name__}: {exc}")
 
@@ -90,6 +93,7 @@ class _RenderWorker(QThread):
             ce.render(shots, self.out, music=self.project.get("music") or None, break_span=marks["break"],
                       vignette=style.get("vignette", True), preview=self.preview, sfx=style.get("sfx", True),
                       loop=style.get("loop", True), guides=self.preview and self.guides,
+                      music_start=float(self.project.get("music_start") or 0.0),
                       progress=lambda n, total: self.progress.emit(int(100 * n / max(total, 1))))
             self.done.emit(str(self.out))
         except Exception as exc:
@@ -223,7 +227,8 @@ class CatharsisTab(QWidget):
 
     def _music_group(self):
         box = QGroupBox("Musica")
-        row = QHBoxLayout(box)
+        v = QVBoxLayout(box)
+        row = QHBoxLayout()
         self.music_edit = QLineEdit()
         self.music_edit.setReadOnly(True)
         self.music_edit.setPlaceholderText("Sin musica (pista apta para YouTube: CC BY o Biblioteca de Audio)")
@@ -233,6 +238,18 @@ class CatharsisTab(QWidget):
             b = QPushButton(text)
             b.clicked.connect(slot)
             row.addWidget(b)
+        v.addLayout(row)
+        row = QHBoxLayout()
+        self.music_start = self._spin(0, 3600, 0.5, 0.0)
+        self.music_start.setSuffix(" s")
+        self.music_auto = QCheckBox("Auto: su caida en el quiebre")
+        self.music_auto.setChecked(True)
+        self.music_auto.setToolTip("Al armar la secuencia busca la caida mas fuerte de la pista y la toma desde "
+                                   "donde esa caida coincide con el final del silencio.")
+        for w in (QLabel("Desde el segundo"), self.music_start, self.music_auto):
+            row.addWidget(w)
+        row.addStretch()
+        v.addLayout(row)
         return box
 
     def _style_group(self):
@@ -388,6 +405,7 @@ class CatharsisTab(QWidget):
                       "climax": [w.strip().upper() for w in self.climax.text().split(",") if w.strip()],
                       "final": split(self.final.toPlainText()), "end": self.end.text().strip()},
             "media": [dict(m) for m in self.media], "music": self.music_path or None,
+            "music_start": self.music_start.value(), "music_auto": self.music_auto.isChecked(),
             "style": style, "sequence": self.sequence})
 
     def _save_project(self):
@@ -421,6 +439,8 @@ class CatharsisTab(QWidget):
             cb.setChecked(bool(style.get(k, ce.DEFAULT_STYLE.get(k, True))))
         self.media = p["media"]
         self._set_music(p.get("music") or "")
+        self.music_start.setValue(float(p.get("music_start") or 0.0))
+        self.music_auto.setChecked(bool(p.get("music_auto", True)))
         self.sequence = p.get("sequence") or []
         self._refresh_media()
         self._refresh_table()
@@ -597,8 +617,11 @@ class CatharsisTab(QWidget):
         self._worker.failed.connect(self._failed)
         self._worker.start()
 
-    def _sequence_done(self, sequence: list, beats: int, drop):
+    def _sequence_done(self, sequence: list, beats: int, drop, start: float):
         self._busy(False)
+        self.music_start.setValue(start)
+        if self.music_path and start:
+            self.log(f"La musica arranca en el segundo {start:.1f} de la pista.")
         self.sequence = sequence
         self._refresh_table()
         self.log(f"Secuencia armada: {len(sequence)} planos" + (f", {beats} golpes de musica." if beats else "."))

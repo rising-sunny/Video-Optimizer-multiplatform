@@ -275,6 +275,11 @@ concreta + sujeto nombrado**, duración corta. Ej: "72 Seconds: The Wow! Signal"
 
 ## Changelog
 
+- **2026-09-28e** — **Catarsis con pistas largas** (Biblioteca de Audio: temas de 2 a 5 min con introducción casi muda).
+  En la pestaña, Música → "Desde el segundo" + "Auto: su caída en el quiebre" (por defecto): `find_music_start()`
+  busca la caída más fuerte de la pista y la toma desde donde esa caída queda al 80 % del video, sin arrancar en
+  silencio; `music_analysis(..., start)` y `render(..., music_start=)` la usan (CLI: `--music-start auto`).
+  Sin frases, la subida es solo de imágenes (antes el clímax se la comía). Guardas: 22.
 - **2026-09-28d** — **Catarsis con video de archivo** (probado con la película de Trinity, 1945: tramos en `in`/`out`,
   sin su audio). El texto sobre imagen ahora es blanco con halo oscuro (el invertido se perdía en los grises) y
   el video sigue corriendo debajo; el autocontraste tiene tope de ganancia (en un destello o un cielo parejo

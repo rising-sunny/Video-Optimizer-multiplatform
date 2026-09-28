@@ -64,6 +64,7 @@ AUDIO_HOLD = 1.2           # en la subida, un video con su audio dura al menos e
 RAMP_HOLD = 0.9            # y uno con rampa de velocidad, esto (si no, la rampa no se ve)
 MIN_MEDIA = 0.45           # segundos de imagen por frase en la subida, como minimo
 LOOP_CARD = 0.6            # el loop cierra con la pregunta inicial, igual al primer cuadro
+DROP_AT = 0.80             # una pista larga se toma desde donde su caida quede en este punto del video
 
 VARIANTS = ("color", "base", "negative", "red", "hard", "sketch")
 TRANSITIONS = ("cut", "flash", "glitch", "burn", "zoom")
@@ -361,12 +362,12 @@ def _still_of(m: dict) -> Image.Image:
 
 
 # ---------------------------------------------------------------- ritmo
-def music_analysis(path, seconds: float):
-    """Golpes de la musica y su caida: el mayor salto de energia entre el 55 % y el 92 % del
-    video. Sin analisis, (lista vacia, None): los cortes quedan a tiempo fijo."""
+def music_analysis(path, seconds: float, start: float = 0.0):
+    """Golpes de la musica y su caida (tomandola desde `start`): el mayor salto de energia entre el
+    55 % y el 92 % del video. Sin analisis, (lista vacia, None): los cortes quedan a tiempo fijo."""
     try:
         import librosa
-        y, sr = librosa.load(str(path), sr=22050, mono=True, duration=seconds + 1)
+        y, sr = librosa.load(str(path), sr=22050, mono=True, offset=float(start or 0.0), duration=seconds + 1)
         _, beats = librosa.beat.beat_track(y=y, sr=sr, units="time")
         hop = 512
         rms = librosa.feature.rms(y=y, frame_length=2048, hop_length=hop)[0]
@@ -390,6 +391,38 @@ def music_analysis(path, seconds: float):
 
 def music_beats(path, seconds: float) -> list[float]:
     return music_analysis(path, seconds)[0]
+
+
+def find_music_start(path, seconds: float):
+    """Pistas largas (la Biblioteca de Audio trae temas de 2 a 5 minutos): desde donde tomarla para que
+    su caida mas fuerte quede en DROP_AT del video, sin arrancar en una introduccion casi muda.
+    Devuelve (inicio, caida en la pista); sin caida clara que entre, (0.0, None)."""
+    try:
+        import librosa
+        y, sr = librosa.load(str(path), sr=22050, mono=True)
+    except Exception as exc:
+        print(f"[catarsis] no se pudo analizar la pista ({exc}); se usa desde el inicio")
+        return 0.0, None
+    hop, target = 512, DROP_AT * seconds
+    rms = librosa.feature.rms(y=y, frame_length=2048, hop_length=hop)[0]
+    w = max(1, int(sr / hop))
+    idx = np.arange(w, len(rms) - 2 * w)
+    if not len(idx):
+        return 0.0, None
+    cs = np.concatenate([[0.0], np.cumsum(rms)])
+    score = (cs[idx + w] - 2 * cs[idx] + cs[idx - w]) / w           # energia del segundo siguiente - la del anterior
+    times = idx * hop / sr
+    starts = times - target
+    ok = (starts >= 0) & (starts + seconds <= len(y) / sr)
+    first = np.clip((starts * sr / hop).astype(int), 0, len(rms) - 2 * w)
+    opening = (cs[first + 2 * w] - cs[first]) / (2 * w)             # los 2 s con que arrancaria el video
+    score = np.where(opening < 0.35 * float(np.median(rms)), score * 0.3, score)
+    if not ok.any():
+        return 0.0, None
+    j = int(np.argmax(np.where(ok, score, -np.inf)))
+    if score[j] <= 0.25 * float(rms.max()):
+        return 0.0, None
+    return round(float(starts[j]), 2), float(times[j])
 
 
 def _snap_cuts(durations: list[float], start: float, beats: list[float], tol: float = 0.14) -> list[float]:
@@ -515,12 +548,14 @@ def auto_sequence(project: dict, beats=(), seed: int = 7, drop: Optional[float] 
 
     # 2. Subida: frase, imagen(es) y cada tanto un destello; las imagenes duran cada vez menos.
     lines = [l for l in cards.get("lines") or [] if str(l).strip()]
+    if not lines:   # sin frases la subida es solo de imagenes, una cada ~1.2 s (si no, el climax se la comeria)
+        lines = [""] * max(3, int((rise_end - open_end) / 1.2))
     rise = rise_end - sum(s["seconds"] for s in seq)
     every = max(1, round(3 / flashes)) if flashes > 0 else 0
     flash_s = FLASH_FRAMES / FPS
     reserve = (0.9 if on["double"] and len(media) >= 2 else 0) + (0.8 if on["split"] and len(media) >= 3 else 0)
     fixed = (len(lines) // every if every else 0) * flash_s + reserve
-    reading = [_reading_time(l) for l in lines]
+    reading = [_reading_time(l) if l else 0.0 for l in lines]
     budget = rise - sum(reading) - fixed
     if lines and budget < MIN_MEDIA * len(lines):      # guion largo: tarjetas mas cortas, nunca bajo 0.7 s
         k = max(0.7 * len(lines), rise - MIN_MEDIA * len(lines) - fixed) / sum(reading)
@@ -532,12 +567,13 @@ def auto_sequence(project: dict, beats=(), seed: int = 7, drop: Optional[float] 
     rise_start, rise_from = sum(s["seconds"] for s in seq), len(seq)
     for i, line in enumerate(lines):
         share = budget * weights[i] / sum(weights)
-        if on["kinetic"] and i % 3 == 1 and not line.rstrip().endswith("?"):
+        if line and on["kinetic"] and i % 3 == 1 and not line.rstrip().endswith("?"):
             # una de cada tres frases va encima de la imagen, no en tarjeta
             add({"kind": "overlay", "media": (i + 1) % len(media), "variant": variants[i % len(variants)],
                  "text": line, "seconds": reading[i] + share, "motion": "push", "kinetic": True}, "rise")
         else:
-            card(line, _style_for(line, i), reading[i], "rise")
+            if line:
+                card(line, _style_for(line, i), reading[i], "rise")
             for j in range(per_line):
                 n = i * per_line + j
                 shot(n + 1, variants[n % len(variants)], share / per_line, "rise", rng.choice(motions), pick_tr(0.4))
@@ -887,7 +923,8 @@ def sfx_track(shots: list[Shot], T: float, seed: int = 5) -> np.ndarray:
     return out * (0.8 / peak)
 
 
-def _audio_graph(shots: list[Shot], music, break_span, T: float, first_index: int, sfx_path=None, loop=False):
+def _audio_graph(shots: list[Shot], music, break_span, T: float, first_index: int, sfx_path=None, loop=False,
+                 music_start: float = 0.0):
     """Entradas y filtro de audio: la musica baja (sidechain) cuando suena el audio de un video y
     el diseno sonoro se suma encima; un limitador evita que sature."""
     inputs, chains, labels, idx, t = [], [], [], first_index, 0.0
@@ -904,7 +941,7 @@ def _audio_graph(shots: list[Shot], music, break_span, T: float, first_index: in
                if len(labels) > 1 else f"{labels[0]}anull")
         chains.append(f"{mix},apad=whole_dur={T:.3f}[clips]")
     if music:
-        inputs += ["-i", str(music)]
+        inputs += (["-ss", f"{music_start:.3f}"] if music_start else []) + ["-i", str(music)]
         mute = (f",volume=enable='between(t,{break_span[0]:.2f},{break_span[1]:.2f})':volume=0"
                 if break_span else "")
         chains.append(f"[{idx}:a]aformat=sample_rates=44100:channel_layouts=stereo{mute}[mus]")
@@ -981,7 +1018,7 @@ def _zoom_blur(arr: np.ndarray) -> np.ndarray:
 
 def render(shots: list[Shot], out: Path, music=None, break_span=None, *, vignette: bool = True,
            preview: bool = False, progress: Optional[Callable[[int, int], None]] = None, seed: int = 11,
-           sfx: bool = False, loop: bool = False, guides: bool = False) -> Path:
+           sfx: bool = False, loop: bool = False, guides: bool = False, music_start: float = 0.0) -> Path:
     """Cuadros de Python -> FFmpeg por tuberia (un solo proceso), con musica, audio de los videos y
     diseno sonoro. preview=True: 15 fps y 540x960; guides=True marca las zonas que tapa Shorts."""
     total = sum(s.frames for s in shots)
@@ -994,7 +1031,8 @@ def render(shots: list[Shot], out: Path, music=None, break_span=None, *, vignett
         wavfile.write(sfx_path, SR, (sfx_track(shots, T) * 32767).astype(np.int16))
     cmd = [_ffmpeg(), "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgb24",
            "-s", f"{W}x{H}", "-r", str(FPS // step), "-i", "-"]
-    audio_inputs, graph = _audio_graph(shots, music, break_span, T, first_index=1, sfx_path=sfx_path, loop=loop)
+    audio_inputs, graph = _audio_graph(shots, music, break_span, T, first_index=1, sfx_path=sfx_path, loop=loop,
+                                       music_start=music_start)
     cmd += audio_inputs + ["-map", "0:v"]
     if graph:
         cmd += ["-filter_complex", graph, "-map", "[aout]", "-c:a", "aac", "-b:a", "192k"]
@@ -1079,6 +1117,7 @@ def main(argv=None) -> int:
     ap.add_argument("project", help="proyecto o guion de tarjetas (JSON)")
     ap.add_argument("--images", help="carpeta de los medios con ruta relativa (por defecto, la del JSON)")
     ap.add_argument("--music", help="pista de musica apta para YouTube (reemplaza la del proyecto)")
+    ap.add_argument("--music-start", help="segundo de la pista desde el que suena, o 'auto' (su caida en el quiebre)")
     ap.add_argument("--seconds", type=float, help="duracion total (por defecto la del proyecto, o 40)")
     ap.add_argument("--auto", action="store_true", help="rearmar la secuencia aunque el proyecto traiga una")
     ap.add_argument("--preview", action="store_true", help="vista previa rapida (540x960, 15 fps)")
@@ -1089,12 +1128,17 @@ def main(argv=None) -> int:
     path = Path(a.project)
     project = normalize_project(json.loads(path.read_text(encoding="utf-8")), a.images or path.parent, a.seconds)
     style, music = project["style"], a.music or project.get("music")
-    beats, drop = music_analysis(music, project["seconds"]) if music else ([], None)
+    start = a.music_start if a.music_start is not None else project.get("music_start", 0.0)
+    if music and str(start).lower() == "auto":
+        start = find_music_start(music, project["seconds"])[0]
+    start = float(start or 0.0)
+    beats, drop = music_analysis(music, project["seconds"], start) if music else ([], None)
     sequence = project.get("sequence") if project.get("sequence") and not a.auto else None
     sequence = sequence or auto_sequence(project, beats, seed=a.seed, drop=drop)
     shots, marks = build_shots(project, sequence)
     render(shots, Path(a.out), music=music, break_span=marks["break"], vignette=style.get("vignette", True),
-           preview=a.preview, sfx=style.get("sfx", True), loop=style.get("loop", True), guides=a.guides)
+           preview=a.preview, sfx=style.get("sfx", True), loop=style.get("loop", True), guides=a.guides,
+           music_start=start)
     caida = f", caida en {drop:.1f} s" if drop else ""
     print(f"[catarsis] listo: {a.out} ({marks['end']:.1f} s, {len(shots)} planos, {len(beats)} golpes{caida})")
     return 0
