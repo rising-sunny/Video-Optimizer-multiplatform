@@ -254,6 +254,7 @@ concreta + sujeto nombrado**, duración corta. Ej: "72 Seconds: The Wow! Signal"
 | `thumbnail_typography.py` + `gemini_vision.py` | Plan tipográfico medido (tamaño, peso, color, contorno, zona) y revisión con visión de la miniatura elegida |
 | `facebook_metadata.py` | Título, arranque de la descripción y hashtags de Facebook e Instagram con la investigación de YouTube |
 | `build_derinkuyu_long.py` | Ejemplo one-off de documental (referencia; hardcodeado) |
+| `catharsis_editor.py` | Formato Catarsis (piloto): Short vertical sin voz, tarjetas + imágenes + música con cortes al ritmo |
 
 ---
 
@@ -274,6 +275,19 @@ concreta + sujeto nombrado**, duración corta. Ej: "72 Seconds: The Wow! Signal"
 
 ## Changelog
 
+- **2026-09-28** — **Formato Catarsis, piloto** (`catharsis_editor.py`). Short vertical sin voz y de impacto,
+  con el lenguaje de los monólogos finales de Evangelion pero con material propio (nada de clips, música
+  ni tipografía de la serie).
+  - **Entrada:** guion de tarjetas en JSON (apertura, frases, palabras del clímax, frase final, firma),
+    carpeta de imágenes y música apta. Ejemplos: `examples/catharsis_oppenheimer.json` (voz del personaje)
+    y `..._narrator.json` (narrador), con citas reales de Oppenheimer (1965).
+  - **Arco:** apertura; subida con cortes que se aceleran y se ajustan a los golpes de la música
+    (librosa); clímax de palabras sueltas y destellos; quiebre en blanco con la música muda; cierre con
+    un boceto y la frase final. Cada imagen da cinco variantes: B/N, negativo, rojo, dos tonos y boceto.
+  - **Seguridad:** tope de 3 destellos por segundo (WCAG 2.3.1). Un plano largo atrasa su corte en vez de
+    desaparecer: en el primer piloto el limitador se había llevado el quiebre.
+  - **Pendiente:** guion con LLM + verificación de hechos, alinear el quiebre con la caída de la música,
+    integrarlo al Studio. Guardas: `test_catharsis_editor.py` (6).
 - **2026-09-25e** — **`GENERATE_SHORT.bat` usa el `.venv`, y `SETUP_OTRA_PC.md` al día.**
   - **`.bat`:** buscaba Python en `%LOCALAPPDATA%\venvs\video_optimizer_*`, de antes del `.venv`;
     en una PC nueva no arrancaba (el "sigue funcionando" de 2026-09-22b solo valía donde quedaba
