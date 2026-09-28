@@ -1,14 +1,15 @@
 # -*- coding: utf-8 -*-
 """Formato "Catarsis": Short vertical de impacto, sin voz.
 
-Tarjetas de texto, imagenes y musica con cortes secos al ritmo. La tension sube (preguntas,
-cortes cada vez mas rapidos, destellos) y se suelta de golpe (silencio, una imagen quieta,
-la frase final). Es el lenguaje de los monologos finales de Evangelion, hecho con material
-propio: nada de clips, musica ni tipografia de la serie (Content ID los reclama).
+Tarjetas de texto, imagenes, videos y musica con cortes secos al ritmo. La tension sube
+(preguntas, cortes cada vez mas rapidos, destellos) y se suelta de golpe (silencio, una imagen
+quieta, la frase final). Es el lenguaje de los monologos finales de Evangelion, hecho con
+material propio: nada de clips, musica ni tipografia de la serie (Content ID los reclama).
 
-Entrada: un guion de tarjetas (JSON, ver examples/catharsis_oppenheimer.json), la carpeta con
-las imagenes que nombra y una pista de musica apta para YouTube (CC BY / BY-SA o Biblioteca
-de Audio). Salida: mp4 1080x1920 a 30 fps.
+Un proyecto (JSON) tiene: tarjetas, medios (imagenes y videos, con o sin su audio), musica,
+estilo y la secuencia de planos. auto_sequence() arma el arco; la pestana Catarsis de la app
+deja retocar cada plano (orden, duracion, variante, transicion, movimiento) antes del render.
+Los guiones viejos (images/opening/lines...) se siguen leyendo.
 
     .venv\\Scripts\\python.exe catharsis_editor.py examples\\catharsis_oppenheimer.json --images carpeta --music pista.mp3
 
@@ -21,12 +22,14 @@ from __future__ import annotations
 import argparse
 import json
 import random
+import re
 import subprocess
 import textwrap
 from collections import deque
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
+from typing import Callable, Iterator, Optional
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
@@ -47,16 +50,31 @@ FLASH_FRAMES = 2
 MAX_FLASHES_PER_SECOND = 3
 FLASH_DELTA = 100          # salto de luminancia media (0-255) que cuenta como destello
 FADE_OUT_FRAMES = 18
+TRANSITION_FRAMES = {"glitch": 5, "burn": 14, "zoom": 4}
+MIN_CLIP_AUDIO = 0.4       # segundos: un plano mas corto no lleva el audio de su video
+AUDIO_HOLD = 1.2           # en la subida, un video con su audio dura al menos esto (si no, no se oye)
+
+VARIANTS = ("color", "base", "negative", "red", "hard", "sketch")
+TRANSITIONS = ("cut", "flash", "glitch", "burn", "zoom")
+MOTIONS = ("hold", "push", "pull", "punch", "shake")
+COLORS = {"black": (0, 0, 0), "white": PAPER, "red": RED}
+VIDEO_EXT = {".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v"}
+DEFAULT_STYLE = {"speed": 1.0, "flashes": 1.0, "variants": ["base", "negative", "sketch", "red", "hard"],
+                 "transitions": ["glitch", "burn"], "grain": True, "vignette": True, "shake": True}
+DEFAULT_CARDS = {"opening": "Who am I?", "lines": [], "climax": ["WHO", "AM", "I"], "final": [], "end": ""}
 
 
 @dataclass
 class Shot:
     frames: int
-    image: Image.Image
-    motion: str = "hold"   # hold | push | pull | punch | shake
+    image: Image.Image             # cuadro fijo; en un video, su primer cuadro
+    motion: str = "hold"           # hold | push | pull | punch | shake
     grain: bool = True
-    red: bool = False      # destello rojo saturado: cuenta siempre como destello
-    tag: str = ""          # "break": el quiebre, donde la musica se calla
+    red: bool = False              # destello rojo saturado: cuenta siempre como destello
+    tag: str = ""                  # "break": el quiebre, donde la musica se calla
+    clip: Optional[dict] = None    # video: {"file", "start", "variant", "focus", "zoom"}
+    transition: str = "cut"        # como entra el plano: cut | glitch | burn | zoom
+    audio: Optional[tuple] = None  # (archivo, segundo) si suena el audio del video
 
 
 # ---------------------------------------------------------------- tarjetas de texto
@@ -114,15 +132,66 @@ def text_card(text: str, style: str = "center") -> Image.Image:
     return img
 
 
-# ---------------------------------------------------------------- imagenes
+# ---------------------------------------------------------------- imagenes y videos
+def _ffmpeg() -> str:
+    try:
+        import imageio_ffmpeg
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        return "ffmpeg"
+
+
+@lru_cache(maxsize=256)
+def media_info(path: str) -> dict:
+    """Duracion, tamano y si tiene audio, leidos de la salida de `ffmpeg -i`."""
+    err = subprocess.run([_ffmpeg(), "-hide_banner", "-i", str(path)], capture_output=True,
+                         text=True, errors="replace").stderr
+    dur = re.search(r"Duration: (\d+):(\d+):([\d.]+)", err)
+    size = re.search(r"Video: .*?(\d{2,5})x(\d{2,5})", err)
+    return {"duration": (int(dur[1]) * 3600 + int(dur[2]) * 60 + float(dur[3])) if dur else 0.0,
+            "width": int(size[1]) if size else 0, "height": int(size[2]) if size else 0,
+            "audio": bool(re.search(r"Stream #.*Audio:", err))}
+
+
 def frame_image(path: Path, focus=(0.5, 0.5), zoom: float = 1.0) -> Image.Image:
-    """Recorte vertical 1080x1920 en blanco y negro, centrado en `focus` (0-1) con `zoom`."""
-    im = Image.open(path).convert("L")
+    """Recorte vertical 1080x1920 (en color) centrado en `focus` (0-1) con `zoom`."""
+    im = Image.open(path).convert("RGB")
     scale = max(W / im.width, H / im.height) * max(zoom, 1.0)
     cw, ch = W / scale, H / scale   # zona de la foto que llena el cuadro
     left = min(max(focus[0] * im.width - cw / 2, 0), im.width - cw)
     top = min(max(focus[1] * im.height - ch / 2, 0), im.height - ch)
     return im.resize((W, H), Image.LANCZOS, box=(left, top, left + cw, top + ch))
+
+
+def iter_video_frames(path, start: float, count: int, focus=(0.5, 0.5), zoom: float = 1.0,
+                      size=(W, H)) -> Iterator[Image.Image]:
+    """Cuadros de un video a 30 fps, recortados a vertical. Si el video se acaba, repite el ultimo."""
+    info = media_info(str(path))
+    w, h = size
+    iw, ih = info["width"] or w, info["height"] or h
+    scale = max(w / iw, h / ih) * max(zoom, 1.0)
+    sw, sh = max(w, round(iw * scale)), max(h, round(ih * scale))
+    left = int(min(max(focus[0] * sw - w / 2, 0), sw - w))
+    top = int(min(max(focus[1] * sh - h / 2, 0), sh - h))
+    cmd = [_ffmpeg(), "-loglevel", "error", "-ss", f"{max(start, 0):.3f}", "-i", str(path),
+           "-frames:v", str(count), "-vf", f"fps={FPS},scale={sw}:{sh},crop={w}:{h}:{left}:{top}",
+           "-f", "rawvideo", "-pix_fmt", "rgb24", "-"]
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    last, frame_bytes, sent = None, w * h * 3, 0
+    try:
+        while sent < count:
+            raw = proc.stdout.read(frame_bytes)
+            if len(raw) < frame_bytes:
+                break
+            last = Image.frombytes("RGB", (w, h), raw)
+            sent += 1
+            yield last
+    finally:
+        proc.stdout.close()
+        proc.wait()
+    while sent < count:
+        sent += 1
+        yield last if last is not None else Image.new("RGB", (w, h), (0, 0, 0))
 
 
 def _sketch(gray: Image.Image) -> Image.Image:
@@ -135,9 +204,11 @@ def _sketch(gray: Image.Image) -> Image.Image:
     return Image.fromarray((lines[..., None] * paper).astype(np.uint8), "RGB")
 
 
-def variant(gray: Image.Image, kind: str) -> Image.Image:
-    """base (B/N contrastado), negative, red, hard (dos tonos) o sketch."""
-    g = ImageOps.autocontrast(gray, cutoff=1)
+def variant(img: Image.Image, kind: str) -> Image.Image:
+    """color, base (B/N contrastado), negative, red, hard (dos tonos) o sketch."""
+    if kind == "color":
+        return ImageOps.autocontrast(img.convert("RGB"), cutoff=1)
+    g = ImageOps.autocontrast(img.convert("L"), cutoff=1)
     if kind == "negative":
         return ImageOps.invert(g).convert("RGB")
     if kind == "red":
@@ -147,6 +218,16 @@ def variant(gray: Image.Image, kind: str) -> Image.Image:
     if kind == "sketch":
         return _sketch(g)
     return g.convert("RGB")
+
+
+def media_thumbnail(item: dict, size=(180, 320)) -> Image.Image:
+    """Miniatura vertical de un medio del proyecto (para la lista de la pestana)."""
+    focus, zoom = tuple(item.get("focus", (0.5, 0.5))), item.get("zoom", 1.0)
+    if item.get("type") == "video":
+        img = next(iter_video_frames(item["file"], float(item.get("in", 0.0)), 1, focus, zoom))
+    else:
+        img = frame_image(Path(item["file"]), focus, zoom)
+    return img.resize(size, Image.BILINEAR)
 
 
 # ---------------------------------------------------------------- ritmo
@@ -166,16 +247,39 @@ def _snap_cuts(durations: list[float], start: float, beats: list[float], tol: fl
     """Mueve cada corte interno al golpe mas cercano (si esta a menos de `tol` s)."""
     if not beats or len(durations) < 2:
         return durations
-    cuts = np.cumsum([start] + durations)
+    cuts = np.cumsum([start] + list(durations))
     for i in range(1, len(cuts) - 1):
         near = min(beats, key=lambda b: abs(b - cuts[i]))
         lo, hi = cuts[i - 1] + 2 / FPS, cuts[i + 1] - 2 / FPS
         if abs(near - cuts[i]) <= tol and lo < near < hi:
             cuts[i] = near
-    return list(np.diff(cuts))
+    return [float(d) for d in np.diff(cuts)]
 
 
-# ---------------------------------------------------------------- plan
+# ---------------------------------------------------------------- proyecto y arco
+def normalize_project(data: dict, base_dir=None, seconds=None) -> dict:
+    """Proyecto completo a partir de uno nuevo o de un guion viejo (images/opening/lines...)."""
+    p = json.loads(json.dumps(data))
+    base = Path(base_dir) if base_dir else None
+    if "media" not in p:
+        p["media"] = [dict(m) for m in p.pop("images", [])]
+    for m in p["media"]:
+        f = Path(m["file"])
+        if base is not None and not f.is_absolute():
+            m["file"] = str(base / f)
+        m.setdefault("type", "video" if f.suffix.lower() in VIDEO_EXT else "image")
+    cards = p.setdefault("cards", {})
+    for key, default in DEFAULT_CARDS.items():
+        if key in p:
+            cards.setdefault(key, p.pop(key))
+        cards.setdefault(key, list(default) if isinstance(default, list) else default)
+    p["style"] = {**DEFAULT_STYLE, **(p.get("style") or {})}
+    if seconds:
+        p["seconds"] = float(seconds)
+    p.setdefault("seconds", 40.0)
+    return p
+
+
 def _reading_time(line: str) -> float:
     return min(2.4, max(0.8, 0.5 + 0.22 * len(line.split())))
 
@@ -188,114 +292,264 @@ def _style_for(line: str, i: int) -> str:
     return ("center", "invert")[i % 2]
 
 
-def plan(script: dict, images_dir: Path, seconds: float, beats=(), seed: int = 7):
-    """Lista de planos del arco y marcas de tiempo {rise, climax, break: (ini, fin), end}."""
+def auto_sequence(project: dict, beats=(), seed: int = 7) -> list[dict]:
+    """El arco automatico, como lista de planos editables (lo que muestra la pestana)."""
     rng = random.Random(seed)
-    T = float(seconds)
-    pics = [frame_image(Path(images_dir) / p["file"], tuple(p.get("focus", (0.5, 0.5))), p.get("zoom", 1.0))
-            for p in script.get("images", [])]
-    if not pics:
-        raise ValueError("El guion no nombra imagenes (campo 'images').")
-    cache: dict = {}
+    T, cards, style, media = float(project["seconds"]), project["cards"], project["style"], project["media"]
+    if not media:
+        raise ValueError("Agrega al menos una imagen o un video.")
+    variants = [v for v in style.get("variants") or [] if v in VARIANTS] or ["base"]
+    speed = min(2.0, max(0.5, float(style.get("speed", 1.0))))
+    flashes = min(2.0, max(0.0, float(style.get("flashes", 1.0))))
+    extra_tr = [t for t in style.get("transitions") or [] if t in ("glitch", "burn", "zoom")]
+    motions = ["push", "hold", "punch"] + (["shake"] if style.get("shake", True) else [])
+    first = "base" if "base" in variants else variants[0]
+    sketch = "sketch" if "sketch" in variants else first
+    seq: list[dict] = []
 
-    def pic(i: int, kind: str) -> Image.Image:
-        key = (i % len(pics), kind)
-        if key not in cache:
-            cache[key] = variant(pics[key[0]], kind)
-        return cache[key]
+    def card(text, st, d):
+        seq.append({"kind": "card", "text": text, "style": st, "seconds": d, "transition": "cut", "motion": "hold"})
 
-    black, white = Image.new("RGB", (W, H), (0, 0, 0)), Image.new("RGB", (W, H), PAPER)
-    red_frame = Image.new("RGB", (W, H), RED)
-    timeline: list[list] = []   # [segundos, imagen, movimiento, grano, rojo, marca]
+    def span(m):
+        return float(m.get("out") or media_info(m["file"])["duration"] or 0) - float(m.get("in", 0.0))
 
-    def add(d, img, motion="hold", grain=True, red=False, tag=""):
-        timeline.append([d, img, motion, grain, red, tag])
+    def shot(i, kind, d, motion="hold", transition="cut"):
+        m = media[i % len(media)]
+        offset = round(rng.uniform(0, max(span(m) - d, 0)), 2) if m.get("type") == "video" else 0.0
+        seq.append({"kind": "media", "media": i % len(media), "variant": kind, "seconds": d, "motion": motion,
+                    "transition": transition, "offset": offset, "audio": bool(m.get("audio"))})
+
+    def color(name, d, tag=""):
+        seq.append({"kind": "color", "color": name, "seconds": d, "transition": "cut", "motion": "hold", "tag": tag})
+
+    def pick_tr(p):
+        return rng.choice(extra_tr) if extra_tr and rng.random() < p else "cut"
 
     # 1. Apertura: negro, la primera pregunta y una imagen que se acerca.
     t_open = OPENING * T
-    card = max(1.6, t_open * 0.45)
-    add(0.5, black, grain=False)
-    add(card, text_card(script.get("opening", "Who am I?")), grain=False)
-    add(max(0.8, t_open - 0.5 - card), pic(0, "base"), "push")
+    card_d = max(1.6, t_open * 0.45)
+    color("black", 0.5)
+    card(cards.get("opening") or DEFAULT_CARDS["opening"], "center", card_d)
+    shot(0, first, max(0.8, t_open - 0.5 - card_d), "push")
 
-    # 2. Subida: frase, imagen y cada tanto un destello; las imagenes duran cada vez menos.
-    lines = script.get("lines", [])
+    # 2. Subida: frase, imagen(es) y cada tanto un destello; las imagenes duran cada vez menos.
+    lines = [l for l in cards.get("lines") or [] if str(l).strip()]
     rise = (RISE_END - OPENING) * T
+    every = max(1, round(3 / flashes)) if flashes > 0 else 0
+    n_flash = len(lines) // every if every else 0
+    flash_s = FLASH_FRAMES / FPS
     reading = [_reading_time(l) for l in lines]
-    flashes = len(lines) // 3
-    budget = rise - sum(reading) - flashes * FLASH_FRAMES / FPS
-    if budget < 0.3 * len(lines):          # guion largo: se acortan las tarjetas, nunca bajo 0.7 s
-        k = max(0.7 * len(lines), rise - 0.3 * len(lines) - flashes * FLASH_FRAMES / FPS) / max(sum(reading), 1e-6)
+    budget = rise - sum(reading) - n_flash * flash_s
+    if lines and budget < 0.3 * len(lines):      # guion largo: tarjetas mas cortas, nunca bajo 0.7 s
+        k = max(0.7 * len(lines), rise - 0.3 * len(lines) - n_flash * flash_s) / sum(reading)
         reading = [max(0.7, r * k) for r in reading]
-        budget = max(0.3 * len(lines), rise - sum(reading) - flashes * FLASH_FRAMES / FPS)
-    weights = [1.0 - 0.75 * i / max(len(lines) - 1, 1) for i in range(len(lines))]
-    rise_start = sum(s[0] for s in timeline)
-    rise_items = []
+        budget = max(0.3 * len(lines), rise - sum(reading) - n_flash * flash_s)
+    per_line = 2 if speed >= 1.4 else 1
+    slope = min(0.9, 0.75 * speed)
+    weights = [1.0 - slope * i / max(len(lines) - 1, 1) for i in range(len(lines))]
+    rise_start = sum(s["seconds"] for s in seq)
+    rise_items_start = len(seq)
     for i, line in enumerate(lines):
-        rise_items.append([reading[i], text_card(line, _style_for(line, i)), "hold", False, False, ""])
-        kind = ("base", "negative", "sketch", "red", "hard")[i % 5]
-        motion = rng.choice(("push", "hold", "punch"))
-        rise_items.append([budget * weights[i] / sum(weights), pic(i + 1, kind), motion, True, False, ""])
-        if (i + 1) % 3 == 0:
-            flash_red = i % 2 == 0
-            rise_items.append([FLASH_FRAMES / FPS, red_frame if flash_red else white, "hold", False, flash_red, ""])
-    snapped = _snap_cuts([it[0] for it in rise_items], rise_start, list(beats))
-    for it, d in zip(rise_items, snapped):
-        it[0] = d
-    timeline += rise_items
-    climax_start = sum(s[0] for s in timeline)
+        card(line, _style_for(line, i), reading[i])
+        for j in range(per_line):
+            n = i * per_line + j
+            d = budget * weights[i] / sum(weights) / per_line
+            shot(n + 1, variants[n % len(variants)], d, rng.choice(motions), pick_tr(0.4))
+        if every and (i + 1) % every == 0:
+            color("red" if i % 2 == 0 else "white", flash_s)
+    rise_media = [s for s in seq[rise_items_start:] if s["kind"] == "media"]
+    loud = [s for s in rise_media if s["audio"] and media[s["media"]].get("type") == "video"]
+    if loud:   # el tiempo que ganan los videos con audio lo ceden los demas planos, hasta 0.2 s cada uno
+        extra = sum(max(0.0, AUDIO_HOLD - s["seconds"]) for s in loud)
+        quiet = [s for s in rise_media if s not in loud]
+        spare = sum(max(0.0, s["seconds"] - 0.2) for s in quiet)
+        for s in quiet:
+            s["seconds"] -= max(0.0, s["seconds"] - 0.2) * (min(1.0, extra / spare) if spare else 0.0)
+        for s in loud:
+            s["seconds"] = max(s["seconds"], AUDIO_HOLD)
+            s["offset"] = round(min(s["offset"], max(span(media[s["media"]]) - s["seconds"], 0)), 2)
+    snapped = _snap_cuts([s["seconds"] for s in seq[rise_items_start:]], rise_start, list(beats))
+    for s, d in zip(seq[rise_items_start:], snapped):
+        s["seconds"] = round(d, 3)
 
-    # 3. Climax: palabras sueltas, primeros planos y destellos; los cortes se aceleran de 6 a 3 cuadros.
-    words = script.get("climax") or ["WHO", "AM", "I"]
+    # 3. Climax: palabras sueltas, primeros planos y destellos; los cortes se aceleran.
+    words = [w for w in cards.get("climax") or [] if str(w).strip()] or DEFAULT_CARDS["climax"]
     climax, t, k = (CLIMAX_END - RISE_END) * T, 0.0, 0
+    hi, lo = max(3, round(6 / speed)), max(2, round(3 / speed))
     while t < climax - 1e-6:
-        frames = max(3, round(6 - 3 * t / climax))
-        d = min(frames / FPS, climax - t)
+        d = min(max(lo, round(hi - (hi - lo) * t / climax)) / FPS, climax - t)
         step = k % 4
         if step == 0:
-            add(d, text_card(words[(k // 4) % len(words)], "word"), "punch", grain=False)
-        elif step == 1:
-            add(d, pic(rng.randrange(len(pics)), rng.choice(("negative", "red", "hard"))), "shake")
-        elif step == 2:
-            flash_red = rng.random() < 0.5
-            add(d, red_frame if flash_red else white, grain=False, red=flash_red)
+            card(words[(k // 4) % len(words)], "word", d)
+            seq[-1]["motion"] = "punch"
+        elif step == 2 and rng.random() < min(1.0, flashes):
+            color(rng.choice(("white", "red")), d)
+        elif step == 3:
+            shot(k, sketch, d, "punch")
         else:
-            add(d, pic(k, "sketch"), "punch")
+            dark = [v for v in variants if v in ("negative", "red", "hard")] or variants
+            shot(rng.randrange(len(media)), rng.choice(dark), d, "shake" if "shake" in motions else "punch",
+                 pick_tr(0.3))
         t, k = t + d, k + 1
 
     # 4. Quiebre: papel en blanco y la musica muda.
-    add((BREAK_END - CLIMAX_END) * T, white, grain=False, tag="break")
-    b1 = sum(s[0] for s in timeline)
+    color("white", (BREAK_END - CLIMAX_END) * T, tag="break")
 
     # 5. Cierre: el boceto que se aleja, la frase final y la firma.
-    final, rest = script.get("final", []), max(T - b1, 3.0)
-    sketch_d = rest * 0.22
-    line_d = rest * 0.56 / max(len(final), 1)
-    add(sketch_d, pic(0, "sketch"), "pull")
+    final = [l for l in cards.get("final") or [] if str(l).strip()]
+    rest = max(T - sum(s["seconds"] for s in seq), 3.0)
+    shot(0, sketch, rest * 0.22, "pull")
     for line in final:
-        add(line_d, text_card(line, "invert"), grain=False)
-    add(max(0.8, T - sum(s[0] for s in timeline)), text_card(script.get("end", ""), "caption"), grain=False)
+        card(line, "invert", rest * 0.56 / max(len(final), 1))
+    card(cards.get("end") or "", "caption", max(0.8, T - sum(s["seconds"] for s in seq)))
+    return seq
 
-    shots = limit_flashes(_to_frames(timeline))
+
+# ---------------------------------------------------------------- planos
+def build_shots(project: dict, sequence: list[dict]):
+    """Planos listos para el render a partir de la secuencia (automatica o retocada)."""
+    media, style = project["media"], project["style"]
+    grain_on = bool(style.get("grain", True))
+    stills: dict = {}
+
+    def still(i: int, kind: str) -> Image.Image:
+        if (i, kind) not in stills:
+            m = media[i]
+            stills[(i, kind)] = variant(frame_image(Path(m["file"]), tuple(m.get("focus", (0.5, 0.5))),
+                                                    m.get("zoom", 1.0)), kind)
+        return stills[(i, kind)]
+
+    shots: list[Shot] = []
+    t, prev = 0.0, 0
+    for spec in sequence:
+        t += float(spec.get("seconds", 0))
+        frames = round(t * FPS) - prev
+        if frames <= 0:
+            continue
+        prev += frames
+        kind, motion = spec.get("kind"), spec.get("motion", "hold")
+        transition = spec.get("transition", "cut")
+        if kind == "card":
+            shot = Shot(frames, text_card(str(spec.get("text", "")), spec.get("style", "center")), motion, grain=False)
+        elif kind == "color":
+            name = spec.get("color", "black")
+            shot = Shot(frames, Image.new("RGB", (W, H), COLORS.get(name, (0, 0, 0))), motion, grain=False,
+                        red=name == "red", tag=spec.get("tag", ""))
+        else:
+            i = int(spec.get("media", 0)) % len(media)
+            m, vkind = media[i], spec.get("variant", "base")
+            focus, zoom = tuple(m.get("focus", (0.5, 0.5))), m.get("zoom", 1.0)
+            if m.get("type") == "video":
+                start = float(m.get("in", 0.0)) + float(spec.get("offset", 0.0))
+                first_frame = variant(next(iter_video_frames(m["file"], start, 1, focus, zoom)), vkind)
+                shot = Shot(frames, first_frame, motion, grain=grain_on, red=vkind == "red",
+                            clip={"file": m["file"], "start": start, "variant": vkind, "focus": focus, "zoom": zoom})
+                if spec.get("audio") and frames / FPS >= MIN_CLIP_AUDIO:
+                    shot.audio = (m["file"], start)
+            else:
+                shot = Shot(frames, still(i, vkind), motion, grain=grain_on, red=vkind == "red")
+        if transition == "flash" and shot.frames > FLASH_FRAMES + 1:
+            shot.frames -= FLASH_FRAMES
+            if shot.audio:
+                shot.audio = (shot.audio[0], shot.audio[1] + FLASH_FRAMES / FPS)
+            shots.append(Shot(FLASH_FRAMES, Image.new("RGB", (W, H), PAPER), grain=False))
+        elif transition in TRANSITION_FRAMES:
+            shot.transition = transition
+        shots.append(shot)
+
+    shots = limit_flashes(shots)
     start, brk = 0, None
     for s in shots:   # el quiebre se mide despues del limitador, que puede atrasar su corte
         if s.tag == "break":
             brk = (start / FPS, (start + s.frames) / FPS)
             break
         start += s.frames
-    marks = {"rise": rise_start, "climax": climax_start, "break": brk, "end": sum(s.frames for s in shots) / FPS}
-    return shots, marks
+    return shots, {"break": brk, "end": sum(s.frames for s in shots) / FPS}
 
 
-def _to_frames(timeline) -> list[Shot]:
-    shots, t, prev = [], 0.0, 0
-    for d, img, motion, grain, red, tag in timeline:
-        t += d
-        frames = round(t * FPS) - prev
-        if frames > 0:
-            shots.append(Shot(frames, img, motion, grain, red, tag))
-            prev += frames
-    return shots
+CARDS_PROMPT = """You write the on-screen text cards of a 40-second vertical video with NO narration voice.
+Style: an inner monologue at a breaking point, like the final episodes of Neon Genesis Evangelion:
+short lines, questions, repetition, tension that breaks at the end.
+Subject: <<TOPIC>>
+Perspective: <<WHO>>
+Language of the cards: <<LANGUAGE>>
+
+Rules:
+- Every fact (date, place, number, event, name) must be documented history. Never invent events,
+  numbers or quotes.
+- Use a quote only if it is real and attributable to that person; otherwise write a reflective line.
+- "lines": 7 to 10 cards, each 2 to 8 words. Mix 2 or 3 facts (date, place, number), short
+  statements and 2 or 3 questions. The tension grows toward the end.
+- "climax": exactly 3 single words, uppercase, that break the tension (for example WHO / AM / I).
+- "final": 1 or 2 cards with the release: a real quote if one exists, or the documented outcome.
+- "end": who said the quote and when, or the figure's name and the year.
+- "opening": one short question that opens the video.
+
+Return ONLY this JSON:
+{"opening": "...", "lines": ["..."], "climax": ["...", "...", "..."], "final": ["..."], "end": "..."}"""
+PERSPECTIVES = {"character": "first person: the historical figure speaks to themself",
+                "narrator": "third person: a narrator speaks about the figure"}
+LANGUAGES = {"en": "English", "es": "Spanish"}
+
+
+def parse_cards(raw) -> dict:
+    """Tarjetas desde la respuesta del modelo (tolera ```json, comas de mas y texto alrededor)."""
+    text = str(raw or "")
+    body = text[text.find("{"): text.rfind("}") + 1] if "{" in text else "{}"
+    try:
+        data = json.loads(body)
+    except ValueError:
+        try:
+            from json_repair import repair_json
+            data = json.loads(repair_json(body))
+        except Exception:
+            data = {}
+    cards = {k: (list(v) if isinstance(v, list) else v) for k, v in DEFAULT_CARDS.items()}
+    for key in ("opening", "end"):
+        if isinstance(data.get(key), str):
+            cards[key] = data[key].strip()
+    for key in ("lines", "climax", "final"):
+        if isinstance(data.get(key), list):
+            cards[key] = [str(x).strip() for x in data[key] if str(x).strip()]
+    cards["climax"] = [w.upper() for w in cards["climax"]][:4] or list(DEFAULT_CARDS["climax"])
+    return cards
+
+
+def write_cards(topic: str, perspective: str = "character", language: str = "en", *,
+                generate_fn: Optional[Callable[[str], str]] = None, check: bool = True, log=print) -> dict:
+    """La IA propone las tarjetas desde un tema; con check=True pasan por script_fact_check
+    (el mismo verificador de los guiones narrados), que corrige lo falso o inventado."""
+    if generate_fn is None:
+        from ai_factory import AIFactory
+        client = AIFactory.get_instance().get_llm_client()
+        generate_fn = lambda prompt: client._generate(prompt, max_tokens=1500)  # noqa: E731
+    prompt = (CARDS_PROMPT.replace("<<TOPIC>>", topic.strip())
+              .replace("<<WHO>>", PERSPECTIVES.get(perspective, PERSPECTIVES["character"]))
+              .replace("<<LANGUAGE>>", LANGUAGES.get(language, "English")))
+    log("IA: escribiendo las tarjetas...")
+    cards = parse_cards(generate_fn(prompt))
+    if not cards["lines"]:
+        raise RuntimeError("La IA no devolvio tarjetas utiles; prueba de nuevo o escribelas a mano.")
+    if not check:
+        return cards
+    from script_fact_check import fact_check_scenes, scene_text
+    texts = [cards["opening"]] + cards["lines"] + cards["final"]
+    log("Verificando hechos (puede tardar un minuto)...")
+    fixed, report = fact_check_scenes(texts, topic, language=language, log=log)
+    fixed = [scene_text(s) for s in fixed]
+    if len(fixed) == len(texts):
+        n = len(cards["lines"])
+        cards["opening"], cards["lines"], cards["final"] = fixed[0], fixed[1:1 + n], fixed[1 + n:]
+    cards["fact_check"] = {"status": report.get("status"),
+                           "remaining": [{"quote": f.get("quote"), "verdict": f.get("verdict"),
+                                          "correction": f.get("correction")} for f in report.get("remaining", [])]}
+    return cards
+
+
+def plan(script: dict, images_dir, seconds: float, beats=(), seed: int = 7):
+    """Atajo del arco automatico completo: (planos, marcas)."""
+    project = normalize_project(script, images_dir, seconds)
+    return build_shots(project, auto_sequence(project, beats, seed))
 
 
 def limit_flashes(shots: list[Shot]) -> list[Shot]:
@@ -313,7 +567,8 @@ def limit_flashes(shots: list[Shot]) -> list[Shot]:
     recent: deque = deque()
     frame = 0
     for shot in shots:
-        shot = Shot(shot.frames, shot.image, shot.motion, shot.grain, shot.red, shot.tag)
+        shot = Shot(shot.frames, shot.image, shot.motion, shot.grain, shot.red, shot.tag, shot.clip,
+                    shot.transition, shot.audio)
         if out:
             prev = out[-1]
             jump = abs(luma(shot.image) - luma(prev.image))
@@ -328,6 +583,10 @@ def limit_flashes(shots: list[Shot]) -> list[Shot]:
                         continue
                     prev.frames += wait
                     shot.frames -= wait
+                    if shot.clip:
+                        shot.clip = dict(shot.clip, start=shot.clip["start"] + wait / FPS)
+                    if shot.audio:
+                        shot.audio = (shot.audio[0], shot.audio[1] + wait / FPS)
                     frame += wait
                     recent.popleft()
                 recent.append(frame)
@@ -337,14 +596,6 @@ def limit_flashes(shots: list[Shot]) -> list[Shot]:
 
 
 # ---------------------------------------------------------------- render
-def _ffmpeg() -> str:
-    try:
-        import imageio_ffmpeg
-        return imageio_ffmpeg.get_ffmpeg_exe()
-    except Exception:
-        return "ffmpeg"
-
-
 def _moved(img: Image.Image, motion: str, i: int, n: int, rng) -> Image.Image:
     scale = {"push": 1.0 + 0.06 * i / max(n - 1, 1), "pull": 1.06 - 0.06 * i / max(n - 1, 1),
              "punch": 1.12 if i < 2 else (1.05 if i < 4 else 1.0), "shake": 1.05}.get(motion, 1.0)
@@ -357,62 +608,137 @@ def _moved(img: Image.Image, motion: str, i: int, n: int, rng) -> Image.Image:
     return img.crop((left, top, left + w, top + h)).resize((W, H), Image.BILINEAR)
 
 
-def render(shots: list[Shot], out: Path, music=None, break_span=None, seed: int = 11) -> Path:
-    """Cuadros de Python -> FFmpeg por tuberia (un solo proceso), con la musica mezclada."""
+def _burn_frames() -> list[np.ndarray]:
+    """Cuadros del film burn de transition_overlays/ (vacio si no esta)."""
+    folder = Path(__file__).resolve().parent / "transition_overlays"
+    clips = sorted(p for p in folder.glob("*") if p.suffix.lower() in VIDEO_EXT) if folder.is_dir() else []
+    if not clips:
+        return []
+    return [np.asarray(f, dtype=np.float32) for f in iter_video_frames(clips[0], 0.0, TRANSITION_FRAMES["burn"])]
+
+
+def _audio_graph(shots: list[Shot], music, break_span, T: float, first_index: int):
+    """Entradas y filtro de audio: la musica baja (sidechain) cuando suena el audio de un video."""
+    inputs, chains, labels, idx, t = [], [], [], first_index, 0.0
+    for s in shots:
+        if s.audio and media_info(str(s.audio[0]))["audio"]:
+            inputs += ["-ss", f"{s.audio[1]:.3f}", "-t", f"{s.frames / FPS:.3f}", "-i", str(s.audio[0])]
+            ms = int(round(t * 1000))
+            chains.append(f"[{idx}:a]aformat=sample_rates=44100:channel_layouts=stereo,adelay={ms}|{ms}[c{idx}]")
+            labels.append(f"[c{idx}]")
+            idx += 1
+        t += s.frames / FPS
+    if labels:
+        chains.append(f"{''.join(labels)}amix=inputs={len(labels)}:normalize=0:duration=longest[clips]"
+                      if len(labels) > 1 else f"{labels[0]}anull[clips]")
+    if music:
+        inputs += ["-i", str(music)]
+        mute = (f",volume=enable='between(t,{break_span[0]:.2f},{break_span[1]:.2f})':volume=0"
+                if break_span else "")
+        chains.append(f"[{idx}:a]aformat=sample_rates=44100:channel_layouts=stereo{mute}[mus]")
+    if not labels and not music:
+        return [], None
+    if labels and music:
+        chains += ["[clips]asplit=2[sc][cl]",
+                   "[mus][sc]sidechaincompress=threshold=0.02:ratio=12:attack=10:release=400[duck]",
+                   "[duck][cl]amix=inputs=2:normalize=0:duration=first[mix]"]
+    else:
+        chains.append(f"[{'clips' if labels else 'mus'}]anull[mix]")
+    chains.append(f"[mix]afade=t=in:st=0:d=0.3,afade=t=out:st={max(T - 1.5, 0):.2f}:d=1.5[aout]")
+    return inputs, ";".join(chains)
+
+
+def render(shots: list[Shot], out: Path, music=None, break_span=None, *, vignette: bool = True,
+           preview: bool = False, progress: Optional[Callable[[int, int], None]] = None,
+           seed: int = 11) -> Path:
+    """Cuadros de Python -> FFmpeg por tuberia (un solo proceso), con la musica y el audio de los
+    videos. preview=True: 15 fps y 540x960, para mirar el ritmo rapido antes del render final."""
     total = sum(s.frames for s in shots)
-    T = total / FPS
+    T, step = total / FPS, (2 if preview else 1)
     cmd = [_ffmpeg(), "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgb24",
-           "-s", f"{W}x{H}", "-r", str(FPS), "-i", "-"]
-    if music:
-        cmd += ["-i", str(music)]
-    cmd += ["-map", "0:v"]
-    if music:
-        af = ["afade=t=in:st=0:d=0.3", f"afade=t=out:st={max(T - 1.5, 0):.2f}:d=1.5"]
-        if break_span:
-            af.insert(0, f"volume=enable='between(t,{break_span[0]:.2f},{break_span[1]:.2f})':volume=0")
-        cmd += ["-map", "1:a", "-af", ",".join(af), "-c:a", "aac", "-b:a", "192k"]
-    cmd += ["-t", f"{T:.3f}", "-c:v", "libx264", "-preset", "medium", "-crf", "21",
-            "-pix_fmt", "yuv420p", "-movflags", "+faststart", str(out)]
+           "-s", f"{W}x{H}", "-r", str(FPS // step), "-i", "-"]
+    audio_inputs, graph = _audio_graph(shots, music, break_span, T, first_index=1)
+    cmd += audio_inputs + ["-map", "0:v"]
+    if graph:
+        cmd += ["-filter_complex", graph, "-map", "[aout]", "-c:a", "aac", "-b:a", "192k"]
+    if preview:
+        cmd += ["-vf", "scale=540:960"]
+    cmd += ["-t", f"{T:.3f}", "-c:v", "libx264", "-preset", "veryfast" if preview else "medium",
+            "-crf", "26" if preview else "21", "-pix_fmt", "yuv420p", "-movflags", "+faststart", str(out)]
 
     rng = np.random.default_rng(seed)
     noise = rng.normal(0, 12, (6, H // 2, W // 2)).astype(np.float32)
     grain = [np.repeat(np.repeat(n, 2, 0), 2, 1)[..., None] for n in noise]
     yy, xx = np.mgrid[0:H, 0:W].astype(np.float32)
-    vignette = (1.0 - 0.42 * (((xx - W / 2) / (W / 2)) ** 2 + ((yy - H / 2) / (H / 2)) ** 2) / 2)[..., None]
+    shade = (1.0 - 0.42 * (((xx - W / 2) / (W / 2)) ** 2 + ((yy - H / 2) / (H / 2)) ** 2) / 2)[..., None]
+    burn = _burn_frames() if any(s.transition == "burn" for s in shots) else []
+    glitch = None
+    if any(s.transition == "glitch" for s in shots):
+        from glitch_transitions import GlitchIntensity, GlitchTransitionEngine, GlitchTransitionType
+        glitch = (GlitchTransitionEngine((W, H)), GlitchIntensity.EXTREME,
+                  [GlitchTransitionType.RGB_SPLIT, GlitchTransitionType.BLOCK_GLITCH,
+                   GlitchTransitionType.DIGITAL_GLITCH, GlitchTransitionType.SCAN_LINES])
 
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
     frame = 0
     try:
         for shot in shots:
+            clip = None
+            if shot.clip:
+                c = shot.clip
+                clip = iter_video_frames(c["file"], c["start"], shot.frames, c["focus"], c["zoom"])
+            kind = glitch[2][rng.integers(len(glitch[2]))] if glitch and shot.transition == "glitch" else None
             for i in range(shot.frames):
-                arr = np.asarray(_moved(shot.image, shot.motion, i, shot.frames, rng), dtype=np.float32)
+                raw = next(clip) if clip else None   # el video avanza aunque la vista previa salte cuadros
+                if (frame + i) % step:
+                    continue
+                src = variant(raw, shot.clip["variant"]) if clip else shot.image
+                motion = "punch" if shot.transition == "zoom" and i < TRANSITION_FRAMES["zoom"] else shot.motion
+                arr = np.asarray(_moved(src, motion, i, shot.frames, rng), dtype=np.float32)
+                if kind is not None and i < TRANSITION_FRAMES["glitch"]:
+                    progress_i = 0.5 + 0.5 * i / TRANSITION_FRAMES["glitch"]
+                    arr = glitch[0].apply_glitch_transition(arr.astype(np.uint8), progress_i, kind,
+                                                            glitch[1]).astype(np.float32)
+                if shot.transition == "burn" and i < len(burn):
+                    arr = 255.0 - (255.0 - arr) * (255.0 - burn[i]) / 255.0   # mezcla "screen"
                 if shot.grain:
-                    arr = arr * vignette + grain[rng.integers(len(grain))]
-                if frame >= total - FADE_OUT_FRAMES:
-                    arr = arr * ((total - frame) / FADE_OUT_FRAMES)
+                    arr = (arr * shade if vignette else arr) + grain[rng.integers(len(grain))]
+                n = frame + i
+                if n >= total - FADE_OUT_FRAMES:
+                    arr = arr * ((total - n) / FADE_OUT_FRAMES)
                 proc.stdin.write(np.clip(arr, 0, 255).astype(np.uint8).tobytes())
-                frame += 1
+                if progress and n % 15 == 0:
+                    progress(n, total)
+            frame += shot.frames
     finally:
         proc.stdin.close()
         if proc.wait() != 0:
             raise RuntimeError(f"FFmpeg fallo al escribir {out}")
+    if progress:
+        progress(total, total)
     return Path(out)
 
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Formato Catarsis: Short vertical de impacto, sin voz.")
-    ap.add_argument("script", help="guion de tarjetas (JSON)")
-    ap.add_argument("--images", required=True, help="carpeta con las imagenes que nombra el guion")
-    ap.add_argument("--music", help="pista de musica apta para YouTube")
-    ap.add_argument("--seconds", type=float, help="duracion total (por defecto la del guion, o 40)")
+    ap.add_argument("project", help="proyecto o guion de tarjetas (JSON)")
+    ap.add_argument("--images", help="carpeta de los medios con ruta relativa (por defecto, la del JSON)")
+    ap.add_argument("--music", help="pista de musica apta para YouTube (reemplaza la del proyecto)")
+    ap.add_argument("--seconds", type=float, help="duracion total (por defecto la del proyecto, o 40)")
+    ap.add_argument("--auto", action="store_true", help="rearmar la secuencia aunque el proyecto traiga una")
+    ap.add_argument("--preview", action="store_true", help="vista previa rapida (540x960, 15 fps)")
     ap.add_argument("--out", default="catarsis.mp4")
     ap.add_argument("--seed", type=int, default=7)
     a = ap.parse_args(argv)
-    script = json.loads(Path(a.script).read_text(encoding="utf-8"))
-    seconds = a.seconds or script.get("seconds") or 40
-    beats = music_beats(a.music, seconds) if a.music else []
-    shots, marks = plan(script, Path(a.images), seconds, beats, seed=a.seed)
-    render(shots, Path(a.out), music=a.music, break_span=marks["break"])
+    path = Path(a.project)
+    project = normalize_project(json.loads(path.read_text(encoding="utf-8")), a.images or path.parent, a.seconds)
+    music = a.music or project.get("music")
+    beats = music_beats(music, project["seconds"]) if music else []
+    sequence = project.get("sequence") if project.get("sequence") and not a.auto else None
+    sequence = sequence or auto_sequence(project, beats, seed=a.seed)
+    shots, marks = build_shots(project, sequence)
+    render(shots, Path(a.out), music=music, break_span=marks["break"],
+           vignette=project["style"].get("vignette", True), preview=a.preview)
     print(f"[catarsis] listo: {a.out} ({marks['end']:.1f} s, {len(shots)} planos, {len(beats)} golpes de musica)")
     return 0
 

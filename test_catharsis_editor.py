@@ -11,6 +11,7 @@ es exacta, nunca hay mas de 3 destellos por segundo y el ajuste al ritmo no camb
 """
 
 import shutil
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -74,6 +75,79 @@ class CatharsisPlanTest(unittest.TestCase):
     def test_todas_las_tarjetas_son_verticales(self):
         for style in ("center", "left", "invert", "red", "word", "caption"):
             self.assertEqual(ce.text_card("Who am I?", style).size, (ce.W, ce.H), style)
+
+
+class ProjectAndSequenceTest(unittest.TestCase):
+    """La pestana Catarsis trabaja con un proyecto y una secuencia de planos editable."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = Path(tempfile.mkdtemp())
+        for name in ("a.png", "b.png", "c.png"):
+            Image.new("L", (600, 800), 90).save(cls.tmp / name)
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.tmp, ignore_errors=True)
+
+    def test_un_guion_viejo_se_convierte_en_proyecto(self):
+        p = ce.normalize_project(SCRIPT, self.tmp, 30)
+        self.assertEqual(p["seconds"], 30.0)
+        self.assertTrue(all(Path(m["file"]).is_absolute() and m["type"] == "image" for m in p["media"]))
+        self.assertEqual(p["cards"]["climax"], ["WHO", "AM", "I"])
+        self.assertIn("variants", p["style"])
+
+    def test_la_secuencia_automatica_es_editable(self):
+        p = ce.normalize_project(SCRIPT, self.tmp, 30)
+        seq = ce.auto_sequence(p)
+        self.assertTrue(all({"kind", "seconds", "transition", "motion"} <= set(s) for s in seq))
+        self.assertEqual(sum(1 for s in seq if s.get("tag") == "break"), 1)
+        self.assertAlmostEqual(sum(s["seconds"] for s in seq), 30, delta=0.5)
+        seq[2]["seconds"] = 3.0          # retoque: un plano mas largo
+        shots, _ = ce.build_shots(p, seq)
+        self.assertAlmostEqual(sum(s.frames for s in shots) / ce.FPS, sum(s["seconds"] for s in seq), delta=0.1)
+
+    def test_un_video_con_su_audio_se_oye(self):
+        try:
+            ffmpeg = ce._ffmpeg()
+            clip = self.tmp / "clip.mp4"
+            subprocess.run([ffmpeg, "-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc2=size=320x240:rate=30:duration=4",
+                            "-f", "lavfi", "-i", "sine=frequency=330:duration=4", "-shortest", "-c:v", "libx264",
+                            "-pix_fmt", "yuv420p", "-c:a", "aac", str(clip)], check=True)
+        except Exception as exc:
+            self.skipTest(f"sin FFmpeg: {exc}")
+        p = ce.normalize_project(SCRIPT, self.tmp, 20)
+        p["media"].append({"file": str(clip), "type": "video", "in": 0.0, "out": 4.0, "audio": True})
+        seq = ce.auto_sequence(p)
+        loud = [s for s in seq if s["kind"] == "media" and s["media"] == 3 and s["seconds"] >= ce.AUDIO_HOLD]
+        self.assertTrue(loud, "el video con audio necesita al menos un plano largo en la subida")
+        shots, marks = ce.build_shots(p, seq)
+        self.assertTrue(any(s.audio for s in shots))
+        out = ce.render(shots, self.tmp / "out.mp4", break_span=marks["break"], preview=True)
+        info = ce.media_info.__wrapped__(str(out))
+        self.assertTrue(info["audio"])
+        self.assertAlmostEqual(info["duration"], marks["end"], delta=0.2)
+
+
+class CardsTest(unittest.TestCase):
+    def test_lee_respuestas_desordenadas_del_modelo(self):
+        raw = ('Here you go:\n```json\n{"opening": "Who am I?", "lines": ["July 16, 1945.", "What did I build?",],'
+               ' "climax": ["who", "am", "i"], "final": ["Now I am become Death,"], "end": "Oppenheimer (1965)"}\n```')
+        cards = ce.parse_cards(raw)
+        self.assertEqual(cards["lines"], ["July 16, 1945.", "What did I build?"])
+        self.assertEqual(cards["climax"], ["WHO", "AM", "I"])
+
+    def test_el_pedido_lleva_tema_y_voz(self):
+        seen = {}
+
+        def fake(prompt):
+            seen["prompt"] = prompt
+            return '{"opening": "Who was he?", "lines": ["July 16, 1945."], "climax": ["WHO"], "final": [], "end": ""}'
+
+        cards = ce.write_cards("Trinity test", "narrator", generate_fn=fake, check=False, log=lambda m: None)
+        self.assertIn("Trinity test", seen["prompt"])
+        self.assertIn("third person", seen["prompt"])
+        self.assertEqual(cards["opening"], "Who was he?")
 
 
 class LimitFlashesTest(unittest.TestCase):

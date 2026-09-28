@@ -275,6 +275,18 @@ concreta + sujeto nombrado**, duración corta. Ej: "72 Seconds: The Wow! Signal"
 
 ## Changelog
 
+- **2026-09-28b** — **Pestaña Catarsis en la app** (`catharsis_tab.py`, entre Auto Video Studio y Metadata).
+  - **Qué se elige:** tema y tarjetas (voz del personaje o del narrador; botón "Escribir con IA", que pasa
+    las tarjetas por `script_fact_check`), imágenes y videos (encuadre, zoom, tramo y casilla "Usar su
+    audio"), música (archivo o buscador de Jamendo) y estilo (duración, velocidad de cortes, destellos,
+    variantes, transiciones glitch / film burn / zoom, grano, viñeta, temblor).
+  - **Armar automático + retoque:** `auto_sequence()` arma el arco como una lista de planos editable (contenido,
+    variante, segundos, transición, movimiento; subir, bajar, duplicar, eliminar). Vista previa rápida
+    (540x960, 15 fps) y render final a `auto_videos/output/catarsis_<fecha>_<tema>.mp4`. Proyecto en JSON
+    (`projects/catarsis/`).
+  - **Motor:** acepta videos (cuadros por tubería de FFmpeg); su audio se mezcla y la música baja
+    (sidechain). En la subida, un video con audio dura al menos 1.2 s, porque si no, no se oye.
+  - Guardas: `test_catharsis_editor.py` (11).
 - **2026-09-28** — **Formato Catarsis, piloto** (`catharsis_editor.py`). Short vertical sin voz y de impacto,
   con el lenguaje de los monólogos finales de Evangelion pero con material propio (nada de clips, música
   ni tipografía de la serie).
