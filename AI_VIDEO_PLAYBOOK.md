@@ -275,10 +275,15 @@ concreta + sujeto nombrado**, duración corta. Ej: "72 Seconds: The Wow! Signal"
 
 ## Changelog
 
+- **2026-09-28d** — **Catarsis con video de archivo** (probado con la película de Trinity, 1945: tramos en `in`/`out`,
+  sin su audio). El texto sobre imagen ahora es blanco con halo oscuro (el invertido se perdía en los grises) y
+  el video sigue corriendo debajo; el autocontraste tiene tope de ganancia (en un destello o un cielo parejo
+  estiraba los bloques de la compresión); los impact frames salen de fotos; una tarjeta roja cuenta como
+  destello rojo para el limitador. Guardas: `test_catharsis_editor.py` (20).
 - **2026-09-28c** — **Catarsis: efectos pro** (motor `catharsis_editor.py` + casillas "Imagen" y "Ritmo y sonido"
   en la pestaña; todos prendidos por defecto y se apagan por proyecto).
   - **Imagen:** texto cinético (entra agrandado y desenfocado, con eco) y 1 de cada 3 frases encima de la
-    imagen, invirtiendo lo que tapa; impact frames de anime (dos tonos + líneas de velocidad, 3 cuadros)
+    imagen; impact frames de anime (dos tonos + líneas de velocidad, 3 cuadros)
     antes de las palabras del clímax, con desenfoque de zoom en los golpes; color por acto (frío en la
     subida, rojo en el clímax, cálido al cierre) + resplandor; una doble exposición y una pantalla dividida
     (2-3 franjas) en la subida. Tipos nuevos en la tabla: texto sobre imagen, doble exposición, pantalla

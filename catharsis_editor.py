@@ -153,9 +153,14 @@ def text_card(text: str, style: str = "center") -> Image.Image:
 
 
 def overlay_layer(text: str) -> Image.Image:
-    """Texto blanco (RGBA) para ir encima de una imagen, en la zona segura."""
-    lum = text_card(text, "center").convert("L")
-    return Image.merge("RGBA", (lum, lum, lum, lum))
+    """Texto blanco (RGBA) para ir encima de una imagen o un video, en la zona segura, con un halo
+    oscuro que lo separa del fondo: se lee sobre cualquier tono (el texto invertido se perdia en los grises)."""
+    mask = text_card(text, "center").convert("L")
+    m = np.asarray(mask, dtype=np.float32) / 255.0
+    halo = np.clip(np.asarray(mask.filter(ImageFilter.GaussianBlur(24)), dtype=np.float32) / 255.0 * 2.5, 0, 1) * 0.72
+    alpha = m + halo * (1.0 - m)                     # texto blanco "sobre" el halo negro
+    rgb = m[..., None] * np.asarray(PAPER, dtype=np.float32) / np.maximum(alpha, 1e-6)[..., None]
+    return Image.fromarray(np.dstack([rgb, alpha * 255.0]).clip(0, 255).astype(np.uint8), "RGBA")
 
 
 # ---------------------------------------------------------------- imagenes y videos
@@ -241,6 +246,20 @@ def iter_clip_frames(path, start: float, count: int, focus=(0.5, 0.5), zoom: flo
         yield cur if frac < 0.05 else Image.blend(cur, nxt, frac)
 
 
+def _contrast(img: Image.Image, cutoff: float = 1.0, max_gain: float = 2.5) -> Image.Image:
+    """Autocontraste con tope de ganancia (y el mismo estiramiento en los tres canales, asi no cambia el
+    tono): un cuadro casi parejo, como un destello o un cielo, no se estira hasta mostrar los bloques de
+    la compresion del video."""
+    hist = np.asarray(img.histogram(), dtype=np.float64).reshape(-1, 256).sum(0)
+    cum = np.cumsum(hist) / max(hist.sum(), 1.0)
+    lo, hi = float(np.searchsorted(cum, cutoff / 100)), float(np.searchsorted(cum, 1 - cutoff / 100))
+    span = max(hi - lo, 1.0)
+    out = min(255.0, span * max_gain)
+    base = lo * (255.0 - out) / max(255.0 - span, 1.0)   # un cuadro claro sigue claro
+    lut = np.clip(base + (np.arange(256) - lo) * out / span, 0, 255).astype(np.uint8).tolist()
+    return img.point(lut * len(img.getbands()))
+
+
 def _sketch(gray: Image.Image) -> Image.Image:
     """Lapiz sobre papel: division de la imagen por su negativo desenfocado (color dodge)."""
     base = np.asarray(gray, dtype=np.float32)
@@ -254,8 +273,8 @@ def _sketch(gray: Image.Image) -> Image.Image:
 def variant(img: Image.Image, kind: str) -> Image.Image:
     """color, base (B/N contrastado), negative, red, hard (dos tonos) o sketch."""
     if kind == "color":
-        return ImageOps.autocontrast(img.convert("RGB"), cutoff=1)
-    g = ImageOps.autocontrast(img.convert("L"), cutoff=1)
+        return _contrast(img.convert("RGB"))
+    g = _contrast(img.convert("L"))
     if kind == "negative":
         return ImageOps.invert(g).convert("RGB")
     if kind == "red":
@@ -289,8 +308,9 @@ def bloom(img: Image.Image, strength: float = 0.45) -> Image.Image:
 
 def impact_image(img: Image.Image, seed: int = 0) -> Image.Image:
     """Impact frame de anime: dos tonos invertidos y lineas de velocidad hacia el centro."""
-    g = ImageOps.autocontrast(img.convert("L"), cutoff=2)
-    base = ImageOps.invert(g.point(lambda v: 255 if v > 110 else 0)).convert("RGB")
+    g = _contrast(img.convert("L"), cutoff=2)
+    thr = min(180, max(70, int(np.median(np.asarray(g)))))   # la silueta se separa aunque la foto sea clara u oscura
+    base = ImageOps.invert(g.point(lambda v: 255 if v > thr else 0)).convert("RGB")
     draw, rng = ImageDraw.Draw(base), random.Random(seed)
     cx, cy = W / 2, H * SAFE_Y
     for _ in range(90):
@@ -550,6 +570,7 @@ def auto_sequence(project: dict, beats=(), seed: int = 7, drop: Optional[float] 
 
     # 3. Climax: palabras sueltas (con impact frame antes), primeros planos y destellos.
     words = [w for w in cards.get("climax") or [] if str(w).strip()] or DEFAULT_CARDS["climax"]
+    photos = [k for k, m in enumerate(media) if m.get("type") != "video"] or list(range(len(media)))
     climax = max(climax_end - sum(s["seconds"] for s in seq), 1.0)   # un guion muy largo no se come el climax
     t, k = 0.0, 0
     hi, lo = max(3, round(6 / speed)), max(2, round(3 / speed))
@@ -558,7 +579,7 @@ def auto_sequence(project: dict, beats=(), seed: int = 7, drop: Optional[float] 
         step = k % 4
         if step == 0:
             if on["impact"] and (k // 4) % 2 == 0 and climax - t - d > 3 / FPS:
-                add({"kind": "impact", "media": rng.randrange(len(media)), "seconds": 3 / FPS}, "climax")
+                add({"kind": "impact", "media": rng.choice(photos), "seconds": 3 / FPS}, "climax")
                 t += 3 / FPS
             card(words[(k // 4) % len(words)], "word", d, "climax", kinetic=False)["motion"] = "punch"
         elif step == 2 and rng.random() < min(1.0, flashes):
@@ -623,15 +644,12 @@ def build_shots(project: dict, sequence: list[dict]):
         common = {"motion": motion, "act": act, "kinetic": bool(spec.get("kinetic"))}
         if kind == "card":
             shot = Shot(frames, text_card(str(spec.get("text", "")), spec.get("style", "center")), grain=False,
-                        role="word" if spec.get("style") == "word" else "card", **common)
+                        red=spec.get("style") == "red", role="word" if spec.get("style") == "word" else "card",
+                        **common)
         elif kind == "color":
             name = spec.get("color", "black")
             shot = Shot(frames, Image.new("RGB", (W, H), COLORS.get(name, (0, 0, 0))), grain=False,
                         red=name == "red", tag=spec.get("tag", ""), role="color", **common)
-        elif kind == "overlay":
-            base = finish(("m", i, vkind), still(i, vkind), act)
-            shot = Shot(frames, base, grain=on["grain"], role="overlay",
-                        text_layer=overlay_layer(str(spec.get("text", ""))), **common)
         elif kind == "double":
             j = int(spec.get("media2", i + 1)) % len(media)
             base = finish(("d", i, j, vkind), double_image(still(i, vkind), still(j, vkind)), act)
@@ -656,6 +674,8 @@ def build_shots(project: dict, sequence: list[dict]):
             else:
                 shot = Shot(frames, finish(("m", i, vkind), still(i, vkind), act), grain=on["grain"],
                             red=vkind == "red", role="media", **common)
+            if kind == "overlay":   # el texto va encima; si el medio es un video, sigue corriendo debajo
+                shot.role, shot.text_layer = "overlay", overlay_layer(str(spec.get("text", "")))
         if transition == "flash" and shot.frames > FLASH_FRAMES + 1:
             shot.frames -= FLASH_FRAMES
             if shot.audio:
@@ -1019,12 +1039,13 @@ def render(shots: list[Shot], out: Path, music=None, break_span=None, *, vignett
                 arr = np.asarray(_moved(src, motion, i, shot.frames, rng), dtype=np.float32)
                 if (motion == "punch" or shot.role == "word") and i < 2:
                     arr = _zoom_blur(arr)
-                if shot.text_layer is not None:   # texto encima de la imagen: invierte lo que tapa
+                if shot.text_layer is not None:   # texto blanco con halo encima de la imagen o el video
                     layer = shot.text_layer
                     if shot.kinetic and i < KINETIC_FRAMES:
                         layer = layer_echo = _kinetic(layer, i, layer_echo)
-                    a = np.asarray(layer, dtype=np.float32)[..., 3:4] / 255.0
-                    arr = arr + a * (255.0 - 2.0 * arr)
+                    rgba = np.asarray(layer, dtype=np.float32)
+                    a = rgba[..., 3:4] / 255.0
+                    arr = arr * (1.0 - a) + rgba[..., :3] * a
                 if kind is not None and i < TRANSITION_FRAMES["glitch"]:
                     progress_i = 0.5 + 0.5 * i / TRANSITION_FRAMES["glitch"]
                     arr = glitch[0].apply_glitch_transition(np.clip(arr, 0, 255).astype(np.uint8), progress_i, kind,

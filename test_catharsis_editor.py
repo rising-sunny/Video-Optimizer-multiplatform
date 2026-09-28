@@ -145,6 +145,14 @@ class ProjectAndSequenceTest(unittest.TestCase):
                               "-i", str(out), "-f", "s16le", "-ac", "1", "-"], capture_output=True).stdout
         self.assertGreater(float(np.abs(np.frombuffer(pcm, np.int16)).mean()), 1000)
 
+    def test_el_texto_sobre_un_video_no_lo_congela(self):
+        p = ce.normalize_project(SCRIPT, self.tmp, 20)
+        p["media"].append({"file": str(self._clip()), "type": "video", "in": 0.0, "out": 4.0})
+        shots, _ = ce.build_shots(p, [{"kind": "overlay", "media": 3, "variant": "base", "text": "5:29 a.m.",
+                                       "seconds": 1.0}])
+        self.assertIsNotNone(shots[0].clip)
+        self.assertEqual(shots[0].text_layer.mode, "RGBA")
+
     def test_la_rampa_entrega_todos_los_cuadros(self):
         frames = list(ce.iter_clip_frames(self._clip(), 0.0, 30, ramp=True))
         self.assertEqual(len(frames), 30)
@@ -212,6 +220,12 @@ class EffectsTest(unittest.TestCase):
         self.assertFalse({"overlay", "double", "split", "impact"} & {s["kind"] for s in seq})
         self.assertEqual(seq[0]["kind"], "color")   # sin loop arranca en negro
         self.assertFalse(any(s.get("kinetic") for s in seq))
+
+    def test_un_cuadro_parejo_no_se_estira_hasta_el_ruido(self):
+        flat = Image.fromarray(np.random.default_rng(0).integers(225, 245, (96, 54), dtype=np.uint8))
+        out = np.asarray(ce.variant(flat.convert("RGB"), "base"), dtype=np.float32)
+        self.assertLess(out.std(), 3 * np.asarray(flat, dtype=np.float32).std())   # no aparecen los bloques
+        self.assertGreater(out.mean(), 150)                                           # un destello sigue claro
 
     def test_los_efectos_son_verticales(self):
         img = Image.new("RGB", (ce.W, ce.H), (120, 90, 60))
