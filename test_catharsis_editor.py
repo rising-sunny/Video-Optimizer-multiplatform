@@ -7,9 +7,14 @@ cortes secos al ritmo. En el primer piloto el limitador de destellos fundio el q
 destello del segundo: ahora un plano largo solo atrasa su corte. Ademas: la duracion total
 es exacta, nunca hay mas de 3 destellos por segundo y el ajuste al ritmo no cambia el total.
 
+Efectos: la caida de la musica mueve el quiebre sin cambiar el largo del climax; la secuencia
+trae texto sobre imagen, doble exposicion, pantalla dividida e impact frames; con loop el primer
+y el ultimo cuadro son iguales; la rampa de velocidad entrega todos sus cuadros.
+
     .venv\\Scripts\\python.exe test_catharsis_editor.py
 """
 
+import importlib.util
 import shutil
 import subprocess
 import tempfile
@@ -85,6 +90,13 @@ class ProjectAndSequenceTest(unittest.TestCase):
         cls.tmp = Path(tempfile.mkdtemp())
         for name in ("a.png", "b.png", "c.png"):
             Image.new("L", (600, 800), 90).save(cls.tmp / name)
+        cls.clip = cls.tmp / "clip.mp4"
+        try:
+            subprocess.run([ce._ffmpeg(), "-loglevel", "error", "-y", "-f", "lavfi", "-i",
+                            "testsrc2=size=320x240:rate=30:duration=4", "-f", "lavfi", "-i", "sine=frequency=330:duration=4",
+                            "-shortest", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", str(cls.clip)], check=True)
+        except Exception as exc:
+            cls.clip_error = exc
 
     @classmethod
     def tearDownClass(cls):
@@ -107,15 +119,13 @@ class ProjectAndSequenceTest(unittest.TestCase):
         shots, _ = ce.build_shots(p, seq)
         self.assertAlmostEqual(sum(s.frames for s in shots) / ce.FPS, sum(s["seconds"] for s in seq), delta=0.1)
 
+    def _clip(self) -> Path:
+        if not self.clip.exists():
+            self.skipTest(f"sin FFmpeg: {getattr(self, 'clip_error', '')}")
+        return self.clip
+
     def test_un_video_con_su_audio_se_oye(self):
-        try:
-            ffmpeg = ce._ffmpeg()
-            clip = self.tmp / "clip.mp4"
-            subprocess.run([ffmpeg, "-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc2=size=320x240:rate=30:duration=4",
-                            "-f", "lavfi", "-i", "sine=frequency=330:duration=4", "-shortest", "-c:v", "libx264",
-                            "-pix_fmt", "yuv420p", "-c:a", "aac", str(clip)], check=True)
-        except Exception as exc:
-            self.skipTest(f"sin FFmpeg: {exc}")
+        clip = self._clip()
         p = ce.normalize_project(SCRIPT, self.tmp, 20)
         p["media"].append({"file": str(clip), "type": "video", "in": 0.0, "out": 4.0, "audio": True})
         seq = ce.auto_sequence(p)
@@ -123,10 +133,92 @@ class ProjectAndSequenceTest(unittest.TestCase):
         self.assertTrue(loud, "el video con audio necesita al menos un plano largo en la subida")
         shots, marks = ce.build_shots(p, seq)
         self.assertTrue(any(s.audio for s in shots))
-        out = ce.render(shots, self.tmp / "out.mp4", break_span=marks["break"], preview=True)
+        from scipy.io import wavfile
+        music = self.tmp / "music.wav"
+        wavfile.write(music, 22050, (0.3 * np.sin(2 * np.pi * 220 * np.arange(25 * 22050) / 22050) * 32767).astype(np.int16))
+        out = ce.render(shots, self.tmp / "out.mp4", music=music, break_span=marks["break"], preview=True)
         info = ce.media_info.__wrapped__(str(out))
         self.assertTrue(info["audio"])
         self.assertAlmostEqual(info["duration"], marks["end"], delta=0.2)
+        # la musica sigue despues del ultimo video con audio (sidechaincompress la cortaba ahi)
+        pcm = subprocess.run([ce._ffmpeg(), "-loglevel", "error", "-ss", f"{marks['break'][1] + 0.5:.2f}", "-t", "1",
+                              "-i", str(out), "-f", "s16le", "-ac", "1", "-"], capture_output=True).stdout
+        self.assertGreater(float(np.abs(np.frombuffer(pcm, np.int16)).mean()), 1000)
+
+    def test_la_rampa_entrega_todos_los_cuadros(self):
+        frames = list(ce.iter_clip_frames(self._clip(), 0.0, 30, ramp=True))
+        self.assertEqual(len(frames), 30)
+        self.assertEqual(frames[-1].size, (ce.W, ce.H))
+
+    def test_render_con_diseno_sonoro_y_loop(self):
+        self._clip()
+        p = ce.normalize_project(SCRIPT, self.tmp, 20)
+        shots, marks = ce.build_shots(p, ce.auto_sequence(p))
+        self.assertTrue(np.array_equal(np.asarray(shots[0].image), np.asarray(shots[-1].image)))   # loop
+        track = ce.sfx_track(shots, marks["end"])
+        i = int(marks["break"][1] * ce.SR)
+        self.assertGreater(float(np.abs(track[i:i + ce.SR // 4]).max()), 0.3)   # boom al volver la musica
+        out = ce.render(shots, self.tmp / "sfx.mp4", break_span=marks["break"], preview=True, sfx=True, loop=True)
+        self.assertTrue(ce.media_info.__wrapped__(str(out))["audio"])   # sin musica ni videos: el diseno sonoro
+        self.assertFalse(out.with_suffix(".sfx.wav").exists())
+
+
+class EffectsTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = Path(tempfile.mkdtemp())
+        for name in ("a.png", "b.png", "c.png"):
+            Image.new("RGB", (600, 800), (120, 90, 60)).save(cls.tmp / name)
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.tmp, ignore_errors=True)
+
+    def test_la_caida_mueve_el_quiebre_sin_cambiar_el_climax(self):
+        _, rise_end, climax_end, break_end = ce._phase_bounds(40, drop=34.0)
+        self.assertEqual(break_end, 34.0)
+        self.assertAlmostEqual(climax_end - rise_end, (ce.CLIMAX_END - ce.RISE_END) * 40)
+        self.assertEqual(ce._phase_bounds(20, drop=11.0), ce._phase_bounds(20))   # la subida quedaria muy corta
+
+    def test_detecta_la_caida_de_la_musica(self):
+        if importlib.util.find_spec("librosa") is None:
+            self.skipTest("sin librosa")
+        from scipy.io import wavfile
+        sr = 22050
+        t = np.arange(36 * sr) / sr
+        wavfile.write(self.tmp / "drop.wav", sr,
+                      (np.sin(2 * np.pi * 110 * t) * np.where(t < 26, 0.05, 0.8) * 32767).astype(np.int16))
+        _, drop = ce.music_analysis(self.tmp / "drop.wav", 36)
+        self.assertAlmostEqual(drop, 26, delta=0.5)
+
+    def test_la_secuencia_trae_los_efectos(self):
+        p = ce.normalize_project(SCRIPT, self.tmp, 40)
+        seq = ce.auto_sequence(p, drop=33.0)
+        kinds = {s["kind"] for s in seq}
+        self.assertTrue({"overlay", "double", "split", "impact"} <= kinds, kinds)
+        self.assertEqual((seq[0]["kind"], seq[0]["text"]), ("card", SCRIPT["opening"]))    # loop: empieza y
+        self.assertEqual((seq[-1]["kind"], seq[-1]["text"]), ("card", SCRIPT["opening"]))  # termina igual
+        brk = next(i for i, s in enumerate(seq) if s.get("tag") == "break")
+        self.assertAlmostEqual(sum(s["seconds"] for s in seq[:brk + 1]), 33.0, delta=0.05)
+        self.assertAlmostEqual(sum(s["seconds"] for s in seq), 40, delta=0.5)
+        shots, _ = ce.build_shots(p, seq)
+        self.assertEqual(sum(s.frames for s in shots), 40 * ce.FPS)
+        self.assertTrue(any(s.text_layer is not None for s in shots))
+
+    def test_sin_efectos_vuelve_al_arco_simple(self):
+        p = ce.normalize_project(SCRIPT, self.tmp, 30)
+        p["style"].update({k: False for k in ("kinetic", "impact", "double", "split", "ramps", "drop", "loop")})
+        seq = ce.auto_sequence(p, drop=25.0)
+        self.assertFalse({"overlay", "double", "split", "impact"} & {s["kind"] for s in seq})
+        self.assertEqual(seq[0]["kind"], "color")   # sin loop arranca en negro
+        self.assertFalse(any(s.get("kinetic") for s in seq))
+
+    def test_los_efectos_son_verticales(self):
+        img = Image.new("RGB", (ce.W, ce.H), (120, 90, 60))
+        for out in (ce.impact_image(img), ce.double_image(img, img), ce.split_image([img, img, img]),
+                    ce.bloom(img), ce.grade(img, "climax")):
+            self.assertEqual(out.size, (ce.W, ce.H))
+        self.assertEqual(ce.overlay_layer("Who am I?").mode, "RGBA")
 
 
 class CardsTest(unittest.TestCase):

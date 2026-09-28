@@ -9,6 +9,7 @@ movimiento) antes de la vista previa y el render final en auto_videos/output.
 
 from __future__ import annotations
 
+import copy
 import json
 import re
 import time
@@ -17,9 +18,9 @@ from pathlib import Path
 from PyQt6.QtCore import QSize, Qt, QThread, QUrl, pyqtSignal
 from PyQt6.QtGui import QDesktopServices, QIcon, QImage, QPixmap
 from PyQt6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout,
-                             QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QListWidget, QListWidgetItem,
-                             QPlainTextEdit, QProgressBar, QPushButton, QScrollArea, QSlider, QSpinBox, QSplitter,
-                             QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
+                             QGridLayout, QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QListWidget,
+                             QListWidgetItem, QPlainTextEdit, QProgressBar, QPushButton, QScrollArea, QSlider,
+                             QSpinBox, QSplitter, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
 
 import catharsis_editor as ce
 
@@ -34,8 +35,15 @@ CARD_STYLES = {"center": "Centrada", "left": "Izquierda", "invert": "Papel", "re
                "caption": "Firma"}
 COLOR_NAMES = {"black": "Negro", "white": "Blanco", "red": "Rojo"}
 TRANSITION_NAMES = {"cut": "Corte", "flash": "Destello", "glitch": "Glitch", "burn": "Film burn", "zoom": "Zoom"}
-MOTION_NAMES = {"hold": "Quieto", "push": "Acercar", "pull": "Alejar", "punch": "Golpe", "shake": "Temblor"}
-KIND_NAMES = {"card": "Tarjeta", "media": "Medio", "color": "Color"}
+MOTION_NAMES = {"hold": "Quieto", "push": "Acercar", "pull": "Alejar", "punch": "Golpe", "shake": "Temblor",
+                "ramp": "Rampa"}
+KIND_NAMES = {"card": "Tarjeta", "media": "Medio", "color": "Color", "overlay": "Texto sobre imagen",
+              "double": "Doble exposicion", "split": "Pantalla dividida", "impact": "Impact frame"}
+MEDIA_KINDS = ("media", "overlay", "double", "split", "impact")
+IMAGE_EFFECTS = {"kinetic": "Texto cinetico", "impact": "Impact frames", "grade": "Color por acto",
+                 "bloom": "Resplandor", "double": "Doble exposicion", "split": "Pantalla dividida"}
+RHYTHM_EFFECTS = {"ramps": "Rampas de velocidad", "drop": "Quiebre en la caida", "loop": "Loop perfecto",
+                  "sfx": "Diseno sonoro"}
 
 
 def _pixmap(img) -> QPixmap:
@@ -45,7 +53,7 @@ def _pixmap(img) -> QPixmap:
 
 
 class _SequenceWorker(QThread):
-    done = pyqtSignal(list, int)
+    done = pyqtSignal(list, int, object)
     failed = pyqtSignal(str)
 
     def __init__(self, project):
@@ -55,8 +63,9 @@ class _SequenceWorker(QThread):
     def run(self):
         try:
             music = self.project.get("music")
-            beats = ce.music_beats(music, self.project["seconds"]) if music else []
-            self.done.emit(ce.auto_sequence(self.project, beats, seed=int(time.time()) % 1000), len(beats))
+            beats, drop = ce.music_analysis(music, self.project["seconds"]) if music else ([], None)
+            seq = ce.auto_sequence(self.project, beats, seed=int(time.time()) % 1000, drop=drop)
+            self.done.emit(seq, len(beats), drop if self.project["style"].get("drop") else None)
         except Exception as exc:
             self.failed.emit(f"{type(exc).__name__}: {exc}")
 
@@ -67,9 +76,9 @@ class _RenderWorker(QThread):
     done = pyqtSignal(str)
     failed = pyqtSignal(str)
 
-    def __init__(self, project, out: Path, preview: bool):
+    def __init__(self, project, out: Path, preview: bool, guides: bool = False):
         super().__init__()
-        self.project, self.out, self.preview = project, out, preview
+        self.project, self.out, self.preview, self.guides = project, out, preview, guides
 
     def run(self):
         try:
@@ -77,8 +86,10 @@ class _RenderWorker(QThread):
             shots, marks = ce.build_shots(self.project, self.project["sequence"])
             self.line.emit(f"{len(shots)} planos, {marks['end']:.1f} s. Renderizando...")
             self.out.parent.mkdir(parents=True, exist_ok=True)
+            style = self.project["style"]
             ce.render(shots, self.out, music=self.project.get("music") or None, break_span=marks["break"],
-                      vignette=self.project["style"].get("vignette", True), preview=self.preview,
+                      vignette=style.get("vignette", True), preview=self.preview, sfx=style.get("sfx", True),
+                      loop=style.get("loop", True), guides=self.preview and self.guides,
                       progress=lambda n, total: self.progress.emit(int(100 * n / max(total, 1))))
             self.done.emit(str(self.out))
         except Exception as exc:
@@ -245,6 +256,14 @@ class CatharsisTab(QWidget):
         self.effect_checks = self._checks({"grain": "Grano", "vignette": "Vineta", "shake": "Temblor"},
                                           ["grain", "vignette", "shake"])
         form.addRow("Efectos:", self.effect_checks[0])
+        self.image_checks = self._checks(IMAGE_EFFECTS, list(IMAGE_EFFECTS), cols=3)
+        form.addRow("Imagen:", self.image_checks[0])
+        self.rhythm_checks = self._checks(RHYTHM_EFFECTS, list(RHYTHM_EFFECTS), cols=2)
+        self.rhythm_checks[1]["drop"].setToolTip("El quiebre (silencio) termina justo en la caida de la musica.")
+        self.rhythm_checks[1]["loop"].setToolTip("El ultimo cuadro es la pregunta inicial: el Short se repite "
+                                                 "sin corte.")
+        self.rhythm_checks[1]["sfx"].setToolTip("Whoosh, golpes, subida, pitido y boom sintetizados (sin derechos).")
+        form.addRow("Ritmo y sonido:", self.rhythm_checks[0])
         return box
 
     def _sequence_group(self):
@@ -267,7 +286,7 @@ class CatharsisTab(QWidget):
         self.table.setHorizontalHeaderLabels(["Plano", "Contenido", "Variante / estilo", "Segundos",
                                               "Transicion", "Movimiento"])
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        for col, width in ((0, 90), (2, 120), (3, 90), (4, 110), (5, 110)):
+        for col, width in ((0, 130), (2, 120), (3, 90), (4, 110), (5, 110)):
             self.table.setColumnWidth(col, width)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
@@ -290,7 +309,9 @@ class CatharsisTab(QWidget):
         save_btn, load_btn = QPushButton("Guardar proyecto..."), QPushButton("Abrir proyecto...")
         save_btn.clicked.connect(self._save_project)
         load_btn.clicked.connect(self._load_project)
-        for b in (self.preview_btn, self.render_btn, self.open_btn, save_btn, load_btn):
+        self.guides = QCheckBox("Guias de zona segura")
+        self.guides.setToolTip("En la vista previa, marca en rojo lo que tapa la interfaz de Shorts.")
+        for b in (self.preview_btn, self.guides, self.render_btn, self.open_btn, save_btn, load_btn):
             row.addWidget(b)
         v.addLayout(row)
         self.progress = QProgressBar()
@@ -325,18 +346,25 @@ class CatharsisTab(QWidget):
         return s, row
 
     @staticmethod
-    def _checks(names: dict, checked):
+    def _checks(names: dict, checked, cols: int = 0):
         row = QWidget()
-        h = QHBoxLayout(row)
+        h = QGridLayout(row) if cols else QHBoxLayout(row)
         h.setContentsMargins(0, 0, 0, 0)
         boxes = {}
-        for key, name in names.items():
+        for n, (key, name) in enumerate(names.items()):
             cb = QCheckBox(name)
             cb.setChecked(key in checked)
-            h.addWidget(cb)
+            if cols:
+                h.addWidget(cb, n // cols, n % cols)
+            else:
+                h.addWidget(cb)
             boxes[key] = cb
-        h.addStretch()
+        if not cols:
+            h.addStretch()
         return row, boxes
+
+    def _effect_boxes(self) -> dict:
+        return {**self.effect_checks[1], **self.image_checks[1], **self.rhythm_checks[1]}
 
     def log(self, msg: str):
         self.log_box.appendPlainText(f"[{time.strftime('%H:%M:%S')}] {msg}")
@@ -352,7 +380,7 @@ class CatharsisTab(QWidget):
         style = {"speed": self.speed.value() / 100, "flashes": self.flashes.value() / 100,
                  "variants": [k for k, cb in self.variant_checks[1].items() if cb.isChecked()],
                  "transitions": [k for k, cb in self.transition_checks[1].items() if cb.isChecked()]}
-        style.update({k: cb.isChecked() for k, cb in self.effect_checks[1].items()})
+        style.update({k: cb.isChecked() for k, cb in self._effect_boxes().items()})
         return ce.normalize_project({
             "topic": self.topic.text().strip(), "perspective": self.perspective.currentData(),
             "language": self.language.currentData(), "seconds": self.seconds.value(),
@@ -389,8 +417,8 @@ class CatharsisTab(QWidget):
         for group, key in ((self.variant_checks, "variants"), (self.transition_checks, "transitions")):
             for k, cb in group[1].items():
                 cb.setChecked(k in style.get(key, []))
-        for k, cb in self.effect_checks[1].items():
-            cb.setChecked(bool(style.get(k, True)))
+        for k, cb in self._effect_boxes().items():
+            cb.setChecked(bool(style.get(k, ce.DEFAULT_STYLE.get(k, True))))
         self.media = p["media"]
         self._set_music(p.get("music") or "")
         self.sequence = p.get("sequence") or []
@@ -430,10 +458,7 @@ class CatharsisTab(QWidget):
             return
         self.media.pop(row)
         # los planos que usaban ese medio se quitan; los de los medios siguientes se corren uno
-        self.sequence = [s for s in self.sequence if not (s.get("kind") == "media" and s.get("media") == row)]
-        for s in self.sequence:
-            if s.get("kind") == "media" and s.get("media", 0) > row:
-                s["media"] -= 1
+        self._remap_media(lambda i: None if i == row else (i - 1 if i > row else i))
         self._refresh_media()
         self._refresh_table()
 
@@ -443,12 +468,25 @@ class CatharsisTab(QWidget):
         if row < 0 or not 0 <= new < len(self.media):
             return
         self.media[row], self.media[new] = self.media[new], self.media[row]
-        for s in self.sequence:
-            if s.get("kind") == "media" and s.get("media") in (row, new):
-                s["media"] = new if s["media"] == row else row
+        self._remap_media(lambda i: {row: new, new: row}.get(i, i))
         self._refresh_media()
         self._refresh_table()
         self.media_list.setCurrentRow(new)
+
+    def _remap_media(self, fn):
+        """Los planos siguen a sus medios cuando cambia la lista. fn: indice viejo -> nuevo (None: se quito)."""
+        kept = []
+        for s in self.sequence:
+            if s.get("kind") in MEDIA_KINDS:
+                for key in ("media", "media2"):
+                    if key in s:
+                        s[key] = fn(s[key])
+                if "medias" in s:
+                    s["medias"] = [x for x in map(fn, s["medias"]) if x is not None]
+                if None in (s.get("media", 0), s.get("media2", 0)) or len(s.get("medias", (0, 0))) < 2:
+                    continue   # el plano se quedo sin su medio
+            kept.append(s)
+        self.sequence = kept
 
     def _media_label(self, i: int, m: dict) -> str:
         tags = " · video" + (" · con audio" if m.get("audio") else "") if m.get("type") == "video" else ""
@@ -552,17 +590,20 @@ class CatharsisTab(QWidget):
             self.log("Agrega al menos una imagen o un video.")
             return
         self._busy(True)
-        self.log("Armando el arco" + (" y buscando los golpes de la musica..." if self.music_path else "..."))
+        music = " y buscando los golpes y la caida de la musica..." if self.music_path else "..."
+        self.log("Armando el arco" + music)
         self._worker = _SequenceWorker(self.project())
         self._worker.done.connect(self._sequence_done)
         self._worker.failed.connect(self._failed)
         self._worker.start()
 
-    def _sequence_done(self, sequence: list, beats: int):
+    def _sequence_done(self, sequence: list, beats: int, drop):
         self._busy(False)
         self.sequence = sequence
         self._refresh_table()
         self.log(f"Secuencia armada: {len(sequence)} planos" + (f", {beats} golpes de musica." if beats else "."))
+        if drop:
+            self.log(f"Caida de la musica en {drop:.1f} s: el quiebre termina ahi.")
 
     def _combo(self, names: dict, value, on_change):
         c = QComboBox()
@@ -589,9 +630,12 @@ class CatharsisTab(QWidget):
                 self.table.setCellWidget(row, 1, self._combo(COLOR_NAMES, spec.get("color"), set_key("color")))
                 self.table.setItem(row, 2, QTableWidgetItem("-"))
             else:
-                self.table.setCellWidget(row, 1, self._combo(media_names, spec.get("media"),
-                                                             lambda value, s=spec: self._set_shot_media(s, value)))
-                self.table.setCellWidget(row, 2, self._combo(VARIANT_NAMES, spec.get("variant"), set_key("variant")))
+                self.table.setCellWidget(row, 1, self._media_cell(spec, media_names))
+                if kind == "impact":
+                    self.table.setItem(row, 2, QTableWidgetItem("-"))
+                else:
+                    self.table.setCellWidget(row, 2, self._combo(VARIANT_NAMES, spec.get("variant"),
+                                                                 set_key("variant")))
             for col in (0, 2):
                 item = self.table.item(row, col)
                 if item is not None:
@@ -605,9 +649,33 @@ class CatharsisTab(QWidget):
         self.table.blockSignals(False)
         self._update_total()
 
+    def _media_cell(self, spec: dict, names: dict) -> QWidget:
+        """Contenido de un plano con medios: el medio (dos en la doble exposicion, varios en la pantalla
+        dividida) y, en el texto sobre imagen, la frase."""
+        cell = QWidget()
+        h = QHBoxLayout(cell)
+        h.setContentsMargins(0, 0, 0, 0)
+        if spec.get("kind") == "split":
+            for k, value in enumerate(spec.get("medias") or []):
+                h.addWidget(self._combo(names, value, lambda v, s=spec, k=k: s["medias"].__setitem__(k, v)))
+        else:
+            combo = self._combo(names, spec.get("media"), lambda v, s=spec: self._set_shot_media(s, v))
+            if spec.get("kind") == "overlay":
+                combo.setMaximumWidth(150)   # el espacio es para la frase
+            h.addWidget(combo)
+            if spec.get("kind") == "double":
+                h.addWidget(self._combo(names, spec.get("media2"), lambda v, s=spec: s.__setitem__("media2", v)))
+        if spec.get("kind") == "overlay":
+            text = QLineEdit(spec.get("text", ""))
+            text.textEdited.connect(lambda value, s=spec: s.__setitem__("text", value))
+            h.addWidget(text, 1)
+        return cell
+
     def _set_shot_media(self, spec: dict, index: int):
         """Otro medio para el plano: toma la casilla de audio de ese video y arranca desde su inicio."""
-        spec.update(media=index, offset=0.0, audio=bool(self.media[index].get("audio")))
+        spec["media"] = index
+        if spec.get("kind") == "media":
+            spec.update(offset=0.0, audio=bool(self.media[index].get("audio")))
 
     def _update_total(self):
         total = sum(float(s.get("seconds", 0)) for s in self.sequence)
@@ -634,7 +702,7 @@ class CatharsisTab(QWidget):
     def _duplicate_shot(self):
         row = self._selected_shot()
         if row >= 0:
-            self.sequence.insert(row + 1, dict(self.sequence[row], tag=""))
+            self.sequence.insert(row + 1, dict(copy.deepcopy(self.sequence[row]), tag=""))
             self._refresh_table()
             self.table.selectRow(row + 1)
 
@@ -658,7 +726,7 @@ class CatharsisTab(QWidget):
             out = OUTPUT_DIR / build_video_filename("catarsis", project.get("topic") or "catarsis")
         self._busy(True)
         self.progress.setValue(0)
-        self._worker = _RenderWorker(project, out, preview)
+        self._worker = _RenderWorker(project, out, preview, self.guides.isChecked())
         self._worker.line.connect(self.log)
         self._worker.progress.connect(self.progress.setValue)
         self._worker.done.connect(lambda path: self._render_done(path, preview))

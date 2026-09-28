@@ -254,7 +254,7 @@ concreta + sujeto nombrado**, duración corta. Ej: "72 Seconds: The Wow! Signal"
 | `thumbnail_typography.py` + `gemini_vision.py` | Plan tipográfico medido (tamaño, peso, color, contorno, zona) y revisión con visión de la miniatura elegida |
 | `facebook_metadata.py` | Título, arranque de la descripción y hashtags de Facebook e Instagram con la investigación de YouTube |
 | `build_derinkuyu_long.py` | Ejemplo one-off de documental (referencia; hardcodeado) |
-| `catharsis_editor.py` | Formato Catarsis (piloto): Short vertical sin voz, tarjetas + imágenes + música con cortes al ritmo |
+| `catharsis_editor.py` + `catharsis_tab.py` | Formato Catarsis: Short vertical sin voz, tarjetas + imágenes/videos + música con cortes al ritmo, efectos y diseño sonoro; pestaña "Catarsis" de la app |
 
 ---
 
@@ -275,6 +275,23 @@ concreta + sujeto nombrado**, duración corta. Ej: "72 Seconds: The Wow! Signal"
 
 ## Changelog
 
+- **2026-09-28c** — **Catarsis: efectos pro** (motor `catharsis_editor.py` + casillas "Imagen" y "Ritmo y sonido"
+  en la pestaña; todos prendidos por defecto y se apagan por proyecto).
+  - **Imagen:** texto cinético (entra agrandado y desenfocado, con eco) y 1 de cada 3 frases encima de la
+    imagen, invirtiendo lo que tapa; impact frames de anime (dos tonos + líneas de velocidad, 3 cuadros)
+    antes de las palabras del clímax, con desenfoque de zoom en los golpes; color por acto (frío en la
+    subida, rojo en el clímax, cálido al cierre) + resplandor; una doble exposición y una pantalla dividida
+    (2-3 franjas) en la subida. Tipos nuevos en la tabla: texto sobre imagen, doble exposición, pantalla
+    dividida, impact frame; movimiento nuevo: rampa.
+  - **Ritmo y sonido:** el quiebre termina en la caída de la música (mayor salto de energía entre el 55 % y
+    el 92 %; el clímax conserva su largo y la subida se estira o se acorta); rampas de velocidad en los
+    videos sin audio (0.4x y de golpe 2.5x, cada video la primera vez, al menos 0.9 s); diseño sonoro
+    sintetizado sin derechos (whoosh, golpe grave, subida antes del quiebre, pitido en el silencio, boom en
+    la caída); loop perfecto (arranca y termina con la pregunta, sin fundido a negro). Texto siempre dentro
+    de la zona segura de Shorts; casilla "Guías de zona segura" las marca en la vista previa.
+  - **Bug corregido:** con un video con audio, la música se cortaba al terminar el último clip
+    (`sidechaincompress` termina con su entrada de control); ahora el control se rellena hasta el final.
+  - Subida: piso de 0.45 s de imagen por frase. Guardas: `test_catharsis_editor.py` (18).
 - **2026-09-28b** — **Pestaña Catarsis en la app** (`catharsis_tab.py`, entre Auto Video Studio y Metadata).
   - **Qué se elige:** tema y tarjetas (voz del personaje o del narrador; botón "Escribir con IA", que pasa
     las tarjetas por `script_fact_check`), imágenes y videos (encuadre, zoom, tramo y casilla "Usar su
