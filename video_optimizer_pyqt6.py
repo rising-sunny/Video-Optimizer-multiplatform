@@ -851,6 +851,13 @@ class VideoOptimizerGUI(QMainWindow, ThumbnailsMixin):
             self.tabs.addTab(tab3, "Auto Video Studio")
             self._auto_video_wrapper = None
 
+        # Tab: Catarsis (Short vertical de impacto, sin voz). Carga lazy como Auto Video Studio.
+        def _create_catharsis_tab():
+            from catharsis_tab import CatharsisTab
+            return CatharsisTab(self)
+        self._catharsis_wrapper = LazyTabWrapper("Catarsis", _create_catharsis_tab, self, attr_name='catharsis_tab')
+        self.tabs.addTab(self._catharsis_wrapper, "Catarsis")
+
         # Tab 4: Metadata Studio (ligero - carga inmediata)
         try:
             from platform_metadata_tab import PlatformMetadataTab

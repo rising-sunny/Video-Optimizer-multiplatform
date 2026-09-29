@@ -8,18 +8,10 @@ setlocal EnableDelayedExpansion
 
 title Daily Short Pipeline - Stunning Revelations
 
-:: Buscar el venv
-set "VENV_BASE=%LOCALAPPDATA%\venvs"
-set "VENV_PYTHON="
+:: Venv local del repo (el mismo que crea INSTALL_DEPS.bat y usa RUN.bat)
+set "VENV_PYTHON=%~dp0.venv\Scripts\python.exe"
 
-:: Buscar cualquier venv de video_optimizer
-for /d %%D in ("%VENV_BASE%\video_optimizer_*") do (
-    if exist "%%D\Scripts\python.exe" (
-        set "VENV_PYTHON=%%D\Scripts\python.exe"
-    )
-)
-
-if "%VENV_PYTHON%"=="" (
+if not exist "%VENV_PYTHON%" (
     echo.
     echo ERROR: No se encontro el entorno virtual.
     echo Ejecuta INSTALL_DEPS.bat primero para crear el venv.

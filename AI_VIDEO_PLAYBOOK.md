@@ -262,6 +262,7 @@ concreta + sujeto nombrado**, duración corta. Ej: "72 Seconds: The Wow! Signal"
 | `tiktok_uploader.py` | Borrador a la bandeja de TikTok (sandbox, `video.upload`); `--auth` una vez, `--check`, `--upload` |
 | `telegram_notify.py` | Título y descripción del borrador de TikTok al celular, copiables con un toque; `--setup`, `--test` |
 | `build_derinkuyu_long.py` | Ejemplo one-off de documental (referencia; hardcodeado) |
+| `catharsis_editor.py` + `catharsis_tab.py` | Formato Catarsis: Short vertical sin voz, tarjetas + imágenes/videos + música con cortes al ritmo, efectos y diseño sonoro; pestaña "Catarsis" de la app |
 
 ---
 
@@ -282,6 +283,61 @@ concreta + sujeto nombrado**, duración corta. Ej: "72 Seconds: The Wow! Signal"
 
 ## Changelog
 
+- **2026-09-29** — **Catarsis acepta material de archivo `.mpg`, `.mpeg`, `.ogv` y `.wmv`** (Internet Archive y Wikimedia
+  lo entregan así; antes se tomaban como imágenes y fallaban, y el diálogo de la pestaña no dejaba elegirlos).
+  Probado con un Short del Hindenburg (noticiero de Universal de 1937, dominio público).
+- **2026-09-28e** — **Catarsis con pistas largas** (Biblioteca de Audio: temas de 2 a 5 min con introducción casi muda).
+  En la pestaña, Música → "Desde el segundo" + "Auto: su caída en el quiebre" (por defecto): `find_music_start()`
+  busca la caída más fuerte de la pista y la toma desde donde esa caída queda al 80 % del video, sin arrancar en
+  silencio; `music_analysis(..., start)` y `render(..., music_start=)` la usan (CLI: `--music-start auto`).
+  Sin frases, la subida es solo de imágenes (antes el clímax se la comía). Guardas: 22.
+- **2026-09-28d** — **Catarsis con video de archivo** (probado con la película de Trinity, 1945: tramos en `in`/`out`,
+  sin su audio). El texto sobre imagen ahora es blanco con halo oscuro (el invertido se perdía en los grises) y
+  el video sigue corriendo debajo; el autocontraste tiene tope de ganancia (en un destello o un cielo parejo
+  estiraba los bloques de la compresión); los impact frames salen de fotos; una tarjeta roja cuenta como
+  destello rojo para el limitador. Guardas: `test_catharsis_editor.py` (20).
+- **2026-09-28c** — **Catarsis: efectos pro** (motor `catharsis_editor.py` + casillas "Imagen" y "Ritmo y sonido"
+  en la pestaña; todos prendidos por defecto y se apagan por proyecto).
+  - **Imagen:** texto cinético (entra agrandado y desenfocado, con eco) y 1 de cada 3 frases encima de la
+    imagen; impact frames de anime (dos tonos + líneas de velocidad, 3 cuadros)
+    antes de las palabras del clímax, con desenfoque de zoom en los golpes; color por acto (frío en la
+    subida, rojo en el clímax, cálido al cierre) + resplandor; una doble exposición y una pantalla dividida
+    (2-3 franjas) en la subida. Tipos nuevos en la tabla: texto sobre imagen, doble exposición, pantalla
+    dividida, impact frame; movimiento nuevo: rampa.
+  - **Ritmo y sonido:** el quiebre termina en la caída de la música (mayor salto de energía entre el 55 % y
+    el 92 %; el clímax conserva su largo y la subida se estira o se acorta); rampas de velocidad en los
+    videos sin audio (0.4x y de golpe 2.5x, cada video la primera vez, al menos 0.9 s); diseño sonoro
+    sintetizado sin derechos (whoosh, golpe grave, subida antes del quiebre, pitido en el silencio, boom en
+    la caída); loop perfecto (arranca y termina con la pregunta, sin fundido a negro). Texto siempre dentro
+    de la zona segura de Shorts; casilla "Guías de zona segura" las marca en la vista previa.
+  - **Bug corregido:** con un video con audio, la música se cortaba al terminar el último clip
+    (`sidechaincompress` termina con su entrada de control); ahora el control se rellena hasta el final.
+  - Subida: piso de 0.45 s de imagen por frase. Guardas: `test_catharsis_editor.py` (18).
+- **2026-09-28b** — **Pestaña Catarsis en la app** (`catharsis_tab.py`, entre Auto Video Studio y Metadata).
+  - **Qué se elige:** tema y tarjetas (voz del personaje o del narrador; botón "Escribir con IA", que pasa
+    las tarjetas por `script_fact_check`), imágenes y videos (encuadre, zoom, tramo y casilla "Usar su
+    audio"), música (archivo o buscador de Jamendo) y estilo (duración, velocidad de cortes, destellos,
+    variantes, transiciones glitch / film burn / zoom, grano, viñeta, temblor).
+  - **Armar automático + retoque:** `auto_sequence()` arma el arco como una lista de planos editable (contenido,
+    variante, segundos, transición, movimiento; subir, bajar, duplicar, eliminar). Vista previa rápida
+    (540x960, 15 fps) y render final a `auto_videos/output/catarsis_<fecha>_<tema>.mp4`. Proyecto en JSON
+    (`projects/catarsis/`).
+  - **Motor:** acepta videos (cuadros por tubería de FFmpeg); su audio se mezcla y la música baja
+    (sidechain). En la subida, un video con audio dura al menos 1.2 s, porque si no, no se oye.
+  - Guardas: `test_catharsis_editor.py` (11).
+- **2026-09-28** — **Formato Catarsis, piloto** (`catharsis_editor.py`). Short vertical sin voz y de impacto,
+  con el lenguaje de los monólogos finales de Evangelion pero con material propio (nada de clips, música
+  ni tipografía de la serie).
+  - **Entrada:** guion de tarjetas en JSON (apertura, frases, palabras del clímax, frase final, firma),
+    carpeta de imágenes y música apta. Ejemplos: `examples/catharsis_oppenheimer.json` (voz del personaje)
+    y `..._narrator.json` (narrador), con citas reales de Oppenheimer (1965).
+  - **Arco:** apertura; subida con cortes que se aceleran y se ajustan a los golpes de la música
+    (librosa); clímax de palabras sueltas y destellos; quiebre en blanco con la música muda; cierre con
+    un boceto y la frase final. Cada imagen da cinco variantes: B/N, negativo, rojo, dos tonos y boceto.
+  - **Seguridad:** tope de 3 destellos por segundo (WCAG 2.3.1). Un plano largo atrasa su corte en vez de
+    desaparecer: en el primer piloto el limitador se había llevado el quiebre.
+  - **Pendiente:** guion con LLM + verificación de hechos, alinear el quiebre con la caída de la música,
+    integrarlo al Studio. Guardas: `test_catharsis_editor.py` (6).
 - **2026-09-27** — **Facebook e Instagram publican en las cuentas del canal elegido.**
   - **El problema:** en la PC nueva (`C:\repos`) los reels de Stunning Facts of History salían en
     Stunning Revelations. El código estaba bien: el `.env.txt` se había copiado de la carpeta de Drive,
@@ -319,6 +375,14 @@ concreta + sujeto nombrado**, duración corta. Ej: "72 Seconds: The Wow! Signal"
     `test_telegram_notify.py` (14).
   - **`--list`:** los videos públicos de la cuenta (`/v2/video/list/`, permiso `video.list`: en el sandbox,
     Scopes → Add scopes; no es un producto aparte). Sirve para saber qué shorts ya están en TikTok.
+- **2026-09-25e** — **`GENERATE_SHORT.bat` usa el `.venv`, y `SETUP_OTRA_PC.md` al día.**
+  - **`.bat`:** buscaba Python en `%LOCALAPPDATA%\venvs\video_optimizer_*`, de antes del `.venv`;
+    en una PC nueva no arrancaba (el "sigue funcionando" de 2026-09-22b solo valía donde quedaba
+    ese venv viejo). Ahora usa `.venv\Scripts\python.exe`, igual que `RUN.bat`.
+  - **`SETUP_OTRA_PC.md`** (de junio) suma lo que faltaba: `client_secrets.json`/`token.json`,
+    `.env.txt`, `transition_overlays/`, renombrar `daily_shorts`/`long_form` antes del `mklink`,
+    `VPS_UPLOAD_ENABLED=0` sin SSH al VPS y Claude Code opcional; saca la referencia a
+    `project_whisper_vps.md`, que no está en el repo.
 - **2026-09-25d** — **El título del video también se verifica, y los gentilicios sirven de gancho.**
   - **Título:** Cannae quedó con el título "86,000 Dead" mientras el guion corregido decía que 86.000
     pelearon. Ahora `fact_check_scenes(title=...)` juzga el título como un ítem más ("VIDEO TITLE") y lo
