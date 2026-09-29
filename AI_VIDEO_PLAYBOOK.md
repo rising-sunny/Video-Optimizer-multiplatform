@@ -275,6 +275,9 @@ concreta + sujeto nombrado**, duración corta. Ej: "72 Seconds: The Wow! Signal"
 
 ## Changelog
 
+- **2026-09-29** — **Catarsis acepta material de archivo `.mpg`, `.mpeg`, `.ogv` y `.wmv`** (Internet Archive y Wikimedia
+  lo entregan así; antes se tomaban como imágenes y fallaban, y el diálogo de la pestaña no dejaba elegirlos).
+  Probado con un Short del Hindenburg (noticiero de Universal de 1937, dominio público).
 - **2026-09-28e** — **Catarsis con pistas largas** (Biblioteca de Audio: temas de 2 a 5 min con introducción casi muda).
   En la pestaña, Música → "Desde el segundo" + "Auto: su caída en el quiebre" (por defecto): `find_music_start()`
   busca la caída más fuerte de la pista y la toma desde donde esa caída queda al 80 % del video, sin arrancar en

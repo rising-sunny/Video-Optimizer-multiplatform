@@ -456,7 +456,7 @@ class CatharsisTab(QWidget):
     # ------------------------------------------------------------ medios
     def _add_media(self, kind: str):
         pattern = ("Imagenes (*.jpg *.jpeg *.png *.webp *.bmp)" if kind == "image"
-                   else "Videos (*.mp4 *.mov *.mkv *.webm *.avi *.m4v)")
+                   else "Videos (" + " ".join("*" + e for e in sorted(ce.VIDEO_EXT)) + ")")
         files, _ = QFileDialog.getOpenFileNames(self, "Agregar " + ("imagenes" if kind == "image" else "videos"),
                                                 "", pattern)
         self.add_media_files(files, kind)

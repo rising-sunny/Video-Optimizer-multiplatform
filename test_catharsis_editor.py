@@ -108,6 +108,8 @@ class ProjectAndSequenceTest(unittest.TestCase):
         self.assertTrue(all(Path(m["file"]).is_absolute() and m["type"] == "image" for m in p["media"]))
         self.assertEqual(p["cards"]["climax"], ["WHO", "AM", "I"])
         self.assertIn("variants", p["style"])
+        archive = ce.normalize_project({"media": [{"file": "newsreel.mpeg"}, {"file": "clip.ogv"}]})
+        self.assertEqual([m["type"] for m in archive["media"]], ["video", "video"])   # material de archivo
 
     def test_la_secuencia_automatica_es_editable(self):
         p = ce.normalize_project(SCRIPT, self.tmp, 30)

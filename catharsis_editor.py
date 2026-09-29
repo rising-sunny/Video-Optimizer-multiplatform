@@ -72,7 +72,7 @@ MOTIONS = ("hold", "push", "pull", "punch", "shake", "ramp")
 KINDS = ("card", "media", "overlay", "double", "split", "impact", "color")
 COLORS = {"black": (0, 0, 0), "white": PAPER, "red": RED}
 GRADES = {"rise": (0.90, 0.97, 1.10), "climax": (1.12, 0.80, 0.78), "final": (1.05, 1.0, 0.92)}
-VIDEO_EXT = {".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v"}
+VIDEO_EXT = {".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v", ".mpg", ".mpeg", ".ogv", ".wmv"}   # archivo: mpeg / ogv
 DEFAULT_STYLE = {"speed": 1.0, "flashes": 1.0, "variants": ["base", "negative", "sketch", "red", "hard"],
                  "transitions": ["glitch", "burn"], "grain": True, "vignette": True, "shake": True,
                  "kinetic": True, "impact": True, "grade": True, "bloom": True, "double": True, "split": True,
