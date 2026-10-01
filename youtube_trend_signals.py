@@ -134,7 +134,7 @@ def service_candidates(log=print):
     """Existing key/token only; no interactive OAuth and no Analytics scope required."""
     from googleapiclient.discovery import build
     import httplib2
-    from env_loader import load_project_env
+    from infra.env_loader import load_project_env
     load_project_env()
     candidates = []
     key = os.getenv("YOUTUBE_API_KEY")

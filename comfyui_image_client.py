@@ -17,8 +17,8 @@ from typing import Any, Optional
 
 import requests
 
-from env_loader import load_project_env
-from vast_ai_instance_manager import get_default_vast_manager
+from infra.env_loader import load_project_env
+from infra.vast_ai_instance_manager import get_default_vast_manager
 
 PROJECT_DIR = Path(__file__).resolve().parent
 load_project_env(PROJECT_DIR)

@@ -70,7 +70,7 @@ def _resolve_ffmpeg_binary_paths():
     ffprobe_path = shutil.which("ffprobe")
 
     try:
-        from video_config import VideoConfig
+        from infra.video_config import VideoConfig
 
         configured_dir = getattr(VideoConfig, "FFMPEG_BINARY_PATH", None)
         configured_probe = getattr(VideoConfig, "FFPROBE_BINARY_PATH", None)

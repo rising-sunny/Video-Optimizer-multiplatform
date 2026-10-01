@@ -353,7 +353,7 @@ class SamplingTests(unittest.TestCase):
         token.write_text('{}')
         service = SimpleNamespace()
         creds = SimpleNamespace(valid=True, scopes=['https://www.googleapis.com/auth/youtube.force-ssl'])
-        with patch.dict(os.environ, {}, clear=True), patch('env_loader.load_project_env'), \
+        with patch.dict(os.environ, {}, clear=True), patch('infra.env_loader.load_project_env'), \
                 patch('channel_profiles.token_path', return_value=token), \
                 patch('google.oauth2.credentials.Credentials.from_authorized_user_file', return_value=creds), \
                 patch('google_auth_httplib2.AuthorizedHttp', return_value=object()), \
@@ -366,7 +366,7 @@ class SamplingTests(unittest.TestCase):
         creds = SimpleNamespace(valid=False, refresh_token='test-only', token='old',
                                 refresh=Mock(side_effect=OSError('DNS failure')))
         service = SimpleNamespace()
-        with patch.dict(os.environ, {}, clear=True), patch('env_loader.load_project_env'), \
+        with patch.dict(os.environ, {}, clear=True), patch('infra.env_loader.load_project_env'), \
                 patch('channel_profiles.token_path', return_value=token), \
                 patch('google.oauth2.credentials.Credentials.from_authorized_user_file', return_value=creds), \
                 patch('google_auth_httplib2.AuthorizedHttp', return_value=object()), \

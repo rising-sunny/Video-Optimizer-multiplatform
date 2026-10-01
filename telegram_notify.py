@@ -30,7 +30,7 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
-from env_loader import load_project_env
+from infra.env_loader import load_project_env
 
 ROOT = Path(__file__).resolve().parent
 load_project_env(ROOT)

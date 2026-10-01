@@ -56,11 +56,11 @@ PROJECT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(PROJECT_DIR))
 
 # ── Cargar variables de entorno ───────────────────────────────────────────
-from env_loader import load_project_env
+from infra.env_loader import load_project_env
 load_project_env()
 
 # ── Configurar FFmpeg ─────────────────────────────────────────────────────
-from video_config import VideoConfig
+from infra.video_config import VideoConfig
 try:
     VideoConfig.ensure_ffmpeg_in_path()
 except Exception as e:

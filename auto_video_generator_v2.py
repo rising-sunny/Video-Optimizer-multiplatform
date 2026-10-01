@@ -139,7 +139,7 @@ try:
         # Usar primero la deteccion central, que ya valida ffmpeg + ffprobe.
         configured_dir = None
         try:
-            from video_config import VideoConfig as _VideoConfig
+            from infra.video_config import VideoConfig as _VideoConfig
             configured_dir = getattr(_VideoConfig, "FFMPEG_BINARY_PATH", None)
         except ImportError:
             pass
@@ -279,7 +279,7 @@ except ImportError:
 # ========== IMPORTAR CONFIGURACION DESDE MODULO SEPARADO ==========
 # VideoConfig ha sido movido a video_config.py para mejor organizacion
 try:
-    from video_config import VideoConfig
+    from infra.video_config import VideoConfig
 except ImportError:
     # Fallback: definir VideoConfig aqui si el modulo no esta disponible
     # (para compatibilidad hacia atras)
@@ -765,7 +765,7 @@ class AutoVideoGenerator:
         is_vertical = platform in ('tiktok', 'reels', 'youtube_short', 'youtube_vertical', '9:16')
 
         try:
-            from video_config import VideoConfig
+            from infra.video_config import VideoConfig
             i2v_dir = VideoConfig.TEMP_DIR / "i2v_clips"
         except Exception:
             from pathlib import Path as _P

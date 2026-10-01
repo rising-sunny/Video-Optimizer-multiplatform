@@ -50,7 +50,7 @@ if not RESEARCH_SEARCH_AVAILABLE:
     except ImportError:
         GOOGLE_SEARCH_AVAILABLE = False
 
-from video_config import VideoConfig
+from infra.video_config import VideoConfig
 from studio_categories import is_mystery_inquiry, mystery_editorial_instructions
 
 

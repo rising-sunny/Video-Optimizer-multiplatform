@@ -1876,7 +1876,6 @@ Respond ONLY with valid JSON."""
             os.path.join(os.getcwd(), 'output_video_locator.py'),
             os.path.join(os.getcwd(), 'instagram_uploader.py'),
             os.path.join(os.getcwd(), 'cloudinary_uploader.py'),
-            os.path.join(os.getcwd(), 'env_loader.py'),
             os.path.join(os.getcwd(), '.env.txt'),
         ]
 
@@ -1924,6 +1923,14 @@ Respond ONLY with valid JSON."""
                 subprocess.run(
                     ["scp"] + existing_scripts + [f"{ssh_host}:{remote_tmp}/"],
                     capture_output=True, timeout=60
+                )
+            # El paquete infra/ va completo (con __init__.py) para que los imports
+            # `from infra.env_loader import ...` resuelvan en el VPS.
+            infra_dir = os.path.join(os.getcwd(), 'infra')
+            if os.path.isdir(infra_dir):
+                subprocess.run(
+                    ["scp", "-r", infra_dir, f"{ssh_host}:{remote_tmp}/"],
+                    capture_output=True, timeout=120
                 )
             self.log("   Archivos copiados al VPS.")
 
@@ -5438,7 +5445,7 @@ Respond ONLY with valid JSON."""
         from pathlib import Path
 
         # Preparar ruta de salida
-        from video_config import VideoConfig
+        from infra.video_config import VideoConfig
         audio_dir = VideoConfig.AUDIO_DIR
         audio_dir.mkdir(parents=True, exist_ok=True)
         timestamp = int(time.time())

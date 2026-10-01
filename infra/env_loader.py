@@ -18,7 +18,7 @@ def load_project_env(base_dir: Path | None = None, override: bool = False) -> Li
     if base_dir is not None:
         roots = [Path(base_dir)]
     else:
-        roots = [Path(__file__).resolve().parent, Path.cwd()]
+        roots = [Path(__file__).resolve().parent.parent, Path.cwd()]
 
     loaded: List[Path] = []
     seen = set()

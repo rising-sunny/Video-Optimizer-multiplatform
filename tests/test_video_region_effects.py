@@ -12,7 +12,7 @@ from PyQt6.QtCore import QPoint, Qt, QTimer
 from PyQt6.QtGui import QPixmap, QColor
 from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QApplication, QProgressDialog, QPushButton, QListWidgetItem
-from video_config import VideoConfig
+from infra.video_config import VideoConfig
 from video_region_effects import effect_graph, export_command, preview_frame, video_size
 from video_region_editor import RegionCanvas, VideoRegionEditor, export_region_copy
 

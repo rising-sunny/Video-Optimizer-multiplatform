@@ -2686,7 +2686,7 @@ class ImageGenerationManager:
         # Solo apaga si la instancia fue usada en esta corrida (`_used_remote`).
         # ──────────────────────────────────────────────────────────────
         try:
-            from vast_ai_instance_manager import get_default_vast_manager
+            from infra.vast_ai_instance_manager import get_default_vast_manager
             _vm = get_default_vast_manager()
             if _vm.enabled and getattr(_vm, "_used_remote", False):
                 self.log("\n[Vast.ai] Generacion terminada — apagando instancia para ahorrar creditos")

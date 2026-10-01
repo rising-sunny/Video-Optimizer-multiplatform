@@ -6,7 +6,7 @@ ConfiguraciÃ³n centralizada del sistema de generaciÃ³n de videos
 import os
 import shutil
 from pathlib import Path
-from env_loader import load_project_env
+from infra.env_loader import load_project_env
 
 load_project_env()
 
@@ -181,7 +181,7 @@ class VideoConfig:
     FAL_API_KEY = os.getenv("FAL_API_KEY") or RECRAFT_API_KEY
     
     # Directorios
-    ROOT_DIR = Path(__file__).resolve().parent
+    ROOT_DIR = Path(__file__).resolve().parent.parent
     BASE_DIR = ROOT_DIR / "auto_videos"
     DOWNLOADS_DIR = BASE_DIR / "downloads"
     AUDIO_DIR = BASE_DIR / "audio"

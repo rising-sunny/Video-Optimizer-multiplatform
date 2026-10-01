@@ -104,7 +104,7 @@ except ImportError:
     YT_DLP_AVAILABLE = False
 
 try:
-    from video_config import VideoConfig
+    from infra.video_config import VideoConfig
     VIDEO_CONFIG_AVAILABLE = True
 except ImportError:
     VIDEO_CONFIG_AVAILABLE = False
@@ -1708,7 +1708,7 @@ class TimelineEditorWidget(QWidget):
 
         # ── Resolver ejecutables ──────────────────────────────────────────────
         try:
-            from video_config import VideoConfig
+            from infra.video_config import VideoConfig
             ffmpeg_dir  = VideoConfig.FFMPEG_BINARY_PATH or ""
             ffprobe_dir = ffmpeg_dir
             ffmpeg_exe  = str(_P(ffmpeg_dir)  / "ffmpeg.exe")  if ffmpeg_dir else "ffmpeg"

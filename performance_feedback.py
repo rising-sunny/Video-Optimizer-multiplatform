@@ -486,7 +486,7 @@ def collect_youtube(days: int = 30) -> tuple[list[dict[str, Any]], dict[str, Any
 def collect_facebook(limit: int = 30) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Graph API: reels de la pagina con las metricas que existen en v23 (validadas 2026-09-21)."""
     import requests
-    from env_loader import load_project_env
+    from infra.env_loader import load_project_env
 
     load_project_env(ROOT)
     tok = os.getenv("FACEBOOK_PAGE_ACCESS_TOKEN") or ""

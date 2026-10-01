@@ -4,7 +4,7 @@
 import os
 import requests
 from typing import List, Set
-from env_loader import load_project_env
+from infra.env_loader import load_project_env
 
 # ========== Cargar variables de entorno ==========
 load_project_env()

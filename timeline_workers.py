@@ -572,7 +572,7 @@ class AIImageRegenerationWorker(QThread):
     def run(self):
         """Ejecuta la generacion de imagen segun el proveedor configurado."""
         try:
-            from video_config import VideoConfig
+            from infra.video_config import VideoConfig
             from recraft_client import RecraftClient
             from google_ai_image_client import GoogleAiImageClient
 
@@ -661,7 +661,7 @@ class ContextualAIImageRegenerationWorker(QThread):
         try:
             from pathlib import Path
 
-            from video_config import VideoConfig
+            from infra.video_config import VideoConfig
             from gemini_ai_client import GeminiAiClient
             from prompt_processor import PromptProcessor
             from image_generation_manager import (

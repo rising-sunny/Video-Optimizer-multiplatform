@@ -31,7 +31,7 @@ import re
 import sys
 from pathlib import Path
 
-from env_loader import load_project_env
+from infra.env_loader import load_project_env
 
 load_project_env()
 

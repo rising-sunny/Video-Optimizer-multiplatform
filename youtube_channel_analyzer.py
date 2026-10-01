@@ -6,7 +6,7 @@ Permite personalizar recomendaciones basadas en el rendimiento del canal.
 
 import os
 from typing import Dict, List, Optional, Any
-from env_loader import load_project_env
+from infra.env_loader import load_project_env
 from datetime import datetime, timedelta
 import json
 

@@ -19,7 +19,7 @@ import requests
 
 from cloudinary_uploader import check_auth as check_cloudinary_auth
 from cloudinary_uploader import upload_video as upload_video_to_cloudinary
-from env_loader import load_project_env
+from infra.env_loader import load_project_env
 
 PROJECT_DIR = Path(__file__).resolve().parent
 load_project_env(PROJECT_DIR)

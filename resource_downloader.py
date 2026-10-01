@@ -9,7 +9,7 @@ import requests
 from pathlib import Path
 from typing import List, Dict, Optional
 
-from video_config import VideoConfig
+from infra.video_config import VideoConfig
 
 
 class ResourceDownloader:

@@ -287,7 +287,7 @@ class StudioVideoAssemblyHandlers:
         try:
             ffprobe_cmd = "ffprobe"
             try:
-                from video_config import VideoConfig
+                from infra.video_config import VideoConfig
                 configured_probe = getattr(VideoConfig, 'FFPROBE_BINARY_PATH', None)
                 if configured_probe and os.path.exists(configured_probe):
                     ffprobe_cmd = configured_probe
@@ -1008,7 +1008,7 @@ class StudioVideoAssemblyHandlers:
         self.studio_tab.log("Regenerando audio con la voz seleccionada...")
         try:
             from tts_generator import TextToSpeechGenerator
-            from video_config import VideoConfig
+            from infra.video_config import VideoConfig
             import time
 
             # Re-normalizar segmentos y script para que TTS use texto actualizado.

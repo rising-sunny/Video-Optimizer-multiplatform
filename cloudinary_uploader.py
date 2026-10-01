@@ -21,7 +21,7 @@ try:
 except ImportError:
     pass
 
-from env_loader import load_project_env
+from infra.env_loader import load_project_env
 
 PROJECT_DIR = Path(__file__).resolve().parent
 load_project_env(PROJECT_DIR)

@@ -2,9 +2,9 @@ import os
 from ai_factory import AIFactory
 import sys
 import platform as _platform
-from env_loader import load_project_env
+from infra.env_loader import load_project_env
 load_project_env()
-from video_config import VideoConfig
+from infra.video_config import VideoConfig
 import faulthandler as _faulthandler
 
 # Evita fallos por UnicodeEncodeError en consolas Windows con codepage legacy.
@@ -1753,7 +1753,7 @@ def main():
         # Conectar el manager de Vast.ai a aboutToQuit (más fiable que atexit en PyQt).
         # Si VAST_AUTO_STOP_ON_EXIT=1, la instancia se detendrá al cerrar la app.
         try:
-            from vast_ai_instance_manager import get_default_vast_manager
+            from infra.vast_ai_instance_manager import get_default_vast_manager
             _vast_manager = get_default_vast_manager()
             _vast_manager.attach_to_qt_app(app)
             print(f"[..] Vast.ai manager conectado (enabled={_vast_manager.enabled})")

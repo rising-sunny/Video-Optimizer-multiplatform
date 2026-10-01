@@ -193,9 +193,7 @@ tests/        → los 76 test_*.py
 | Módulo actual | Nota |
 |---|---|
 | `output_naming`, `worker_context`, `moviepy_pillow_compat`, `attribution_manager`, `project_autoload`, `project_media_paths`, `project_video_result` | ✅ movidos (Fase 2) |
-| `env_loader`, `video_config` | ⏳ Fase 2b: `env_loader` se envía al VPS plano (`_upload_via_vps`); `video_config` depende de él |
-| `vast_ai_instance_manager`, `vast_ai_provisioner` | ⏳ Fase 2b: `vast_ai_provisioner` es CLI |
-| `_whisper_subprocess_worker` | ⏳ Fase 2b: subprocess worker |
+| `env_loader`, `video_config`, `vast_ai_instance_manager`, `vast_ai_provisioner`, `_whisper_subprocess_worker` | ✅ movidos (Fase 2b): `_upload_via_vps` envía `infra/` con `scp -r`; shim raíz para el CLI `vast_ai_provisioner` |
 
 ---
 
@@ -303,6 +301,12 @@ El script se puede re-ejecutar por fase y se revierte con git.
 
 ## Changelog
 
+- **2026-10-01 (Fase 2b)** — `infra/` completo: `env_loader`, `video_config`,
+  `vast_ai_instance_manager`, `vast_ai_provisioner`, `_whisper_subprocess_worker` (45 imports
+  reescritos). Ajustes: `Path(__file__).resolve().parent` → `.parent.parent` en 4 módulos;
+  `_upload_via_vps` envía `infra/` con `scp -r`; shim raíz para el CLI `vast_ai_provisioner`;
+  ruta del worker en `dynamic_subtitles_generator`; `patch()` por string en tests. Suite verde:
+  1205 tests.
 - **2026-10-01 (Fase 2)** — `infra/` con 7 utilidades hoja movidas: `output_naming`,
   `worker_context`, `moviepy_pillow_compat`, `attribution_manager`, `project_autoload`,
   `project_media_paths`, `project_video_result` (27 imports reescritos). `env_loader` +

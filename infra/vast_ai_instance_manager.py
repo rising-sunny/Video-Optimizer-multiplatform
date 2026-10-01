@@ -19,7 +19,7 @@ from urllib.parse import urlparse
 
 import requests
 
-from env_loader import load_project_env
+from infra.env_loader import load_project_env
 
 
 load_project_env()
@@ -43,7 +43,7 @@ _FAILOVER_ERRORS = {
     "instance_not_found",
 }
 
-_PROJECT_DIR = Path(__file__).resolve().parent
+_PROJECT_DIR = Path(__file__).resolve().parent.parent
 
 
 class VastStartError(RuntimeError):
@@ -297,7 +297,7 @@ class VastAiInstanceManager:
 
         old_id = self.instance_id
         try:
-            from vast_ai_provisioner import VastProvisioner, update_env_file
+            from infra.vast_ai_provisioner import VastProvisioner, update_env_file
 
             self._log("[Vast.ai] Auto-failover: aprovisionando una instancia nueva...")
             provisioner = VastProvisioner(

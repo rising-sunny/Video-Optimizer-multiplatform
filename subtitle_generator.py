@@ -5,7 +5,7 @@ Generador de subtítulos automáticos usando Whisper
 
 from typing import List, Dict, Optional, Tuple
 
-from video_config import VideoConfig
+from infra.video_config import VideoConfig
 
 # Verificar dependencias
 WHISPER_AVAILABLE = False

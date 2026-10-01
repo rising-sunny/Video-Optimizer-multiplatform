@@ -484,7 +484,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     if len(argv) >= 2 and argv[0] == "check":
         from pathlib import Path
 
-        from env_loader import load_project_env
+        from infra.env_loader import load_project_env
         import gemini_vision
         load_project_env(Path(__file__).resolve().parent)
         data = Path(argv[1]).read_bytes()

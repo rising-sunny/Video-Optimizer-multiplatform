@@ -16,7 +16,7 @@ from typing import Optional, Tuple
 
 def _get_ffmpeg_path():
     """Obtiene la ruta de FFmpeg desde VideoConfig o PATH."""
-    from video_config import VideoConfig
+    from infra.video_config import VideoConfig
     
     # Primero intentar con VideoConfig (que detecta automáticamente)
     if VideoConfig.FFMPEG_BINARY_PATH and os.path.exists(os.path.join(VideoConfig.FFMPEG_BINARY_PATH, "ffmpeg.exe")):
@@ -32,7 +32,7 @@ def _get_ffmpeg_path():
 
 def _get_ffprobe_path():
     """Obtiene la ruta de FFprobe desde VideoConfig."""
-    from video_config import VideoConfig
+    from infra.video_config import VideoConfig
     
     # Primero intentar con VideoConfig
     if VideoConfig.FFPROBE_BINARY_PATH and os.path.exists(VideoConfig.FFPROBE_BINARY_PATH):

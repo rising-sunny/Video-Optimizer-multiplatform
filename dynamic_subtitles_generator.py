@@ -1450,7 +1450,7 @@ class DynamicSubtitleEngine:
             lang_info = f", idioma: {language}" if language else ", idioma: auto-detect"
             print(f"ðŸŽµ Transcribiendo audio (subprocess aislado, modelo small): {Path(audio_path).name}{lang_info}")
 
-            worker_path = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "_whisper_subprocess_worker.py")
+            worker_path = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "infra", "_whisper_subprocess_worker.py")
             if not _os.path.isfile(worker_path):
                 raise RuntimeError(f"Whisper worker no encontrado: {worker_path}")
 

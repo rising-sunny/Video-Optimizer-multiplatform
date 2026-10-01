@@ -10,7 +10,7 @@ Módulo para verificar el estado detallado de todas las APIs:
 import os
 import requests
 from typing import Dict, Optional, Any
-from env_loader import load_project_env
+from infra.env_loader import load_project_env
 
 load_project_env()
 

@@ -11,7 +11,7 @@ import importlib.util
 from pathlib import Path
 from typing import Dict, Optional, List
 
-from video_config import VideoConfig
+from infra.video_config import VideoConfig
 
 # Verificar dependencias
 GTTS_AVAILABLE = False

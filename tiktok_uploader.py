@@ -59,7 +59,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import requests
 
-from env_loader import load_project_env
+from infra.env_loader import load_project_env
 
 ROOT = Path(__file__).resolve().parent
 load_project_env(ROOT)
@@ -601,7 +601,7 @@ def _ffprobe_bin() -> Optional[str]:
         if candidato.is_file():
             return str(candidato)
     try:
-        from video_config import VideoConfig
+        from infra.video_config import VideoConfig
         candidato = getattr(VideoConfig, "FFPROBE_BINARY_PATH", None)
         if candidato and os.path.isfile(candidato):
             return candidato
