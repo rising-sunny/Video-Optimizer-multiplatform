@@ -7,7 +7,7 @@ from PyQt6.QtCore import QBuffer, QByteArray, QIODevice
 from PyQt6.QtWidgets import QApplication
 
 from opening_style_preview import OpeningStylePreview
-from video_opening import OPENING_STYLE_CHOICES
+from pipeline.video_opening import OPENING_STYLE_CHOICES
 
 
 class VistaPreviaDeEntradas(unittest.TestCase):

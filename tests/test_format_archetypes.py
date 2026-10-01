@@ -97,7 +97,7 @@ class ElCoverFrameSigueAlAngulo(unittest.TestCase):
         cs.set_active_archetype("")
 
     def test_con_angulo_no_sale_una_palabra_de_misterio(self):
-        from cover_frame_generator import select_cover_text
+        from pipeline.cover_frame_generator import select_cover_text
         cs.set_active_archetype("")
         for _ in range(20):
             texto = select_cover_text("How did they cut the stones of Puma Punku", "Ancient Civilizations",
@@ -105,7 +105,7 @@ class ElCoverFrameSigueAlAngulo(unittest.TestCase):
             self.assertIn(texto, [w.upper() for w in cs.archetype_cover_words("mechanism")])
 
     def test_sin_angulo_sigue_el_mapa_generico(self):
-        from cover_frame_generator import select_cover_text
+        from pipeline.cover_frame_generator import select_cover_text
         cs.set_active_archetype("")
         self.assertEqual(select_cover_text("The siege of Tyre", "War", storyboard={}), "TRAPPED")
 
@@ -173,7 +173,7 @@ class LlegaAlGenerador(unittest.TestCase):
         wrapper), no a StoryboardGenerator; el parametro estaba solo en el segundo y la
         generacion reventaba con TypeError."""
         import inspect
-        from auto_video_generator_v2 import AutoVideoGenerator
+        from pipeline.auto_video_generator_v2 import AutoVideoGenerator
         self.assertIn("format_archetype", inspect.signature(AutoVideoGenerator.generate_storyboard_data).parameters)
         self.assertIn("opening_style", inspect.signature(AutoVideoGenerator.generate_storyboard_data).parameters)
 
@@ -192,12 +192,12 @@ class LlegaAlGenerador(unittest.TestCase):
     def test_el_handler_lo_pasa_y_el_generador_lo_estampa(self):
         fuente = io.open("studio_storyboard_handlers.py", encoding="utf-8", errors="replace").read()
         self.assertIn("format_archetype=format_archetype", fuente)
-        gen = io.open("storyboard_generator.py", encoding="utf-8", errors="replace").read()
+        gen = io.open("pipeline/storyboard_generator.py", encoding="utf-8", errors="replace").read()
         self.assertIn('format_archetype: str = ""', gen)
         self.assertEqual(gen.count('structured_result["format_archetype"] = _arche'), 2)
 
     def test_el_microdoc_y_el_super_prompt_lo_reciben(self):
-        micro = io.open("micro_documentary.py", encoding="utf-8", errors="replace").read()
+        micro = io.open("pipeline/micro_documentary.py", encoding="utf-8", errors="replace").read()
         self.assertIn("format_archetype=format_archetype", micro)
         self.assertIn("{angle_block}", micro)
         cc = io.open("ai/claude_client.py", encoding="utf-8", errors="replace").read()

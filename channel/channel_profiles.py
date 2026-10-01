@@ -25,7 +25,7 @@ def select_channel(key):
     from channel import channel_strategy
     channel_strategy._cached_strategy = None
     import sys
-    pipeline = sys.modules.get('daily_short_pipeline')
+    pipeline = sys.modules.get('pipeline.daily_short_pipeline')
     if pipeline is not None and hasattr(pipeline, 'refresh_channel_config'):
         pipeline.refresh_channel_config()
     return key

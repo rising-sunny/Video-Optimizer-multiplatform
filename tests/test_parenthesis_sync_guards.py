@@ -20,8 +20,8 @@ encadenadas:
 
 import unittest
 
-from dynamic_subtitles_generator import WhisperTimestampParser
-from micro_documentary import find_certainty_labels, strip_certainty_labels
+from pipeline.dynamic_subtitles_generator import WhisperTimestampParser
+from pipeline.micro_documentary import find_certainty_labels, strip_certainty_labels
 
 _peso = WhisperTimestampParser._estimate_word_weight
 
@@ -62,13 +62,13 @@ class LasEtiquetasNoLleganALaNarracion(unittest.TestCase):
     def test_el_prompt_lo_prohibe_explicitamente(self):
         import io
 
-        fuente = io.open("micro_documentary.py", encoding="utf-8", errors="replace").read()
+        fuente = io.open("pipeline/micro_documentary.py", encoding="utf-8", errors="replace").read()
         self.assertIn("NEVER write the status label itself into the narration", fuente)
 
     def test_la_validacion_del_guion_las_limpia(self):
         import io
 
-        fuente = io.open("micro_documentary.py", encoding="utf-8", errors="replace").read()
+        fuente = io.open("pipeline/micro_documentary.py", encoding="utf-8", errors="replace").read()
         self.assertIn("strip_certainty_labels(seg[\"text\"])", fuente)
 
 

@@ -285,7 +285,7 @@ class Cableado(unittest.TestCase):
         self.assertIn('ig_title_mode = "suggest"', s)
 
     def test_los_respaldos_de_instagram_no_usan_marca_ajena_ni_cebo(self):
-        for name in ("auto_video_integration_pyqt6.py", "platform_metadata_tab.py", "daily_short_pipeline.py"):
+        for name in ("auto_video_integration_pyqt6.py", "platform_metadata_tab.py", "pipeline/daily_short_pipeline.py"):
             s = self._src(name)
             self.assertNotIn("#stunningrevelations #history #mystery #reels #facts", s, name)
             self.assertNotIn("#history #reels #facts", s, name)

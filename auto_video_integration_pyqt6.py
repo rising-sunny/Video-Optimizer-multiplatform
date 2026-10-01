@@ -40,7 +40,7 @@ from studio_storyboard_handlers import StudioStoryboardHandlers
 from studio_image_handlers import StudioImageHandlers
 from studio_video_assembly_handlers import StudioVideoAssemblyHandlers
 from ai.recraft_style_catalog import RECRAFT_STYLE_OPTIONS
-from thumbnail_pipeline import ThumbnailPipeline
+from pipeline.thumbnail_pipeline import ThumbnailPipeline
 from ai.groq_client import GroqAiClient
 
 
@@ -57,7 +57,7 @@ def get_channel_name(default: str = "this channel") -> str:
 
 
 try:
-    from tts_generator import TextToSpeechGenerator as StandaloneTextToSpeechGenerator
+    from pipeline.tts_generator import TextToSpeechGenerator as StandaloneTextToSpeechGenerator
 except ImportError:
     StandaloneTextToSpeechGenerator = None
 
@@ -597,14 +597,14 @@ class AutoVideoStudioTab(QWidget):
 
     def get_selected_opening_style(self):
         """ID estable de la entrada seleccionada en la GUI."""
-        from video_opening import OPENING_STYLE, normalize_opening_style
+        from pipeline.video_opening import OPENING_STYLE, normalize_opening_style
         if not hasattr(self, 'opening_style_combo'):
             return OPENING_STYLE
         return normalize_opening_style(self.opening_style_combo.currentData())
 
     def _on_opening_style_changed(self, _index=None):
         """Actualiza al instante la animacion y la descripcion de la entrada."""
-        from video_opening import opening_style_spec
+        from pipeline.video_opening import opening_style_spec
         selected = self.get_selected_opening_style()
         spec = opening_style_spec(selected)
         if hasattr(self, 'opening_style_preview'):
@@ -1719,7 +1719,7 @@ Respond ONLY with valid JSON."""
                     with open(staging / fname, "w", encoding="utf-8") as f:
                         json.dump(data, f, ensure_ascii=False, indent=2)
 
-                from daily_short_pipeline import upload_to_facebook
+                from pipeline.daily_short_pipeline import upload_to_facebook
                 if do_youtube:
                     self.log(" Subiendo a YouTube...")
                     priv = "private" if _publish_at_youtube else "public"
@@ -2421,7 +2421,7 @@ Respond ONLY with valid JSON."""
         # Entrada cinematografica: la animacion se dibuja en vivo (tipo GIF)
         # y el ID elegido viaja hasta el storyboard y el ensamblado final.
         from opening_style_preview import OpeningStylePreview
-        from video_opening import OPENING_STYLE_CHOICES, OPENING_STYLE_SPECS
+        from pipeline.video_opening import OPENING_STYLE_CHOICES, OPENING_STYLE_SPECS
 
         opening_layout = QHBoxLayout()
         opening_layout.setSpacing(18)
@@ -4643,7 +4643,7 @@ Respond ONLY with valid JSON."""
                     return
                 memory = getattr(self, 'last_storyboard_data', None)
                 try:
-                    from storyboard_generator import prefer_in_memory_storyboard
+                    from pipeline.storyboard_generator import prefer_in_memory_storyboard
                     keep_memory = prefer_in_memory_storyboard(memory, saved_storyboard)
                 except Exception:
                     keep_memory = bool(memory and len(memory.get('segments') or []) > len(saved_storyboard.get('segments') or []))
@@ -4861,7 +4861,7 @@ Respond ONLY with valid JSON."""
         if StandaloneTextToSpeechGenerator is not None:
             return StandaloneTextToSpeechGenerator()
 
-        from auto_video_generator_v2 import TextToSpeechGenerator
+        from pipeline.auto_video_generator_v2 import TextToSpeechGenerator
         if TextToSpeechGenerator is None:
             raise RuntimeError("TextToSpeechGenerator no esta disponible.")
         return TextToSpeechGenerator()
@@ -5847,7 +5847,7 @@ Respond ONLY with valid JSON."""
             result['generated_at'] = time.time()
         if isinstance(result, dict) and result.get('segments'):
             try:
-                from cinematic_director import direct_storyboard
+                from pipeline.cinematic_director import direct_storyboard
                 level = (
                     self.cinematic_intensity_combo.currentData()
                     if hasattr(self, 'cinematic_intensity_combo') else 'auto'

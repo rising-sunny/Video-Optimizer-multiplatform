@@ -240,7 +240,7 @@ class PilotDialog(QDialog):
         self.provider.addItem('Manual — usar mis imágenes y videos', 'manual')
         for value in ('flux_dev', 'flux_schnell', 'recraft', 'comfy_schnell', 'comfy_sdxl', 'comfy_dev', 'stability_core', 'stability_ultra', 'auto', 'google_ai'):
             self.provider.addItem(value, value)
-        from micro_documentary import resolve_image_provider
+        from pipeline.micro_documentary import resolve_image_provider
         saved_config = {}
         if (self.out / 'project.json').exists():
             saved_config = json.loads((self.out / 'project.json').read_text(encoding='utf-8')).get('config', {})
@@ -289,7 +289,7 @@ class PilotDialog(QDialog):
             except ValueError:
                 return
             if isinstance(manifest, dict) and manifest.get('channel') == self.channel and manifest.get('topic') == self.topic:
-                from micro_documentary import write_json, validate_packaging, runtime_plan
+                from pipeline.micro_documentary import write_json, validate_packaging, runtime_plan
                 try:
                     runtime_plan(manifest['target_runtime_seconds'], manifest['effective_wpm'])
                     if validate_packaging(manifest, manifest['effective_wpm']):
@@ -326,7 +326,7 @@ class PilotDialog(QDialog):
                 QMessageBox.warning(self, 'JSON inválido', str(exc))
 
     def run_stage(self, approve, assemble):
-        from micro_documentary import build, write_json, validate_packaging
+        from pipeline.micro_documentary import build, write_json, validate_packaging
         try:
             self.save_editor_draft()
             if approve:

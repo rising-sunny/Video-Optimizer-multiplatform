@@ -1216,7 +1216,7 @@ def render(shots: list[Shot], out: Path, music=None, break_span=None, *, vignett
     burn = _burn_frames() if any(s.transition == "burn" for s in shots) else []
     glitch = None
     if any(s.transition == "glitch" for s in shots):
-        from glitch_transitions import GlitchIntensity, GlitchTransitionEngine, GlitchTransitionType
+        from pipeline.glitch_transitions import GlitchIntensity, GlitchTransitionEngine, GlitchTransitionType
         glitch = (GlitchTransitionEngine((W, H)), GlitchIntensity.EXTREME,
                   [GlitchTransitionType.RGB_SPLIT, GlitchTransitionType.BLOCK_GLITCH,
                    GlitchTransitionType.DIGITAL_GLITCH, GlitchTransitionType.SCAN_LINES])

@@ -3,7 +3,7 @@ from infra.project_media_paths import resolve_project_media
 
 
 def pilot_render_settings(config, profile, root):
-    from dynamic_subtitle_wrapper import normalize_subtitle_style
+    from pipeline.dynamic_subtitle_wrapper import normalize_subtitle_style
     settings = {
         'add_subtitles': config.get('subtitles_enabled', True),
         'subtitle_style': normalize_subtitle_style(config.get('subtitle_style') or profile.get('subtitle_style', 'hormozi')),

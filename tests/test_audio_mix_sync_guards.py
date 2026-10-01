@@ -15,7 +15,7 @@ import subprocess
 import tempfile
 import unittest
 
-import audio_mix_utils as amu
+from pipeline import audio_mix_utils as amu
 
 try:
     from pydub import AudioSegment
@@ -236,7 +236,7 @@ class TestWordNormalizationForSubtitles(unittest.TestCase):
     el timing de las palabras que lo rodean."""
 
     def setUp(self):
-        from dynamic_subtitles_generator import EmojiMapper
+        from pipeline.dynamic_subtitles_generator import EmojiMapper
         self.n = EmojiMapper.normalize_word
 
     def test_typographic_hyphen_matches_whisper(self):
@@ -254,7 +254,7 @@ class TestWordNormalizationForSubtitles(unittest.TestCase):
         self.assertNotEqual(self.n("2032"), self.n("2033"))
 
     def test_spoken_content_detection_survives(self):
-        from dynamic_subtitles_generator import EmojiMapper
+        from pipeline.dynamic_subtitles_generator import EmojiMapper
         self.assertTrue(EmojiMapper.has_spoken_content("Shu\u2011Sin"))
         self.assertFalse(EmojiMapper.has_spoken_content("—"))
         self.assertFalse(EmojiMapper.has_spoken_content("..."))
@@ -309,7 +309,7 @@ class TestCinematicEffectsAreReachable(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         import ast
-        path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "video_assembler.py")
+        path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "pipeline/video_assembler.py")
         with open(path, encoding="utf-8") as fh:
             cls.tree = ast.parse(fh.read())
         cls.ast = ast
@@ -383,7 +383,7 @@ class TestPillowMoviepyCompat(unittest.TestCase):
     """
 
     def test_alias_exists_after_importing_the_effects_module(self):
-        import cinematic_effects  # noqa: F401
+        from pipeline import cinematic_effects  # noqa: F401
         from PIL import Image
         self.assertTrue(hasattr(Image, "ANTIALIAS"),
                         "falta el shim: moviepy va a romper en cada resize")
@@ -391,7 +391,7 @@ class TestPillowMoviepyCompat(unittest.TestCase):
     def test_a_real_moviepy_resize_works(self):
         try:
             import numpy as np
-            import cinematic_effects  # noqa: F401  (aplica el shim)
+            from pipeline import cinematic_effects  # noqa: F401  (aplica el shim)
             from moviepy.editor import ImageClip
         except Exception as exc:
             self.skipTest("moviepy/numpy no disponibles: %s" % exc)
@@ -416,7 +416,7 @@ class TestCameraMovementActuallyMoves(unittest.TestCase):
     def setUpClass(cls):
         try:
             import numpy as np
-            from cinematic_effects import CinematicEffectsEngine, MovementType
+            from pipeline.cinematic_effects import CinematicEffectsEngine, MovementType
             from moviepy.editor import ImageClip
         except Exception as exc:
             raise unittest.SkipTest("moviepy/numpy no disponibles: %s" % exc)
@@ -490,7 +490,7 @@ class TestFfmpegMotionFilter(unittest.TestCase):
         try:
             import numpy as np
             from PIL import Image
-            from cinematic_effects import CameraMovement, MovementType
+            from pipeline.cinematic_effects import CameraMovement, MovementType
         except Exception as exc:
             raise unittest.SkipTest("dependencias faltantes: %s" % exc)
 
@@ -615,7 +615,7 @@ class TestCoverFrameStaysStill(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        import auto_video_generator_v2 as avg
+        from pipeline import auto_video_generator_v2 as avg
         cls.avg = avg
         cls.gen = cls._Gen()
 
@@ -658,7 +658,7 @@ class TestCoverFrameResolvesRelativePaths(unittest.TestCase):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def _usa_imagen(self, media_base_dir):
-        from cover_frame_generator import generate_cover_frame
+        from pipeline.cover_frame_generator import generate_cover_frame
         mensajes = []
         generate_cover_frame(
             topic="x", category="", storyboard=self.storyboard,

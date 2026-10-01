@@ -209,7 +209,7 @@ def llm_proposals(rows: list[dict[str, Any]], patterns: dict[str, Any], annivers
         if not getattr(client, "client", None):
             return []
         from channel.channel_strategy import get_format_archetypes, get_all_category_names, get_channel_audience_line
-        from micro_documentary import _json_generate
+        from pipeline.micro_documentary import _json_generate
     except Exception:
         return []
     hist = [r for r in rows if looks_historical(r.get("title", ""))] or rows

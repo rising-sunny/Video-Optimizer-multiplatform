@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from image_generation_manager import ImageGenerationManager
+from pipeline.image_generation_manager import ImageGenerationManager
 
 
 class _FakeComfyClient:

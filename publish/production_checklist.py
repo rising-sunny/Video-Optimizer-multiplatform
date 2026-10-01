@@ -164,7 +164,7 @@ def run_pre_publish_checklist(
     cf = storyboard.get("cover_frame")
     has_cf = bool(cf and cf.get("cover_text"))
     try:
-        from video_opening import get_hook_overlay
+        from pipeline.video_opening import get_hook_overlay
         hook = get_hook_overlay(storyboard)
     except Exception:
         hook = None

@@ -324,7 +324,7 @@ def apply_opening(segments: list[dict[str, Any]], *, script: str, topic: str = "
 
     cover_cfg = (bible if bible is not None else _bible()).get("cover_frame") or {}
     if cover_cfg.get("enabled", False) and segments is not None:
-        from cover_frame_generator import select_cover_text
+        from pipeline.cover_frame_generator import select_cover_text
         cover_text = select_cover_text(topic, category, llm_suggestion=llm_cover_text or None)
         dur = float(cover_cfg.get("duration_seconds", 0.7))
         for seg in segments:

@@ -1,6 +1,6 @@
 import unittest
 
-from daily_short_pipeline import (
+from pipeline.daily_short_pipeline import (
     _filter_ideas_by_editorial_focus,
     _idea_matches_editorial_focus,
     _pick_editorial_fallback,

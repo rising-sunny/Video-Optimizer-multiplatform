@@ -409,8 +409,8 @@ def build(topic, out, *, channel=None, seconds=270, editorial=None, approve=Fals
         else:
             sb.pop('_manual_bgm_path', None)
             sb.pop('music_data', None)
-        from long_form_builder import _run_tts
-        from daily_short_pipeline import generate_images_for_draft, assemble_video, save_storyboard
+        from pipeline.long_form_builder import _run_tts
+        from pipeline.daily_short_pipeline import generate_images_for_draft, assemble_video, save_storyboard
         profile = load_profile(channel)
         cfg = profile.get('tts', {})
         audio = _run_tts(sb, out, {"voice": cfg.get('default_voice', 'en-US-GuyNeural'), "voice_rate": cfg.get('rate', '+5%')}, [{"title": "Story"}])

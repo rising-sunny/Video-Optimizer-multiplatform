@@ -37,7 +37,7 @@ def _safe_print(*args, sep=' ', end='\n', file=None, flush=False):
 print = _safe_print
 
 from typing import List, Dict, Optional, Tuple
-import audio_mix_utils
+from pipeline import audio_mix_utils
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageEnhance
 import base64
@@ -213,14 +213,14 @@ except ImportError:
     print("[!] google_search_api.py no encontrado. Los guiones no tendran investigacion.")
 
 try:
-    from sfx_client import find_and_download_sfx
+    from pipeline.sfx_client import find_and_download_sfx
     SFX_AVAILABLE = False  # Desactivado por defecto
 except ImportError:
     SFX_AVAILABLE = False
     print("[!] sfx_client.py no encontrado. La busqueda de SFX fallara.")
 
 try:
-    from cinematic_effects import CinematicEffectsEngine, ContextDetector
+    from pipeline.cinematic_effects import CinematicEffectsEngine, ContextDetector
     CINEMATIC_AVAILABLE = True
 except ImportError:
     CINEMATIC_AVAILABLE = False
@@ -455,7 +455,7 @@ except ImportError:
 # ========== IMPORTAR GENERADOR DE VOZ DESDE MÃ“DULO SEPARADO ==========
 # TextToSpeechGenerator ha sido movido a tts_generator.py
 try:
-    from tts_generator import TextToSpeechGenerator
+    from pipeline.tts_generator import TextToSpeechGenerator
 except ImportError:
     print("âš ï¸ tts_generator.py no encontrado, TextToSpeechGenerator no disponible")
     TextToSpeechGenerator = None
@@ -465,7 +465,7 @@ except ImportError:
 
 # ========== IMPORTAR GENERADOR DE SUBTÃTULOS DESDE MÃ“DULO SEPARADO ==========
 try:
-    from subtitle_generator import SubtitleGenerator
+    from pipeline.subtitle_generator import SubtitleGenerator
 except ImportError:
     print("âš ï¸ subtitle_generator.py no encontrado, SubtitleGenerator no disponible")
     SubtitleGenerator = None
@@ -473,7 +473,7 @@ except ImportError:
 # ========== IMPORTAR ENSAMBLADOR DE VIDEO DESDE MÃ“DULO SEPARADO ==========
 # ContextualVideoAssembler ha sido movido a video_assembler.py
 try:
-    from video_assembler import ContextualVideoAssembler
+    from pipeline.video_assembler import ContextualVideoAssembler
 except ImportError:
     print("âš ï¸ video_assembler.py no encontrado, ContextualVideoAssembler no disponible")
     ContextualVideoAssembler = None
@@ -481,7 +481,7 @@ except ImportError:
 # ========== IMPORTAR VIDEO GENERATION MANAGER DESDE MÃ“DULO SEPARADO ==========
 # VideoGenerationManager ha sido movido a video_generation_manager.py
 try:
-    from video_generation_manager import VideoGenerationManager
+    from pipeline.video_generation_manager import VideoGenerationManager
 except ImportError:
     print("âš ï¸ video_generation_manager.py no encontrado, VideoGenerationManager no disponible")
     VideoGenerationManager = None
@@ -497,19 +497,19 @@ except ImportError:
 # ========== IMPORTAR VIDEO EXPORT MANAGER DESDE MÃ“DULO SEPARADO ==========
 # VideoExportManager ha sido movido a video_export_manager.py
 try:
-    from video_export_manager import VideoExportManager
+    from pipeline.video_export_manager import VideoExportManager
 except ImportError:
     print("âš ï¸ video_export_manager.py no encontrado, VideoExportManager no disponible")
     VideoExportManager = None
 
 try:
-    from storyboard_generator import StoryboardGenerator
+    from pipeline.storyboard_generator import StoryboardGenerator
 except ImportError:
     print("âš ï¸ storyboard_generator.py no encontrado, StoryboardGenerator no disponible")
     StoryboardGenerator = None
 
 try:
-    from image_generation_manager import ImageGenerationManager
+    from pipeline.image_generation_manager import ImageGenerationManager
 except ImportError:
     print("âš ï¸ image_generation_manager.py no encontrado, ImageGenerationManager no disponible")
     ImageGenerationManager = None
@@ -961,7 +961,7 @@ Reglas:
         # (estilo capcut para shorts)
         if not hasattr(self, '_dynamic_subtitle_wrapper'):
             try:
-                from dynamic_subtitle_wrapper import patch_subtitle_generation
+                from pipeline.dynamic_subtitle_wrapper import patch_subtitle_generation
                 patch_subtitle_generation(self, 'capcut')
                 self.log("   âœ… SubtÃ­tulos dinÃ¡micos activados para teaser (estilo: capcut)")
             except Exception as e:
@@ -1393,7 +1393,7 @@ Reglas:
     def _resolve_transition_sfx_path(self, preferred=None):
         if preferred and os.path.exists(str(preferred)):
             return str(preferred)
-        base = os.path.dirname(os.path.abspath(__file__))
+        base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         for candidate in (
             os.path.join(base, "transition_overlays", "swoosh.wav"),
             os.path.join(base, "swoosh.wav"),
@@ -1412,7 +1412,7 @@ Reglas:
 
         Devuelve (ruta, duracion_real) o (None, 0.0) si no hay overlay usable.
         """
-        base_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "transition_overlays")
+        base_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "transition_overlays")
         if not os.path.isdir(base_dir):
             return None, 0.0
 
@@ -1456,7 +1456,7 @@ Reglas:
     def _add_hook_to_ass(self, ass_path, storyboard_data, res):
         """Texto de gancho (video_opening) como evento del mismo .ass de los subtitulos."""
         try:
-            from video_opening import append_hook_to_ass, get_hook_overlay
+            from pipeline.video_opening import append_hook_to_ass, get_hook_overlay
             hook = get_hook_overlay(storyboard_data)
             if not hook or not ass_path or not os.path.exists(ass_path):
                 return False
@@ -1476,14 +1476,14 @@ Reglas:
     def _burn_hook_only(self, video_path, storyboard_data, res):
         """Si el video sale sin subtitulos, el texto de gancho se quema solo."""
         try:
-            from video_opening import get_hook_overlay, standalone_hook_ass
+            from pipeline.video_opening import get_hook_overlay, standalone_hook_ass
             hook = get_hook_overlay(storyboard_data)
             if not hook or not video_path or not os.path.exists(str(video_path)):
                 return False
             ass_path = str(video_path).replace('.mp4', '_hook.ass')
             with open(ass_path, 'w', encoding='utf-8') as fh:
                 fh.write(standalone_hook_ass(hook, int(res[0]), int(res[1])))
-            from dynamic_subtitles_generator import DynamicSubtitleEngine
+            from pipeline.dynamic_subtitles_generator import DynamicSubtitleEngine
             out_hook = str(video_path).replace('.mp4', '_hook.mp4')
             if DynamicSubtitleEngine.burn_subtitles_with_ffmpeg(str(video_path), ass_path, out_hook,
                                                                 video_width=int(res[0]), video_height=int(res[1])):
@@ -1518,7 +1518,7 @@ Reglas:
         # Arranque nuevo (video_opening): cada estilo tiene un movimiento propio
         # y todos empiezan a moverse desde el cuadro 0.
         if clip_data.get('opening_style'):
-            from video_opening import opening_motion_filter
+            from pipeline.video_opening import opening_motion_filter
             return opening_motion_filter(
                 n, width, height, str(clip_data['opening_style']),
                 float(clip_data.get('opening_motion_amount') or 0) or None,
@@ -1526,21 +1526,21 @@ Reglas:
 
         # Compatibilidad con storyboards hook_overlay_v1 anteriores.
         if clip_data.get('opening_push_in'):
-            from video_opening import push_in_filter
+            from pipeline.video_opening import push_in_filter
             return push_in_filter(n, width, height, float(clip_data['opening_push_in']))
 
         if apply_cinematic and CINEMATIC_AVAILABLE:
             try:
                 cinematic_plan = clip_data.get('cinematic_plan')
                 if cinematic_plan:
-                    from cinematic_director import build_ffmpeg_motion_filter, plan_summary
+                    from pipeline.cinematic_director import build_ffmpeg_motion_filter, plan_summary
                     self._record_audio_qa(
                         'cinematic_plan_%d' % index, plan_summary(cinematic_plan)
                     )
                     return build_ffmpeg_motion_filter(
                         cinematic_plan, n, (width, height)
                     )
-                from cinematic_effects import CameraMovement, ContextDetector
+                from pipeline.cinematic_effects import CameraMovement, ContextDetector
                 texto = str(clip_data.get('segment_text') or '')
                 movimiento = ContextDetector.suggest_movement(texto, float(duration))
                 posiciones = CameraMovement.calculate_positions(
@@ -1837,7 +1837,7 @@ Reglas:
                 cinematic_look = ''
                 if apply_cinematic and item.get('cinematic_plan'):
                     try:
-                        from cinematic_director import build_ffmpeg_look_filter
+                        from pipeline.cinematic_director import build_ffmpeg_look_filter
                         cinematic_look = build_ffmpeg_look_filter(
                             item.get('cinematic_plan'), float(duration), cinematic_preset
                         )
@@ -2021,7 +2021,7 @@ Reglas:
         # Solo como respaldo: si el blend por clip funciono, insertar ademas
         # duplicaria el efecto y volveria a desincronizar audio y video.
         if is_overlay_transition and len(clips) > 1 and not overlays_blended:
-            overlay_base_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "transition_overlays")
+            overlay_base_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "transition_overlays")
             overlay_src = None
             if os.path.isdir(overlay_base_dir):
                 for fname in sorted(os.listdir(overlay_base_dir)):
@@ -2549,7 +2549,7 @@ Reglas:
         segments = storyboard_data['segments']
         if apply_cinematic:
             try:
-                from cinematic_director import direct_storyboard
+                from pipeline.cinematic_director import direct_storyboard
                 direction = direct_storyboard(
                     storyboard_data,
                     level=cinematic_intensity,
@@ -2652,7 +2652,7 @@ Reglas:
                 cf_duration = float(seg.get('end', 0.7)) - float(seg.get('start', 0))
                 self.log(f"      [Cover Frame] Generating cover image: '{cover_text}'")
                 try:
-                    from cover_frame_generator import generate_cover_frame
+                    from pipeline.cover_frame_generator import generate_cover_frame
                     cf_result = generate_cover_frame(
                         topic=storyboard_data.get('topic', ''),
                         category=storyboard_data.get('category', ''),
@@ -2676,7 +2676,7 @@ Reglas:
                 if not media_path:
                     self.log("      [Cover Frame] Fallback: dark gradient with text")
                     try:
-                        from cover_frame_generator import composite_cover_text
+                        from pipeline.cover_frame_generator import composite_cover_text
                         w, h = (1080, 1920) if is_vertical else (1920, 1080)
                         dark_img = Image.new('RGBA', (w, h), (10, 10, 15, 255))
                         final_img = composite_cover_text(dark_img, cover_text)
@@ -2918,7 +2918,7 @@ Reglas:
         # Arranque (video_opening): el primer plano dura ~1.8 s (mediana de los shorts que ganan)
         # y arranca con acercamiento. Solo en storyboards nuevos: los viejos renderizan igual.
         try:
-            import video_opening as _vo
+            from pipeline import video_opening as _vo
             _opening_style = _vo.opening_style(storyboard_data)
             if generated_clips and _vo.is_modern_opening(_opening_style):
                 _op = storyboard_data.get('opening') or {}
@@ -3356,7 +3356,7 @@ Reglas:
                     try:
                         segs = storyboard_data.get('segments', [])
                         if segs:
-                            from dynamic_subtitle_wrapper import DynamicSubtitleWrapper
+                            from pipeline.dynamic_subtitle_wrapper import DynamicSubtitleWrapper
                             wrapper = DynamicSubtitleWrapper(style=subtitle_style)
                             # Whisper alinea mucho mejor sobre la voz sola que
                             # sobre la mezcla con musica (misma linea de tiempo).
@@ -3646,7 +3646,7 @@ Reglas:
 
             # Verificar si MoviePy produjo un video vÃ¡lido
             try:
-                from video_export_manager import _probe_has_video_and_audio as _probe_check
+                from pipeline.video_export_manager import _probe_has_video_and_audio as _probe_check
                 mv_has_v, _ = _probe_check(str(out), log_callback=self.log)
                 if not mv_has_v and self.export_manager:
                     self.log("âš ï¸ MoviePy no generÃ³ video vÃ¡lido, intentando exportaciÃ³n directa con FFmpeg pipe...")
@@ -3665,7 +3665,7 @@ Reglas:
             self.log(f"âŒ ERROR: El video no se exportÃ³ correctamente")
             return None
         try:
-            from video_export_manager import _probe_has_video_and_audio, _probe_duration
+            from pipeline.video_export_manager import _probe_has_video_and_audio, _probe_duration
             has_v, has_a = _probe_has_video_and_audio(str(out), log_callback=self.log)
             dur = _probe_duration(str(out))
             out_fsize = os.path.getsize(str(out))

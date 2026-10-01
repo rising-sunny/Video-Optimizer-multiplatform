@@ -1,6 +1,6 @@
 import unittest
 
-from image_generation_manager import ImageGenerationManager
+from pipeline.image_generation_manager import ImageGenerationManager
 from ai.recraft_client import RecraftClient
 
 

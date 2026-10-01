@@ -16,7 +16,7 @@ import shutil
 import tempfile
 import unittest
 
-from tts_generator import TextToSpeechGenerator
+from pipeline.tts_generator import TextToSpeechGenerator
 
 
 class TimeoutPorLargoDelGuion(unittest.TestCase):
@@ -78,7 +78,7 @@ class UnCuelgueSeCorta(unittest.TestCase):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def test_save_que_nunca_vuelve_termina_cortado(self):
-        import tts_generator
+        from pipeline import tts_generator
 
         class CommunicateColgado:
             def __init__(self, *a, **kw):

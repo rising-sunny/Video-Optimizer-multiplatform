@@ -45,7 +45,7 @@ class StudioProjectManager:
 
     def _storyboard_is_unusable(self, storyboard) -> bool:
         try:
-            from storyboard_generator import storyboard_is_unusable
+            from pipeline.storyboard_generator import storyboard_is_unusable
             return bool(storyboard_is_unusable(storyboard))
         except Exception:
             return False
@@ -100,7 +100,7 @@ class StudioProjectManager:
                 existing_topic = ""
 
         try:
-            from storyboard_generator import topics_are_same_project
+            from pipeline.storyboard_generator import topics_are_same_project
             same_topic = topics_are_same_project(existing_topic, topic)
         except Exception:
             same_topic = (str(existing_topic or "").strip().lower() == str(topic or "").strip().lower())
@@ -1563,7 +1563,7 @@ class StudioProjectManager:
                     self.studio_tab.style_combo.setCurrentIndex(index)
 
             if hasattr(self.studio_tab, 'opening_style_combo'):
-                from video_opening import normalize_opening_style
+                from pipeline.video_opening import normalize_opening_style
                 opening_style = normalize_opening_style(config.get('opening_style'))
                 for index in range(self.studio_tab.opening_style_combo.count()):
                     if self.studio_tab.opening_style_combo.itemData(index) == opening_style:
@@ -1953,7 +1953,7 @@ class StudioProjectManager:
                     # Método 3: Buscar en directorio de salida (simplificado)
                     if not video_restored:
                         try:
-                            from auto_video_generator_v2 import VideoConfig
+                            from pipeline.auto_video_generator_v2 import VideoConfig
                             import glob
                             from datetime import datetime, timedelta
                             output_dir = VideoConfig.OUTPUT_DIR

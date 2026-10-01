@@ -127,7 +127,7 @@ tests/        → los 76 test_*.py
 `catharsis_editor`, `catharsis_tab`, `catharsis_media_input`, `catharsis_player`,
 `catharsis_preview`, `catharsis_timeline`, `catharsis_timeline_view`.
 
-### `pipeline/` — generación (no-GUI)
+### `pipeline/` — generación (no-GUI) ✅ (Fase 7)
 
 | Módulo actual | Nota |
 |---|---|
@@ -301,6 +301,11 @@ El script se puede re-ejecutar por fase y se revierte con git.
 
 ## Changelog
 
+- **2026-10-01 (Fase 7)** — `pipeline/` con 26 módulos (guión, TTS, imágenes, ensamblaje,
+  subtítulos, thumbnails; 163 imports + 39 strings reescritos). `__file__`→raíz en 8 módulos
+  (`PROJECT_DIR`, `transition_overlays`, worker Whisper, TTS, cover); `sys.modules` por string
+  → `pipeline.`; 4 shims CLI (`daily_short_pipeline`, `long_form_builder`, `build_derinkuyu_long`,
+  `microdoc_analytics`). Suite verde: 1205 tests.
 - **2026-10-01 (Fase 6)** — `publish/` con 26 módulos (uploaders, SEO, miniaturas, música;
   171 imports + 42 strings reescritos). `__file__`→raíz en 10 módulos; `music_license` extrajo
   su `main()`; `_upload_via_vps` ahora envía todos los paquetes con `scp -r` (los uploaders

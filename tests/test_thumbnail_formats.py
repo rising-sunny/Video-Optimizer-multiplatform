@@ -21,7 +21,7 @@ from publish import thumbnail_formats as tf
 
 try:
     from PIL import Image
-    from thumbnail_compositor import ThumbnailCompositor
+    from pipeline.thumbnail_compositor import ThumbnailCompositor
     from publish.thumbnail_quality_validator import validate_thumbnail, _analyze_pixels
     PIL_OK = True
 except Exception:

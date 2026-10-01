@@ -123,7 +123,7 @@ def build_preview(style_key: str, cache_dir: Optional[Path] = None,
 
     trabajo = Path(tempfile.mkdtemp(prefix="subprev_"))
     try:
-        from dynamic_subtitles_generator import DynamicSubtitleEngine
+        from pipeline.dynamic_subtitles_generator import DynamicSubtitleEngine
 
         ass_path = trabajo / "muestra.ass"
         engine = DynamicSubtitleEngine(style=style_key)
@@ -171,7 +171,7 @@ def build_preview(style_key: str, cache_dir: Optional[Path] = None,
 def style_key_from_label(label: str) -> str:
     """Etiqueta del combo -> clave del estilo, con la misma regla del pipeline."""
     try:
-        from dynamic_subtitle_wrapper import normalize_subtitle_style
+        from pipeline.dynamic_subtitle_wrapper import normalize_subtitle_style
 
         return normalize_subtitle_style(label)
     except Exception:
@@ -181,7 +181,7 @@ def style_key_from_label(label: str) -> str:
 def describe_style(style_key: str) -> str:
     """Una linea con lo que hace el estilo, para acompanar la animacion."""
     try:
-        from dynamic_subtitles_generator import SubtitleStyle
+        from pipeline.dynamic_subtitles_generator import SubtitleStyle
 
         d = SubtitleStyle.get_style(style_key)
     except Exception:

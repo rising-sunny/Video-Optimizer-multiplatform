@@ -1388,7 +1388,7 @@ State the resolved lens and depth of field. End with: {fmt.prompt_constraint}, p
         """
         elif is_short:
             short_block = self._build_short_block(category)
-        from video_opening import opening_script_instructions
+        from pipeline.video_opening import opening_script_instructions
         opening_block = opening_script_instructions(opening_style, language=language)
 
         prompt = f"""
@@ -1622,7 +1622,7 @@ Output ONLY valid JSON (no explanations, no markdown):
         """
         elif is_short:
             short_block = self._build_short_block(category)
-        from video_opening import opening_script_instructions
+        from pipeline.video_opening import opening_script_instructions
         opening_block = opening_script_instructions(opening_style, language=language)
 
         prompt = f"""

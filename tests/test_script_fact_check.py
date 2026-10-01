@@ -441,7 +441,7 @@ class ElCableado(unittest.TestCase):
         return (ROOT / name).read_text(encoding="utf-8")
 
     def test_every_path_checks_facts_before_the_voice(self):
-        src = self._src("storyboard_generator.py")
+        src = self._src("pipeline/storyboard_generator.py")
         body = src[src.index("    def process_manual_json("):src.index("    def generate_storyboard_data(")]
         self.assertLess(body.index("self._fact_check_scenes("), body.index("self.tts.generate_narration("))
         self.assertIn('"fact_check": fact_report', body)
@@ -453,7 +453,7 @@ class ElCableado(unittest.TestCase):
         self.assertEqual(src.count("topic=topic,\n            research_context=research_context,"), 2)
 
     def test_length_retry_no_longer_asks_for_invented_specifics(self):
-        src = self._src("storyboard_generator.py")
+        src = self._src("pipeline/storyboard_generator.py")
         self.assertNotIn("hora exacta, magnitud, velocidad, víctimas", src)
         self.assertNotIn("Sobrevivientes/testigos con nombre y testimonio", src)
         self.assertIn("una frase", src)
@@ -465,7 +465,7 @@ class ElCableado(unittest.TestCase):
         self.assertIn("_sync_timeline_editor_to_storyboard()", body[:body.index("self._fact_check_gate(")])
 
     def test_daily_pipeline_upload_is_gated(self):
-        src = self._src("daily_short_pipeline.py")
+        src = self._src("pipeline/daily_short_pipeline.py")
         body = src[src.index("def run_pipeline("):]
         self.assertLess(body.index("upload_gate(storyboard"), body.index("upload_result = upload_to_youtube("))
 
@@ -531,7 +531,7 @@ class ElTitulo(Base):
         self.assertEqual(findings[0]["scene"], 3)                       # no se muda a la escena 1
 
     def test_storyboard_passes_the_title_and_uses_the_corrected_one(self):
-        src = (ROOT / "storyboard_generator.py").read_text(encoding="utf-8")
+        src = (ROOT / "pipeline/storyboard_generator.py").read_text(encoding="utf-8")
         body = src[src.index("    def process_manual_json("):src.index("    def generate_storyboard_data(")]
         self.assertIn("title=str(json_data.get('title') or '')", body)
         self.assertIn("json_data['title'] = fact_report[\"title\"]", body)

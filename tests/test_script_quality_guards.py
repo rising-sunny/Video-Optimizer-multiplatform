@@ -12,7 +12,7 @@ from ai.research_search import (
     _simplify_query,
     topic_search_queries,
 )
-from storyboard_generator import (
+from pipeline.storyboard_generator import (
     StoryboardGenerator,
     script_matches_topic,
     topic_needs_localization,
@@ -274,7 +274,7 @@ class ScriptTopicDriftTests(unittest.TestCase):
         correcto cuyo titulo no repita el tema salta como error -- y una alarma
         que suena siempre no la mira nadie.
         """
-        from storyboard_generator import scene_narration_text
+        from pipeline.storyboard_generator import scene_narration_text
 
         escenas = [
             {"narration": "In 1180 AD, the Saudeleur dynasty began building Nan Madol."},

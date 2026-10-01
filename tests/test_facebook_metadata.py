@@ -431,7 +431,7 @@ class Cableado(unittest.TestCase):
         self.assertIn("for pkg_name in ('infra', 'ai', 'media', 'channel', 'publish'):", s)
 
     def test_los_respaldos_de_facebook_no_usan_mystery_ni_marca_fija(self):
-        for name in ("auto_video_integration_pyqt6.py", "platform_metadata_tab.py", "daily_short_pipeline.py"):
+        for name in ("auto_video_integration_pyqt6.py", "platform_metadata_tab.py", "pipeline/daily_short_pipeline.py"):
             s = self._src(name)
             self.assertNotIn("#History #Mystery #StunningRevelations", s, name)
         self.assertNotIn("preview[:260]", self._src("auto_video_integration_pyqt6.py"))

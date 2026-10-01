@@ -386,7 +386,7 @@ class MojibakeRepairEventFilter(QObject):
 AUTO_INTEGRATION_AVAILABLE = False
 
 try:
-    from auto_video_generator_v2 import AutoVideoGenerator, VideoConfig
+    from pipeline.auto_video_generator_v2 import AutoVideoGenerator, VideoConfig
     AUTO_VIDEO_AVAILABLE = True
     print("[OK] Auto Video Generator v2.0 (Contextual) cargado")
 except ImportError as e:

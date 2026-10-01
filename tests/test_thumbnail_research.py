@@ -198,7 +198,7 @@ class CifrasConGentilicio(unittest.TestCase):
         self.assertNotIn("86,000 ROMANS", self.texts("86,000 Dead", "About 86,000 Romans fought."))
 
     def test_the_video_opening_hook_now_finds_it(self):
-        from video_opening import pick_hook_text
+        from pipeline.video_opening import pick_hook_text
         text, why = pick_hook_text("About 86,000 Romans and allies fought at Cannae. Hannibal waited.", "ANNIHILATED")
         self.assertEqual(text, "86,000 ROMANS")
         self.assertIn("cifra", why)

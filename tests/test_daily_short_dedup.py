@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-import daily_short_pipeline
+from pipeline import daily_short_pipeline
 
 
 class TestTitleSimilarity(unittest.TestCase):

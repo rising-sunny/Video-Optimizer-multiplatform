@@ -23,7 +23,7 @@ import unittest
 
 from PIL import Image
 
-from thumbnail_compositor import (
+from pipeline.thumbnail_compositor import (
     YOUTUBE_API_THUMBNAIL_MAX_BYTES,
     fit_for_youtube_api,
 )

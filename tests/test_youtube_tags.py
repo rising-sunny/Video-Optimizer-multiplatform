@@ -273,7 +273,7 @@ class ElStudioYElMicrodoc(unittest.TestCase):
         self.assertNotIn('"StunningRevelations"] if is_long', src)
 
     def test_el_microdoc_no_escribe_tags_de_relleno(self):
-        src = open("micro_documentary.py", encoding="utf-8", errors="replace").read()
+        src = open("pipeline/micro_documentary.py", encoding="utf-8", errors="replace").read()
         self.assertNotIn('"tags": ["history", "documentary"]', src)
         self.assertIn('"script_excerpt": sb[\'script\'][:4000]', src)
 

@@ -17,7 +17,7 @@ import sys
 import tempfile
 from pathlib import Path
 from typing import List, Dict, Optional
-from dynamic_subtitles_generator import DynamicSubtitleEngine
+from pipeline.dynamic_subtitles_generator import DynamicSubtitleEngine
 
 
 def _safe_print(*args, sep=' ', end='\n', file=None, flush=False):
@@ -461,7 +461,7 @@ def patch_subtitle_generation(generator, subtitle_style='hormozi'):
     Returns:
         None (modifica el generator in-place)
     """
-    from dynamic_subtitles_generator import DynamicSubtitleEngine
+    from pipeline.dynamic_subtitles_generator import DynamicSubtitleEngine
     import os
     subtitle_style = normalize_subtitle_style(subtitle_style)
     
@@ -764,7 +764,7 @@ if __name__ == "__main__":
     print("ðŸŽ¬ Dynamic Subtitle Wrapper")
     print("Este mÃ³dulo se usa como wrapper para reemplazar subtÃ­tulos MoviePy.")
     print("\nUso:")
-    print("  from dynamic_subtitle_wrapper import patch_subtitle_generation")
+    print("  from pipeline.dynamic_subtitle_wrapper import patch_subtitle_generation")
     print("  patch_subtitle_generation(generator, 'hormozi')")
 
 

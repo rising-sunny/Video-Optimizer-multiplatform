@@ -213,8 +213,8 @@ class ElCableado(unittest.TestCase):
     def test_no_function_shadows_a_module_import(self):
         # Regresion: "Seleccionar Musica" con recorte -> "cannot access local variable 'shutil'".
         files = ["music_browser_dialog.py", "media/music_recommender.py", "publish/music_license.py",
-                 "auto_video_integration_pyqt6.py", "timeline_editor_widget.py", "storyboard_generator.py",
-                 "daily_short_pipeline.py", "auto_video_generator_v2.py", "ai/script_fact_check.py",
+                 "auto_video_integration_pyqt6.py", "timeline_editor_widget.py", "pipeline/storyboard_generator.py",
+                 "pipeline/daily_short_pipeline.py", "pipeline/auto_video_generator_v2.py", "ai/script_fact_check.py",
                  "ai/visual_art_direction.py", "publish/facebook_uploader.py", "publish/instagram_uploader.py", "publish/youtube_uploader.py"]
         problems = [p for f in files for p in shadowed_imports(ROOT / f)]
         self.assertEqual(problems, [])

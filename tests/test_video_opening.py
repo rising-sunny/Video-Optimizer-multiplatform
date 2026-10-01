@@ -18,7 +18,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-import video_opening as vo
+from pipeline import video_opening as vo
 
 HANNIBAL = ("How did Hannibal sustain 50,000 troops and war elephants across the frozen Alps without modern "
             "supply lines? He relied on 30,000 oxen, each carrying up to 250 kilograms of grain.")
@@ -86,7 +86,7 @@ class LaDecision(unittest.TestCase):
             self.assertIn("factual and supported", block)
 
     def test_el_prompt_json_estructura_guion_y_dos_primeros_visuales(self):
-        from storyboard_generator import StoryboardGenerator
+        from pipeline.storyboard_generator import StoryboardGenerator
         generator = StoryboardGenerator(log_callback=lambda m: None)
         for style in vo.OPENING_STYLE_CHOICES:
             prompt = generator.generate_manual_prompt_text(
@@ -109,7 +109,7 @@ class LaDecision(unittest.TestCase):
         self.assertIn(vo.TOP_CLEAR_HINT, segs[0]["visual_prompt"], "la imagen deja arriba lugar para el texto")
 
     def test_la_placa_vieja_solo_si_se_apaga_el_gancho(self):
-        with patch("cover_frame_generator.select_cover_text", return_value="FEEDING"):
+        with patch("pipeline.cover_frame_generator.select_cover_text", return_value="FEEDING"):
             segs, op = vo.apply_opening(_segs(), script=HANNIBAL, bible=BIBLE_OLD, log=lambda m: None)
         self.assertTrue(segs[0]["cover_frame"])
         self.assertEqual(segs[1]["start"], 0.7)
@@ -324,13 +324,13 @@ class Cableado(unittest.TestCase):
             return fh.read()
 
     def test_el_storyboard_usa_el_arranque_nuevo_en_todos_los_caminos(self):
-        s = self._src("storyboard_generator.py")
+        s = self._src("pipeline/storyboard_generator.py")
         self.assertEqual(s.count("apply_opening("), 3)
         self.assertNotIn('"cover_frame": True,', s, "la placa solo la inserta video_opening (modo viejo)")
         self.assertIn('"opening": opening_data,', s)
 
     def test_el_ensamblado_dibuja_el_gancho_y_arma_el_primer_plano(self):
-        s = self._src("auto_video_generator_v2.py")
+        s = self._src("pipeline/auto_video_generator_v2.py")
         self.assertEqual(s.count("self._add_hook_to_ass(ass_path, storyboard_data, res)"), 2)
         self.assertGreaterEqual(s.count("self._burn_hook_only("), 3)
         self.assertIn("_vo.enforce_min_first_shot(", s)
@@ -358,7 +358,7 @@ class LosProyectosViejos(unittest.TestCase):
 
     def test_la_placa_de_un_proyecto_viejo_sigue_usando_su_imagen(self):
         from PIL import Image
-        import cover_frame_generator as cfg_gen
+        from pipeline import cover_frame_generator as cfg_gen
         tmp = tempfile.mkdtemp(prefix="oldcover_")
         try:
             proj = os.path.join(tmp, "proj")

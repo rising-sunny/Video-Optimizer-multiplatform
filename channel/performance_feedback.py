@@ -172,7 +172,7 @@ def load_projects(roots: Iterable[Path] = ()) -> list[dict[str, Any]]:
                 cfg = data.get("config") or {}
                 sb = data.get("storyboard") if isinstance(data.get("storyboard"), dict) else data
                 try:
-                    from video_opening import opening_style
+                    from pipeline.video_opening import opening_style
                     opening = opening_style(sb)
                 except Exception:
                     opening = ""

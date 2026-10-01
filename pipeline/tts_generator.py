@@ -544,7 +544,7 @@ class TextToSpeechGenerator:
         """
         output_path = Path(filename).expanduser()
         if not output_path.is_absolute():
-            output_path = (Path(__file__).resolve().parent / output_path).resolve()
+            output_path = (Path(__file__).resolve().parent.parent / output_path).resolve()
         output_path.parent.mkdir(parents=True, exist_ok=True)
         filename = str(output_path)
         

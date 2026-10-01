@@ -18,7 +18,7 @@ import warnings
 
 # Importar cliente de Pexels y verificar disponibilidad
 try:
-    from auto_video_generator_v2 import ResourceDownloader
+    from pipeline.auto_video_generator_v2 import ResourceDownloader
     PEXELS_AVAILABLE = True
 except ImportError:
     PEXELS_AVAILABLE = False
@@ -477,7 +477,7 @@ class PexelsVideoSearchDialog(QDialog):
                     return
             
             # Descargar video
-            from auto_video_generator_v2 import ResourceDownloader
+            from pipeline.auto_video_generator_v2 import ResourceDownloader
             # Alias para compatibilidad
             StockMediaDownloader = ResourceDownloader
             downloader = StockMediaDownloader()

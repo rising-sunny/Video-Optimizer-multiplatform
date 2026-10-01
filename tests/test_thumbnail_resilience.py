@@ -19,8 +19,8 @@ llamaba desde ningun lado.
 
 import unittest
 
-from thumbnail_context_enricher import ThumbnailContextEnricher
-from thumbnail_intelligence import ThumbnailIntelligence
+from pipeline.thumbnail_context_enricher import ThumbnailContextEnricher
+from pipeline.thumbnail_intelligence import ThumbnailIntelligence
 from publish.thumbnail_formats import SHORT_9_16
 
 PROYECTO = {

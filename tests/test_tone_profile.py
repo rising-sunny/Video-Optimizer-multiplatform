@@ -54,7 +54,7 @@ class LoDeSiempreSigueIgual(unittest.TestCase):
 
     def test_el_sentimiento_de_la_musica_usa_el_perfil_y_no_nombres_en_espanol(self):
         import io
-        fuente = io.open("storyboard_generator.py", encoding="utf-8", errors="replace").read()
+        fuente = io.open("pipeline/storyboard_generator.py", encoding="utf-8", errors="replace").read()
         self.assertNotIn('category in ["Misterios", "Paranormal", "Conspiraciones"]', fuente)
         self.assertIn('self._get_tone_profile_for_category(category) == "mystery"', fuente)
 

@@ -11,7 +11,7 @@ from PyQt6.QtCore import QPointF, QRectF, QSize, Qt, QTimer
 from PyQt6.QtGui import QColor, QFont, QFontDatabase, QPainter, QPainterPath, QPen
 from PyQt6.QtWidgets import QSizePolicy, QWidget
 
-from video_opening import (
+from pipeline.video_opening import (
     ARTIFACT_REVEAL_STYLE,
     BEFORE_AFTER_STYLE,
     MAP_ZOOM_STYLE,

@@ -72,7 +72,7 @@ except ImportError:
     BingImagesClient = None
 
 try:
-    from auto_video_generator_v2 import ResourceDownloader
+    from pipeline.auto_video_generator_v2 import ResourceDownloader
     # Alias para compatibilidad
     StockMediaDownloader = ResourceDownloader
     PEXELS_AVAILABLE = True
@@ -392,7 +392,7 @@ class TimelineEditorWidget(QWidget):
 
     def _get_selected_image_aspect_ratio(self) -> str:
         """Aspect ratio de imagen según el formato elegido en la GUI principal."""
-        from image_generation_manager import primary_aspect_ratio_from_format
+        from pipeline.image_generation_manager import primary_aspect_ratio_from_format
 
         studio = self.studio_tab or self._get_studio_tab()
         video_format = None
@@ -420,7 +420,7 @@ class TimelineEditorWidget(QWidget):
 
     def _ensure_prompt_has_selected_aspect(self, prompt: str) -> str:
         """Inyecta 16:9 / 9:16 / 1:1 según el combo 'Formato de video' de la GUI."""
-        from image_generation_manager import apply_aspect_ratio_to_visual_prompt
+        from pipeline.image_generation_manager import apply_aspect_ratio_to_visual_prompt
         return apply_aspect_ratio_to_visual_prompt(
             prompt,
             self._get_selected_image_aspect_ratio(),

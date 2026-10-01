@@ -31,7 +31,7 @@ class _FakeTTS:
 
 
 def _generator():
-    from storyboard_generator import StoryboardGenerator
+    from pipeline.storyboard_generator import StoryboardGenerator
     gen = StoryboardGenerator.__new__(StoryboardGenerator)
     gen.log = lambda m: None
     gen.gemini_client = _FakeLLM()
@@ -75,13 +75,13 @@ class ElModoStandalone(unittest.TestCase):
         self.assertNotIn("SELF-CONTAINED", prompt)
 
     def test_las_fuentes_estampan_angulo_y_tema(self):
-        fuente = io.open("storyboard_generator.py", encoding="utf-8", errors="replace").read()
+        fuente = io.open("pipeline/storyboard_generator.py", encoding="utf-8", errors="replace").read()
         self.assertIn('"topic": topic if mode == "standalone" else f"{topic} - Teaser"', fuente)
         self.assertIn('"format_archetype": long_video_storyboard.get(\'format_archetype\')', fuente)
         self.assertIn('"derivation_mode": mode', fuente)
 
     def test_el_wrapper_y_la_gui_piden_standalone(self):
-        wrapper = io.open("auto_video_generator_v2.py", encoding="utf-8", errors="replace").read()
+        wrapper = io.open("pipeline/auto_video_generator_v2.py", encoding="utf-8", errors="replace").read()
         self.assertIn("mode='standalone'", wrapper)
         self.assertIn("rate=rate, mode=mode", wrapper)
         gui = io.open("auto_video_integration_pyqt6.py", encoding="utf-8", errors="replace").read()

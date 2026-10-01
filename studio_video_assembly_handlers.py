@@ -47,7 +47,7 @@ class StudioVideoAssemblyHandlers:
             return True
 
         try:
-            from dynamic_subtitle_wrapper import probe_precise_subtitle_dependencies
+            from pipeline.dynamic_subtitle_wrapper import probe_precise_subtitle_dependencies
             health = probe_precise_subtitle_dependencies()
         except Exception as exc:
             health = {
@@ -800,7 +800,7 @@ class StudioVideoAssemblyHandlers:
         subtitle_style_display = self.studio_tab.get_subtitle_style_name()
         subtitle_style = subtitle_style_display
         try:
-            from dynamic_subtitle_wrapper import normalize_subtitle_style
+            from pipeline.dynamic_subtitle_wrapper import normalize_subtitle_style
             subtitle_style = normalize_subtitle_style(subtitle_style_display)
         except Exception:
             pass
@@ -825,7 +825,7 @@ class StudioVideoAssemblyHandlers:
         # Aplicar patch de subtítulos dinámicos si están activados
         if add_subtitles:
             try:
-                from dynamic_subtitle_wrapper import patch_subtitle_generation
+                from pipeline.dynamic_subtitle_wrapper import patch_subtitle_generation
                 patch_subtitle_generation(self.studio_tab.generator, subtitle_style)
                 self.studio_tab.log(
                     f" Subtítulos dinámicos activados (estilo: {subtitle_style})")
@@ -1007,7 +1007,7 @@ class StudioVideoAssemblyHandlers:
         """Regenera el audio del storyboard."""
         self.studio_tab.log("Regenerando audio con la voz seleccionada...")
         try:
-            from tts_generator import TextToSpeechGenerator
+            from pipeline.tts_generator import TextToSpeechGenerator
             from infra.video_config import VideoConfig
             import time
 

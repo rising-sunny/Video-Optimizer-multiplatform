@@ -1,6 +1,6 @@
 import unittest
 
-from image_generation_manager import (
+from pipeline.image_generation_manager import (
     ImageGenerationManager,
     apply_aspect_ratio_to_visual_prompt,
     primary_aspect_ratio_from_format,

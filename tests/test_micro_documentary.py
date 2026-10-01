@@ -8,8 +8,8 @@ from unittest.mock import patch, MagicMock
 
 from channel import channel_profiles as channels
 from channel import channel_strategy
-import micro_documentary as micro
-from microdoc_analytics import normalize, diagnose, compare_pilots
+from pipeline import micro_documentary as micro
+from pipeline.microdoc_analytics import normalize, diagnose, compare_pilots
 
 
 def package():
@@ -209,12 +209,12 @@ class MicroTests(unittest.TestCase):
                     segment['image_path'] = 'manual.jpg'
             project['storyboard']['segments'][-1]['text'] += ' Preserved ending.'
             micro.write_json(out / 'project.json', project)
-            pipeline = types.ModuleType('daily_short_pipeline')
+            pipeline = types.ModuleType('pipeline.daily_short_pipeline')
             pipeline.generate_images_for_draft = MagicMock(side_effect=lambda out, sb, **kw: (sb, {}))
             pipeline.assemble_video = MagicMock(return_value=str(out / 'pilot.mp4'))
             pipeline.save_storyboard = lambda out, sb: micro.write_json(out / 'storyboard.json', sb)
             probe = MagicMock(stdout=json.dumps({'format': {'duration': '271'}, 'streams': [{'width': 1920, 'height': 1080}]}))
-            with patch.dict('sys.modules', {'daily_short_pipeline': pipeline}), patch('long_form_builder._run_tts', return_value=out / 'audio.mp3'), patch('subprocess.run', return_value=probe):
+            with patch.dict('sys.modules', {'pipeline.daily_short_pipeline': pipeline}), patch('pipeline.long_form_builder._run_tts', return_value=out / 'audio.mp3'), patch('subprocess.run', return_value=probe):
                 result = micro.build('Coronel', out, approve=True, assemble=True, client=client)
             self.assertEqual(result['status'], 'assembled')
             self.assertEqual(len(client.calls), 2)
@@ -237,7 +237,7 @@ class MicroTests(unittest.TestCase):
         client = FakeClient([p, script_for(p)])
         with tempfile.TemporaryDirectory() as tmp:
             micro.build('Coronel', tmp, client=client)
-            with patch('long_form_builder._run_tts') as tts:
+            with patch('pipeline.long_form_builder._run_tts') as tts:
                 with self.assertRaisesRegex(ValueError, 'Modo manual: faltan'):
                     micro.build('Coronel', tmp, approve=True, assemble=True, client=client, image_provider='manual')
                 tts.assert_not_called()
@@ -247,14 +247,14 @@ class MicroTests(unittest.TestCase):
         client = FakeClient([p, script_for(p)])
         with tempfile.TemporaryDirectory() as tmp:
             micro.build('Coronel', tmp, client=client)
-            pipeline = types.ModuleType('daily_short_pipeline')
+            pipeline = types.ModuleType('pipeline.daily_short_pipeline')
             pipeline.generate_images_for_draft = MagicMock()
             pipeline.assemble_video = MagicMock()
             pipeline.save_storyboard = lambda out, sb: micro.write_json(out / 'storyboard.json', sb)
             def too_long(sb, *args):
                 sb['segments'][-1]['end'] = 401
                 return Path(tmp) / 'audio.mp3'
-            with patch.dict('sys.modules', {'daily_short_pipeline': pipeline}), patch('long_form_builder._run_tts', side_effect=too_long):
+            with patch.dict('sys.modules', {'pipeline.daily_short_pipeline': pipeline}), patch('pipeline.long_form_builder._run_tts', side_effect=too_long):
                 with self.assertRaisesRegex(ValueError, 'Actual narration'):
                     micro.build('Coronel', tmp, approve=True, assemble=True, client=client)
             pipeline.generate_images_for_draft.assert_not_called()

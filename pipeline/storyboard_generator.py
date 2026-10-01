@@ -323,7 +323,7 @@ class StoryboardGenerator:
     def _visual_prompt_aspect_rule(self, video_format=None, platform=None):
         """Ratio de imagen e instrucción para visual_prompt (16:9 / 9:16 / 1:1)."""
         try:
-            from image_generation_manager import primary_aspect_ratio_from_format
+            from pipeline.image_generation_manager import primary_aspect_ratio_from_format
             aspect = primary_aspect_ratio_from_format(video_format, platform)
         except Exception:
             aspect = "16:9"
@@ -1524,7 +1524,7 @@ FORMATO: Video horizontal 16:9 para YouTube.
         tone_profile = self._get_tone_profile_for_category(category)
         tone_header = self._build_tone_header(tone_profile)
         tone_section = self._build_tone_section(tone_profile, lang_label)
-        from video_opening import opening_script_instructions
+        from pipeline.video_opening import opening_script_instructions
         opening_section = opening_script_instructions(
             opening_style, language=language, include_visuals=True
         )
@@ -2020,7 +2020,7 @@ REGLAS CRÍTICAS:
         # encima de la escena 1 y la voz arranca en 0.0 s. La placa vieja solo si el Bible
         # apaga `hook_overlay` y deja `cover_frame.enabled`.
         try:
-            from video_opening import apply_opening
+            from pipeline.video_opening import apply_opening
             try:
                 from channel.channel_strategy import get_active_archetype
                 _arche_now = get_active_archetype() or ""
@@ -2129,7 +2129,7 @@ REGLAS CRÍTICAS:
                 self.log(f"   ⚠️ Error buscando música: {e}")
 
         try:
-            from video_opening import apply_opening
+            from pipeline.video_opening import apply_opening
             try:
                 from channel.channel_strategy import get_active_archetype
                 _arche_now = get_active_archetype() or ""
@@ -2293,7 +2293,7 @@ REGLAS CRÍTICAS:
                 if idx == 0 else "NO incluyas campo 'title'."
             )
             if idx == 0:
-                from video_opening import opening_script_instructions
+                from pipeline.video_opening import opening_script_instructions
                 opening_batch = opening_script_instructions(
                     opening_style, language=language, include_visuals=True
                 )
@@ -2475,7 +2475,7 @@ Sin explicaciones antes ni después. Solo JSON válido."""
             return None
 
         try:
-            from image_generation_manager import apply_aspect_ratio_to_visual_prompt
+            from pipeline.image_generation_manager import apply_aspect_ratio_to_visual_prompt
             for scene in all_scenes:
                 vp = str(scene.get("visual_prompt") or "").strip()
                 if vp:
@@ -3172,7 +3172,7 @@ Sin explicaciones antes ni después. Solo JSON válido."""
         cover_frame_data = None
         opening_data = None
         try:
-            from video_opening import apply_opening
+            from pipeline.video_opening import apply_opening
             llm_cover_text = getattr(self.gemini_client, '_last_cover_text', None) if hasattr(self, 'gemini_client') else None
             if not llm_cover_text and hasattr(self, 'gemini_client') and hasattr(self.gemini_client, 'backend'):
                 llm_cover_text = getattr(self.gemini_client.backend, '_last_cover_text', None)

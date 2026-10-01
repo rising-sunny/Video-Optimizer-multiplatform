@@ -7,7 +7,7 @@ sin modificar su código original, redirigiendo los logs a señales Qt.
 from PyQt6.QtCore import QObject, pyqtSignal
 import socket
 import time
-from auto_video_generator_v2 import AutoVideoGenerator as OriginalGenerator
+from pipeline.auto_video_generator_v2 import AutoVideoGenerator as OriginalGenerator
 
 
 class AutoVideoGeneratorPyQt6(QObject):

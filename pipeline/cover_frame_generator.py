@@ -13,7 +13,7 @@ from typing import Any, Optional
 
 from PIL import Image, ImageColor, ImageDraw, ImageFilter, ImageFont
 
-_PROJECT_DIR = Path(__file__).resolve().parent
+_PROJECT_DIR = Path(__file__).resolve().parent.parent
 
 COVER_SIZE = (1080, 1920)
 

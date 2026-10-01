@@ -1450,7 +1450,7 @@ class DynamicSubtitleEngine:
             lang_info = f", idioma: {language}" if language else ", idioma: auto-detect"
             print(f"ðŸŽµ Transcribiendo audio (subprocess aislado, modelo small): {Path(audio_path).name}{lang_info}")
 
-            worker_path = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "infra", "_whisper_subprocess_worker.py")
+            worker_path = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), "infra", "_whisper_subprocess_worker.py")
             if not _os.path.isfile(worker_path):
                 raise RuntimeError(f"Whisper worker no encontrado: {worker_path}")
 
@@ -1810,7 +1810,7 @@ class DynamicSubtitleEngine:
             
             # Detectar el mejor codificador disponible para evitar cuello de botella de CPU
             try:
-                from auto_video_generator_v2 import get_optimal_h264_encoder
+                from pipeline.auto_video_generator_v2 import get_optimal_h264_encoder
                 optimal_encoder = get_optimal_h264_encoder(ffmpeg_path)
             except Exception:
                 optimal_encoder = 'libx264'

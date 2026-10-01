@@ -63,13 +63,13 @@ class AIFactory:
                 from ai.comfyui_image_client import ComfyUiImageClient
                 client = ComfyUiImageClient()
             elif name == "image_manager":
-                from image_generation_manager import ImageGenerationManager
+                from pipeline.image_generation_manager import ImageGenerationManager
                 client = ImageGenerationManager(comfyui_image_client=self.get_client("comfyui"))
             elif name == "video_manager":
-                from video_generation_manager import VideoGenerationManager
+                from pipeline.video_generation_manager import VideoGenerationManager
                 client = VideoGenerationManager()
             elif name == "export_manager":
-                from video_export_manager import VideoExportManager
+                from pipeline.video_export_manager import VideoExportManager
                 client = VideoExportManager()
             else:
                 raise ValueError(f"Cliente '{name}' desconocido.")

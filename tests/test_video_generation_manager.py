@@ -14,7 +14,7 @@ from pathlib import Path
 import tempfile
 import os
 
-from video_generation_manager import VideoGenerationManager
+from pipeline.video_generation_manager import VideoGenerationManager
 
 
 class MockTaskOutput:
@@ -45,7 +45,7 @@ class TestModelOrder(unittest.TestCase):
             runway_client=mock_client,
         )
 
-        with patch("video_generation_manager.requests") as mock_requests:
+        with patch("pipeline.video_generation_manager.requests") as mock_requests:
             mock_requests.get.return_value.content = b"fake_video_data"
             out = os.path.join(tempfile.gettempdir(), "test_video.mp4")
             result = mgr.generate_video_with_runway("a cat in space", out)
@@ -66,7 +66,7 @@ class TestPromptTruncation(unittest.TestCase):
         mgr = VideoGenerationManager(log_callback=logs.append, runway_client=mock_client)
 
         short_prompt = "A beautiful sunset over the ocean"
-        with patch("video_generation_manager.requests") as mock_requests:
+        with patch("pipeline.video_generation_manager.requests") as mock_requests:
             mock_requests.get.return_value.content = b"fake"
             out = os.path.join(tempfile.gettempdir(), "test_short.mp4")
             mgr.generate_video_with_runway(short_prompt, out)
@@ -83,7 +83,7 @@ class TestPromptTruncation(unittest.TestCase):
         long_prompt = ("word " * 300).strip()
         self.assertGreater(len(long_prompt), 1000)
 
-        with patch("video_generation_manager.requests") as mock_requests:
+        with patch("pipeline.video_generation_manager.requests") as mock_requests:
             mock_requests.get.return_value.content = b"fake"
             out = os.path.join(tempfile.gettempdir(), "test_long.mp4")
             mgr.generate_video_with_runway(long_prompt, out)
@@ -107,7 +107,7 @@ class TestModelFallback(unittest.TestCase):
         mock_client.text_to_video.create.side_effect = side_effect
         mgr = VideoGenerationManager(log_callback=logs.append, runway_client=mock_client)
 
-        with patch("video_generation_manager.requests") as mock_requests:
+        with patch("pipeline.video_generation_manager.requests") as mock_requests:
             mock_requests.get.return_value.content = b"fake"
             out = os.path.join(tempfile.gettempdir(), "test_fallback.mp4")
             result = mgr.generate_video_with_runway("test prompt", out)
@@ -162,7 +162,7 @@ class TestAspectRatio(unittest.TestCase):
         mock_client.text_to_video.create.return_value = MockTaskOutput()
         mgr = VideoGenerationManager(runway_client=mock_client)
 
-        with patch("video_generation_manager.requests") as mock_req:
+        with patch("pipeline.video_generation_manager.requests") as mock_req:
             mock_req.get.return_value.content = b"fake"
             out = os.path.join(tempfile.gettempdir(), "test_h.mp4")
             mgr.generate_video_with_runway("test", out, is_vertical=False)
@@ -174,7 +174,7 @@ class TestAspectRatio(unittest.TestCase):
         mock_client.text_to_video.create.return_value = MockTaskOutput()
         mgr = VideoGenerationManager(runway_client=mock_client)
 
-        with patch("video_generation_manager.requests") as mock_req:
+        with patch("pipeline.video_generation_manager.requests") as mock_req:
             mock_req.get.return_value.content = b"fake"
             out = os.path.join(tempfile.gettempdir(), "test_v.mp4")
             mgr.generate_video_with_runway("test", out, is_vertical=True)

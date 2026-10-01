@@ -94,7 +94,7 @@ class ElPromptYElRender(unittest.TestCase):
         self.assertRegex(fs.get("evidence", ""), r"\d")
 
     def test_el_render_imprime_el_qa_del_gancho(self):
-        from auto_video_generator_v2 import AutoVideoGenerator
+        from pipeline.auto_video_generator_v2 import AutoVideoGenerator
         logs = []
         gen = AutoVideoGenerator.__new__(AutoVideoGenerator)
         gen.log = logs.append
@@ -106,7 +106,7 @@ class ElPromptYElRender(unittest.TestCase):
         self.assertTrue(all(p.startswith("[WARN]") for p in problems))
 
     def test_sin_segmentos_no_imprime_nada(self):
-        from auto_video_generator_v2 import AutoVideoGenerator
+        from pipeline.auto_video_generator_v2 import AutoVideoGenerator
         logs = []
         gen = AutoVideoGenerator.__new__(AutoVideoGenerator)
         gen.log = logs.append
@@ -115,7 +115,7 @@ class ElPromptYElRender(unittest.TestCase):
         self.assertEqual(logs, [])
 
     def test_el_qa_de_audio_incluye_el_del_gancho(self):
-        fuente = io.open("auto_video_generator_v2.py", encoding="utf-8", errors="replace").read()
+        fuente = io.open("pipeline/auto_video_generator_v2.py", encoding="utf-8", errors="replace").read()
         self.assertIn("hook_problems = self.log_hook_qa()", fuente)
         self.assertIn("self._current_storyboard_data = storyboard_data", fuente)
 

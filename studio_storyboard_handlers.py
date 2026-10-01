@@ -21,7 +21,7 @@ class StudioStoryboardHandlers:
         try:
             import time
             from pathlib import Path
-            from auto_video_generator_v2 import VideoConfig
+            from pipeline.auto_video_generator_v2 import VideoConfig
 
             # Obtener el script completo
             script = storyboard_data.get('script', '')
@@ -265,7 +265,7 @@ class StudioStoryboardHandlers:
         # Aplicar aqui la entrada elegida si el backend aun no la preparo.
         if isinstance(result, dict) and not result.get('opening') and result.get('segments'):
             try:
-                from video_opening import apply_opening
+                from pipeline.video_opening import apply_opening
                 script = str(result.get('script') or ' '.join(
                     str(seg.get('narration_text') or seg.get('text') or '')
                     for seg in result.get('segments', []) if isinstance(seg, dict)
@@ -284,7 +284,7 @@ class StudioStoryboardHandlers:
         self.studio_tab.log("\nâœ… PASO 1 COMPLETADO")
         if isinstance(result, dict) and result.get('segments'):
             try:
-                from cinematic_director import direct_storyboard
+                from pipeline.cinematic_director import direct_storyboard
                 level = (
                     self.studio_tab.cinematic_intensity_combo.currentData()
                     if hasattr(self.studio_tab, 'cinematic_intensity_combo') else 'auto'

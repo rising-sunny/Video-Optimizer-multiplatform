@@ -98,7 +98,7 @@ class ElPipelineYaNoCopia(unittest.TestCase):
     """assemble_video devuelve el render tal cual y deja la ruta en pipeline_state."""
 
     def test_assemble_video_no_deja_copia_en_el_draft(self):
-        from daily_short_pipeline import assemble_video
+        from pipeline.daily_short_pipeline import assemble_video
 
         with tempfile.TemporaryDirectory(suffix=".json") as tmp:
             root = Path(tmp)
@@ -107,7 +107,7 @@ class ElPipelineYaNoCopia(unittest.TestCase):
             draft = root / "draft"; draft.mkdir()
             generator = Mock()
             generator.assemble_video_from_storyboard.return_value = {"video_path": str(render)}
-            with patch("dynamic_subtitle_wrapper.patch_subtitle_generation"):
+            with patch("pipeline.dynamic_subtitle_wrapper.patch_subtitle_generation"):
                 devuelto = assemble_video({"_generator": generator, "segments": []}, draft, pregenerate_images=False)
             self.assertEqual(devuelto, str(render))
             self.assertEqual(list(draft.glob("*.mp4")), [], "volvio la copia short_HHMMSS.mp4 dentro del draft")
@@ -122,10 +122,10 @@ class LasFuentesNoVuelvenAtras(unittest.TestCase):
         return io.open(name, encoding="utf-8", errors="replace").read()
 
     def test_daily_short_pipeline_sin_copia(self):
-        self.assertNotIn('f"short_{datetime.now().strftime', self._src("daily_short_pipeline.py"))
+        self.assertNotIn('f"short_{datetime.now().strftime', self._src("pipeline/daily_short_pipeline.py"))
 
     def test_long_form_builder_sin_copia(self):
-        self.assertNotIn("_DOCUMENTARY.mp4", self._src("long_form_builder.py"))
+        self.assertNotIn("_DOCUMENTARY.mp4", self._src("pipeline/long_form_builder.py"))
 
     def test_los_cuatro_uploaders_usan_el_localizador(self):
         for name in ("publish/youtube_uploader.py", "publish/facebook_uploader.py", "publish/instagram_uploader.py", "publish/x_video_uploader.py"):

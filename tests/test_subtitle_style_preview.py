@@ -114,7 +114,7 @@ class ElMotorEsElMismoQueElDelVideo(unittest.TestCase):
         import io
 
         fuente = io.open("subtitle_style_preview.py", encoding="utf-8").read()
-        self.assertIn("from dynamic_subtitles_generator import DynamicSubtitleEngine",
+        self.assertIn("from pipeline.dynamic_subtitles_generator import DynamicSubtitleEngine",
                       fuente)
         self.assertIn("generate_from_segments", fuente)
 
@@ -124,7 +124,7 @@ class ElMotorEsElMismoQueElDelVideo(unittest.TestCase):
         self.assertEqual((sp.RENDER_W, sp.RENDER_H), (1080, 1920))
 
     def test_la_clave_sale_de_la_misma_regla_del_pipeline(self):
-        from dynamic_subtitle_wrapper import normalize_subtitle_style
+        from pipeline.dynamic_subtitle_wrapper import normalize_subtitle_style
 
         for etiqueta in ("PRO • CapCut Focus (Center Highlight)",
                          "🔥 Hormozi (Amarillo + Karaoke + Emojis)"):

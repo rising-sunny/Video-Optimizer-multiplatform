@@ -31,7 +31,7 @@ except ImportError as e:
     print(f"️ MoviePy no disponible: {e}")
 
 try:
-    from cinematic_effects import CinematicEffectsEngine
+    from pipeline.cinematic_effects import CinematicEffectsEngine
     CINEMATIC_AVAILABLE = True
 except ImportError:
     CINEMATIC_AVAILABLE = False
@@ -630,7 +630,7 @@ class ContextualVideoAssembler:
                         # ENTERO y el segmento desapareceria del video. Que un
                         # efecto falle debe costar el movimiento, no la escena.
                         try:
-                            from cinematic_effects import filter_for_preset
+                            from pipeline.cinematic_effects import filter_for_preset
                             clip = cinematic_engine.apply_effects_to_segment(
                                 clip,
                                 segment_text=segment_text,
@@ -1417,7 +1417,7 @@ class ContextualVideoAssembler:
 
     def _get_overlay_clip_path(self) -> Optional[str]:
         """Busca el primer clip de transicion overlay disponible en transition_overlays/."""
-        base = os.path.join(os.path.dirname(os.path.abspath(__file__)), "transition_overlays")
+        base = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "transition_overlays")
         if not os.path.isdir(base):
             return None
         for fname in sorted(os.listdir(base)):
@@ -1611,7 +1611,7 @@ class ContextualVideoAssembler:
         """
         try:
             # Importar el motor de transiciones glitch
-            from glitch_transitions import GlitchTransitionEngine, GlitchTransitionType, GlitchIntensity
+            from pipeline.glitch_transitions import GlitchTransitionEngine, GlitchTransitionType, GlitchIntensity
             
             # Crear motor de transiciones
             engine = GlitchTransitionEngine(target_resolution)
@@ -1704,7 +1704,7 @@ class ContextualVideoAssembler:
         Returns:
             Tipo de transición glitch
         """
-        from glitch_transitions import GlitchTransitionType
+        from pipeline.glitch_transitions import GlitchTransitionType
         
         name_lower = transition_name.lower()
         
@@ -1742,7 +1742,7 @@ class ContextualVideoAssembler:
         Returns:
             Intensidad del glitch
         """
-        from glitch_transitions import GlitchIntensity
+        from pipeline.glitch_transitions import GlitchIntensity
         
         name_lower = transition_name.lower()
         

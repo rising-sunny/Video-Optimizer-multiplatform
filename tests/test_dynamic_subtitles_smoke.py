@@ -6,8 +6,8 @@ from pathlib import Path
 
 from PIL import Image
 
-from dynamic_subtitle_wrapper import DynamicSubtitleWrapper
-from dynamic_subtitles_generator import DynamicSubtitleEngine
+from pipeline.dynamic_subtitle_wrapper import DynamicSubtitleWrapper
+from pipeline.dynamic_subtitles_generator import DynamicSubtitleEngine
 
 
 class TestDynamicSubtitlesSmoke(unittest.TestCase):

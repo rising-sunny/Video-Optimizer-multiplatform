@@ -5,7 +5,7 @@ import unittest
 import wave
 from pathlib import Path
 
-import cinematic_director as director
+from pipeline import cinematic_director as director
 
 
 def _storyboard():
@@ -139,7 +139,7 @@ class DirectRenderIntegration(unittest.TestCase):
         if not shutil.which("ffmpeg") or not shutil.which("ffprobe"):
             self.skipTest("ffmpeg/ffprobe no disponible")
         from PIL import Image
-        from auto_video_generator_v2 import AutoVideoGenerator
+        from pipeline.auto_video_generator_v2 import AutoVideoGenerator
 
         with tempfile.TemporaryDirectory(prefix="cinematic_render_") as temp:
             root = Path(temp)

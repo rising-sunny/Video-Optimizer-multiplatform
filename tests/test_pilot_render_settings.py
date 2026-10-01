@@ -20,10 +20,10 @@ class PilotRenderSettingsTests(unittest.TestCase):
             self.assertTrue(settings['apply_cinematic'])
             self.assertEqual(settings['cinematic_preset'], 'noir (dramatico)')
             self.assertEqual(settings['cinematic_intensity'], 'epic')
-            from daily_short_pipeline import assemble_video
+            from pipeline.daily_short_pipeline import assemble_video
             generator = Mock()
             generator.assemble_video_from_storyboard.return_value = None
-            with patch('dynamic_subtitle_wrapper.patch_subtitle_generation'):
+            with patch('pipeline.dynamic_subtitle_wrapper.patch_subtitle_generation'):
                 assemble_video({'_generator': generator, 'segments': []}, root,
                                pregenerate_images=False, assembly_options=settings)
             params = generator.assemble_video_from_storyboard.call_args.kwargs
@@ -33,7 +33,7 @@ class PilotRenderSettingsTests(unittest.TestCase):
             self.assertEqual(params['transition_duration'], .25)
 
     def test_noir_is_forced_instead_of_auto(self):
-        from cinematic_effects import filter_for_preset, FilterType
+        from pipeline.cinematic_effects import filter_for_preset, FilterType
         self.assertEqual(filter_for_preset('Noir (Dramatico)'), FilterType.NOIR)
         self.assertIsNone(filter_for_preset('Auto-Detect (Inteligente)'))
 

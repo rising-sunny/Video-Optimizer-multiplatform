@@ -41,7 +41,7 @@ GOOGLE_IMAGES_AVAILABLE = BING_IMAGES_AVAILABLE
 GoogleImagesClient = BingImagesClient
 
 try:
-    from auto_video_generator_v2 import ResourceDownloader
+    from pipeline.auto_video_generator_v2 import ResourceDownloader
     PEXELS_AVAILABLE = True
 except ImportError:
     PEXELS_AVAILABLE = False
@@ -544,7 +544,7 @@ class AIImageRegenerationWorker(QThread):
 
     def _fix_prompt_orientation(self, prompt: str) -> str:
         """Inyecta el ratio de imagen (16:9 / 9:16 / 1:1) según el formato configurado."""
-        from image_generation_manager import (
+        from pipeline.image_generation_manager import (
             apply_aspect_ratio_to_visual_prompt,
             primary_aspect_ratio_from_format,
         )
@@ -664,7 +664,7 @@ class ContextualAIImageRegenerationWorker(QThread):
             from infra.video_config import VideoConfig
             from ai.gemini_ai_client import GeminiAiClient
             from ai.prompt_processor import PromptProcessor
-            from image_generation_manager import (
+            from pipeline.image_generation_manager import (
                 ImageGenerationManager,
                 apply_aspect_ratio_to_visual_prompt,
                 primary_aspect_ratio_from_format,
@@ -1123,7 +1123,7 @@ class PexelsVideoSearchWorker(QThread):
     def run(self):
         """Ejecuta la bÃºsqueda"""
         try:
-            from auto_video_generator_v2 import ResourceDownloader
+            from pipeline.auto_video_generator_v2 import ResourceDownloader
             # Alias para compatibilidad
             StockMediaDownloader = ResourceDownloader
             downloader = StockMediaDownloader()

@@ -194,7 +194,7 @@ class AutosaveTests(unittest.TestCase):
         tab.close()
 
     def test_microdoc_reuses_the_autosaved_config_draft(self):
-        from micro_documentary import build, write_json
+        from pipeline.micro_documentary import build, write_json
         from tests.test_micro_documentary import FakeClient
         with TemporaryDirectory() as tmp:
             write_json(Path(tmp) / 'project.json', {'config': {'topic': 'Coronel', 'channel_profile': 'stunning-revelations'}, 'storyboard': {}})

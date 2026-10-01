@@ -256,12 +256,12 @@ class ElCableado(unittest.TestCase):
         self.assertIn("for pkg_name in ('infra', 'ai', 'media', 'channel', 'publish'):", src)  # music_license viaja en publish/
 
     def test_assembler_records_the_music_it_mixed(self):
-        src = self._src("auto_video_generator_v2.py")
+        src = self._src("pipeline/auto_video_generator_v2.py")
         self.assertNotIn("'music_attribution': None,", src)
         self.assertEqual(src.count("'music_used': _music_used,"), 2)
 
     def test_daily_pipeline_passes_the_credit(self):
-        src = self._src("daily_short_pipeline.py")
+        src = self._src("pipeline/daily_short_pipeline.py")
         self.assertIn('youtube_metadata["music_attribution"] = music_attribution', src)
         self.assertIn('instagram_metadata["music_attribution"] = music_attribution', src)
 
