@@ -135,8 +135,13 @@ class Instagram(unittest.TestCase):
 class EnElStudio(unittest.TestCase):
 
     def test_el_studio_manda_el_canal_a_facebook_e_instagram(self):
-        with io.open("studio/auto_video_integration_pyqt6.py", encoding="utf-8", errors="replace") as fh:
-            fuente = fh.read()
+        fuente = "\n".join(io.open(r, encoding="utf-8", errors="replace").read() for r in (
+            "studio/auto_video_integration_pyqt6.py",
+            "studio/studio_publishing_mixin.py",
+            "studio/studio_thumbnail_intelligence_mixin.py",
+            "studio/studio_voice_mixin.py",
+            "studio/studio_ui_setup_mixin.py",
+        ))
         self.assertIn("_facebook_meta['upload_channel'] = upload_channel", fuente)
         self.assertIn("_instagram_meta['upload_channel'] = upload_channel", fuente)
 

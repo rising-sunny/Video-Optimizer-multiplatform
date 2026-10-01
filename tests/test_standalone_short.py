@@ -84,7 +84,7 @@ class ElModoStandalone(unittest.TestCase):
         wrapper = io.open("pipeline/auto_video_generator_v2.py", encoding="utf-8", errors="replace").read()
         self.assertIn("mode='standalone'", wrapper)
         self.assertIn("rate=rate, mode=mode", wrapper)
-        gui = io.open("studio/auto_video_integration_pyqt6.py", encoding="utf-8", errors="replace").read()
+        gui = "\n".join(io.open(r, encoding="utf-8", errors="replace").read() for r in ("studio/auto_video_integration_pyqt6.py", "studio/studio_publishing_mixin.py", "studio/studio_thumbnail_intelligence_mixin.py", "studio/studio_voice_mixin.py", "studio/studio_ui_setup_mixin.py"))
         self.assertIn("Short vertical (autónomo, 60–90 s)", gui)
         self.assertIn("mode='standalone',", gui)
         handlers = io.open("studio/studio_video_assembly_handlers.py", encoding="utf-8", errors="replace").read()

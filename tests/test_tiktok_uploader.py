@@ -604,8 +604,13 @@ class DesdeCarpeta(ConTokenTemporal):
 class EnElStudio(unittest.TestCase):
 
     def setUp(self):
-        with io.open("studio/auto_video_integration_pyqt6.py", encoding="utf-8", errors="replace") as fh:
-            self.fuente = fh.read()
+        self.fuente = "\n".join(io.open(r, encoding="utf-8", errors="replace").read() for r in (
+            "studio/auto_video_integration_pyqt6.py",
+            "studio/studio_publishing_mixin.py",
+            "studio/studio_thumbnail_intelligence_mixin.py",
+            "studio/studio_voice_mixin.py",
+            "studio/studio_ui_setup_mixin.py",
+        ))
 
     def test_casilla_y_subida(self):
         self.assertIn('self.chk_publish_tiktok = QCheckBox("TikTok")', self.fuente)

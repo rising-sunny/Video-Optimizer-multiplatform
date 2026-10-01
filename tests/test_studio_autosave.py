@@ -21,7 +21,7 @@ from studio.studio_categories import MYSTERY_CATEGORY
 
 
 def studio_method(name):
-    tree = ast.parse(Path('studio/auto_video_integration_pyqt6.py').read_text(encoding='utf-8'))
+    tree = ast.parse("\n".join(Path(r).read_text(encoding='utf-8') for r in ("studio/auto_video_integration_pyqt6.py", "studio/studio_publishing_mixin.py", "studio/studio_thumbnail_intelligence_mixin.py", "studio/studio_voice_mixin.py", "studio/studio_ui_setup_mixin.py")))
     cls = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == 'AutoVideoStudioTab')
     method = next(node for node in cls.body if isinstance(node, ast.FunctionDef) and node.name == name)
     namespace = {}

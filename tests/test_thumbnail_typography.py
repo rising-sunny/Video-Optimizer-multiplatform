@@ -277,8 +277,13 @@ class LaMedicion(unittest.TestCase):
 class Cableado(unittest.TestCase):
 
     def test_el_studio_revisa_al_elegir_y_pasa_el_formato(self):
-        with open("studio/auto_video_integration_pyqt6.py", encoding="utf-8", errors="replace") as fh:
-            s = fh.read()
+        s = "\n".join(open(r, encoding="utf-8", errors="replace").read() for r in (
+            "studio/auto_video_integration_pyqt6.py",
+            "studio/studio_publishing_mixin.py",
+            "studio/studio_thumbnail_intelligence_mixin.py",
+            "studio/studio_voice_mixin.py",
+            "studio/studio_ui_setup_mixin.py",
+        ))
         self.assertIn("self._check_thumbnail_text_async(thumbnail_path)", s)
         self.assertIn("thumbnail_format=fmt)", s)
         self.assertIn("self._last_thumbnail_text = result.get('text')", s)

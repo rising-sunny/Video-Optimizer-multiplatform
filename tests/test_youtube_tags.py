@@ -266,7 +266,7 @@ class ElUploader(unittest.TestCase):
 class ElStudioYElMicrodoc(unittest.TestCase):
 
     def test_el_studio_manda_tema_y_guion_y_separa_bien_el_campo(self):
-        src = open("studio/auto_video_integration_pyqt6.py", encoding="utf-8", errors="replace").read()
+        src = "\n".join(open(r, encoding="utf-8", errors="replace").read() for r in ("studio/auto_video_integration_pyqt6.py", "studio/studio_publishing_mixin.py", "studio/studio_thumbnail_intelligence_mixin.py", "studio/studio_voice_mixin.py", "studio/studio_ui_setup_mixin.py"))
         self.assertIn("youtube_meta.setdefault('script_excerpt'", src)
         self.assertIn("split_tag_field(yt_tags_raw)", src)
         self.assertIn("on_status=self._publish_log_signal.emit", src)

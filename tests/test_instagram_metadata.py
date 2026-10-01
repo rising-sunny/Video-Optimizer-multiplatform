@@ -279,7 +279,7 @@ class Cableado(unittest.TestCase):
             return fh.read()
 
     def test_el_studio_encadena_la_investigacion_hacia_instagram(self):
-        s = self._src("studio/auto_video_integration_pyqt6.py")
+        s = self._src("studio/auto_video_integration_pyqt6.py") + self._src("studio/studio_publishing_mixin.py") + self._src("studio/studio_thumbnail_intelligence_mixin.py") + self._src("studio/studio_voice_mixin.py") + self._src("studio/studio_ui_setup_mixin.py")
         self.assertIn("research_for_next_platform(results.get('youtube'), results.get('facebook'))", s)
         self.assertIn("_instagram_meta['research'] = _ig_research", s)
         self.assertIn('ig_title_mode = "suggest"', s)
@@ -289,7 +289,7 @@ class Cableado(unittest.TestCase):
             s = self._src(name)
             self.assertNotIn("#stunningrevelations #history #mystery #reels #facts", s, name)
             self.assertNotIn("#history #reels #facts", s, name)
-        self.assertNotIn("preview[:320]", self._src("studio/auto_video_integration_pyqt6.py"))
+        self.assertNotIn("preview[:320]", self._src("studio/auto_video_integration_pyqt6.py") + self._src("studio/studio_publishing_mixin.py") + self._src("studio/studio_thumbnail_intelligence_mixin.py") + self._src("studio/studio_voice_mixin.py") + self._src("studio/studio_ui_setup_mixin.py"))
 
 
 if __name__ == "__main__":

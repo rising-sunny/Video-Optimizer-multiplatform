@@ -91,7 +91,7 @@ class ElUploaderCuentaLasEtapas(unittest.TestCase):
 class LaGuiCableaElProgreso(unittest.TestCase):
 
     def test_los_fallbacks_locales_pasan_progreso_al_panel(self):
-        fuente = io.open("studio/auto_video_integration_pyqt6.py", encoding="utf-8", errors="replace").read()
+        fuente = "\n".join(io.open(r, encoding="utf-8", errors="replace").read() for r in ("studio/auto_video_integration_pyqt6.py", "studio/studio_publishing_mixin.py", "studio/studio_thumbnail_intelligence_mixin.py", "studio/studio_voice_mixin.py", "studio/studio_ui_setup_mixin.py"))
         self.assertIn("_publish_log_signal = pyqtSignal(str)", fuente)
         self.assertIn("self._publish_log_signal.connect(self.log)", fuente)
         ig_block = fuente[fuente.index("def _upload_instagram_via_vps("):fuente.index("def _on_publish_done(")]

@@ -249,7 +249,7 @@ class ElCableado(unittest.TestCase):
         self.assertIn("description=description,", body)
 
     def test_studio_checks_music_and_passes_the_credit(self):
-        src = self._src("studio/auto_video_integration_pyqt6.py")
+        src = self._src("studio/auto_video_integration_pyqt6.py") + self._src("studio/studio_publishing_mixin.py") + self._src("studio/studio_thumbnail_intelligence_mixin.py") + self._src("studio/studio_voice_mixin.py") + self._src("studio/studio_ui_setup_mixin.py")
         body = src[src.index("    def publish_video_to_platforms("):]
         self.assertIn("self._music_license_gate(storyboard)", body)
         self.assertIn("_meta['music_attribution'] = _music_attribution", body)

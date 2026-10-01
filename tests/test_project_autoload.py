@@ -155,7 +155,7 @@ class LaGuiEntraPorLaDecision(unittest.TestCase):
         self.assertIn("Sin proyecto para abrir", cuerpo, "un puntero roto tiene que dejar rastro en el log")
 
     def test_no_vuelve_el_metodo_que_nadie_llamaba(self):
-        fuente = self._fuente("studio/auto_video_integration_pyqt6.py")
+        fuente = self._fuente("studio/auto_video_integration_pyqt6.py") + self._fuente("studio/studio_publishing_mixin.py") + self._fuente("studio/studio_thumbnail_intelligence_mixin.py") + self._fuente("studio/studio_voice_mixin.py") + self._fuente("studio/studio_ui_setup_mixin.py")
         self.assertNotIn("def _load_last_project(self)", fuente)
 
 

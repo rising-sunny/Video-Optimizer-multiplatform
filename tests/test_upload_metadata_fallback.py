@@ -80,8 +80,13 @@ class LaGuiNoEscribeNull(unittest.TestCase):
     """Capa 1: el arreglo de fondo, para que el archivo nunca traiga `null`."""
 
     def _fuente(self):
-        return io.open("studio/auto_video_integration_pyqt6.py", encoding="utf-8",
-                       errors="replace").read()
+        return "\n".join(io.open(r, encoding="utf-8", errors="replace").read() for r in (
+            "studio/auto_video_integration_pyqt6.py",
+            "studio/studio_publishing_mixin.py",
+            "studio/studio_thumbnail_intelligence_mixin.py",
+            "studio/studio_voice_mixin.py",
+            "studio/studio_ui_setup_mixin.py",
+        ))
 
     def test_facebook_cae_a_la_metadata_de_youtube(self):
         # dict(...): copia, porque el Studio le agrega contexto de investigacion a Facebook

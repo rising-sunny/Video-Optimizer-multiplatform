@@ -277,7 +277,7 @@ class ElUploaderYElStudio(unittest.TestCase):
         self.assertIn("mejor alternativa", res["title_research"]["summary"])
 
     def test_el_studio_marca_quien_invento_el_titulo(self):
-        src = open("studio/auto_video_integration_pyqt6.py", encoding="utf-8", errors="replace").read()
+        src = "\n".join(open(r, encoding="utf-8", errors="replace").read() for r in ("studio/auto_video_integration_pyqt6.py", "studio/studio_publishing_mixin.py", "studio/studio_thumbnail_intelligence_mixin.py", "studio/studio_voice_mixin.py", "studio/studio_ui_setup_mixin.py"))
         self.assertIn('title_mode = "optimize"', src)
         # (?<!\w): 'fb_title_mode = "suggest"' es el de Facebook (test_facebook_metadata), no cuenta aca.
         import re

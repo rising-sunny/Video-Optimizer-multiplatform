@@ -83,7 +83,7 @@ class ElProjectManagerLoEscribe(unittest.TestCase):
 
     def test_la_gui_llama_al_registro_al_terminar(self):
         import io
-        fuente = io.open("studio/auto_video_integration_pyqt6.py", encoding="utf-8", errors="replace").read()
+        fuente = "\n".join(io.open(r, encoding="utf-8", errors="replace").read() for r in ("studio/auto_video_integration_pyqt6.py", "studio/studio_publishing_mixin.py", "studio/studio_thumbnail_intelligence_mixin.py", "studio/studio_voice_mixin.py", "studio/studio_ui_setup_mixin.py"))
         bloque = fuente[fuente.index("def _on_publish_done("):][:900]
         self.assertIn("record_publish_results(results)", bloque)
 

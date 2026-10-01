@@ -65,8 +65,13 @@ class ElTimerDelDialogoNoSobreviveAlDialogo(unittest.TestCase):
     def test_el_timer_tiene_al_dialogo_como_padre(self):
         import io
 
-        fuente = io.open("studio/auto_video_integration_pyqt6.py", encoding="utf-8",
-                         errors="replace").read()
+        fuente = "\n".join(io.open(r, encoding="utf-8", errors="replace").read() for r in (
+            "studio/auto_video_integration_pyqt6.py",
+            "studio/studio_publishing_mixin.py",
+            "studio/studio_thumbnail_intelligence_mixin.py",
+            "studio/studio_voice_mixin.py",
+            "studio/studio_ui_setup_mixin.py",
+        ))
         self.assertIn("restore_timer = QTimer(dialog)", fuente)
         self.assertNotIn(
             'QTimer.singleShot(1500, lambda: btn_copy.setText("Copiar prompt completo"))',
