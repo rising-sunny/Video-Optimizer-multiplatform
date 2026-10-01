@@ -379,10 +379,13 @@ def _resolve_page_access_token(api_version: Optional[str] = None,
             return page_access_token, page_id
         elif estado != "dead":
             return page_access_token, page_id
-        print(
-            "[FB] FACEBOOK_PAGE_ACCESS_TOKEN rechazado por Facebook (vencido); "
-            "intentando derivar uno nuevo desde FACEBOOK_USER_ACCESS_TOKEN..."
-        )
+        # Solo si de verdad esta vencido: tras un token de OTRA pagina (arriba) este aviso
+        # decia "vencido" sin serlo y mandaba a buscar el problema donde no estaba.
+        if page_access_token:
+            print(
+                "[FB] FACEBOOK_PAGE_ACCESS_TOKEN rechazado por Facebook (vencido); "
+                "intentando derivar uno nuevo desde FACEBOOK_USER_ACCESS_TOKEN..."
+            )
         page_access_token = ""
 
     if not user_access_token:

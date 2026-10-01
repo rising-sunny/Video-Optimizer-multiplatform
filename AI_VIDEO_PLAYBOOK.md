@@ -190,10 +190,21 @@ Cinco capas, todas alimentadas por lo medido y no por intuición. Cómo se usan:
    primera frase, **la fecha en la segunda**, ≤14 palabras, sin carraspeo. Medido en Facebook:
    abrir con fecha retiene ~30 % al primer cuarto, la mejor curva (sin fecha) 50 %. Cada render
    imprime `QA DEL GANCHO` junto al QA de audio.
-4. **Botón "Tendencias"** o `trend_report.py`: shorts de historia más vistos del mes (Data API,
-   filtrado), Wikipedia histórica, efemérides de `anniversaries.json` (con ángulo y gancho) y
-   propuestas de Groq ancladas en hechos documentados. Doble clic en una fila carga tema +
-   categoría + ángulo.
+4. **Botón "Tendencias"** o `trend_report.py`: oportunidades medidas con YouTube Data API.
+   Toma categoría, idioma y formato del Studio; permite cambiar país y ventana de 7/14/30 días.
+   Busca videos populares y recientes, identifica asuntos concretos y comprueba esos asuntos con
+   otras búsquedas. Cada tema muestra prioridad comparativa, vistas/día, canales, publicaciones
+   recientes y enlaces de respaldo. "Demanda reciente" exige actividad suficiente en al menos
+   dos canales distintos; "Crecimiento medido" exige además aumentos entre consultas. Las
+   efemérides están en una pestaña de calendario **sin demanda comprobada**. La IA ayuda con
+   relevancia y ángulos, pero no genera métricas. Doble clic carga tema + categoría + ángulo.
+   Las muestras se reutilizan durante 6 horas para ahorrar cuota; "Actualizar YouTube" consulta
+   de nuevo con progreso visible y hasta dos reintentos ante fallos de conexión, conservando
+   la sesión del canal. Si falla, recupera una muestra de menos de 24 horas con los mismos
+   filtros, su fecha original y una advertencia; no inventa una nueva medición. El puntaje
+   no representa una probabilidad de éxito ni garantiza vistas.
+   Los cortos se filtran a ≤180 s: la Data API no confirma su orientación ni que sean Shorts;
+   [videoDuration="short" solo significa menos de cuatro minutos](https://developers.google.com/youtube/v3/docs/search/list).
 5. **Short vertical autónomo**: de cada 16:9 (microdocumental) sale un Short 9:16 de 60–90 s
    que cuenta la historia completa, con imágenes nuevas en vertical y las reglas del canal —
    NO un tráiler con "mirá el video completo" (el teaser legado sigue vía `mode="teaser"`).
@@ -259,7 +270,7 @@ concreta + sujeto nombrado**, duración corta. Ej: "72 Seconds: The Wow! Signal"
 | `video_opening.py` | Arranque del video: sin placa, voz en 0 s, acercamiento, primer plano ≥1.8 s y texto de gancho (ASS) |
 | `thumbnail_typography.py` + `gemini_vision.py` | Plan tipográfico medido (tamaño, peso, color, contorno, zona) y revisión con visión de la miniatura elegida |
 | `facebook_metadata.py` | Título, arranque de la descripción y hashtags de Facebook e Instagram con la investigación de YouTube |
-| `tiktok_uploader.py` | Borrador a la bandeja de TikTok (sandbox, `video.upload`); `--auth` una vez, `--check`, `--upload` |
+| `tiktok_uploader.py` | Borrador a la bandeja de TikTok (sandbox, `video.upload`); `--setup` guarda credenciales y conecta; `--auth` reutiliza las guardadas; `--check`, `--upload` |
 | `telegram_notify.py` | Título y descripción del borrador de TikTok al celular, copiables con un toque; `--setup`, `--test` |
 | `build_derinkuyu_long.py` | Ejemplo one-off de documental (referencia; hardcodeado) |
 | `catharsis_editor.py` + `catharsis_tab.py` | Formato Catarsis: Short vertical sin voz, tarjetas + imágenes/videos + música con cortes al ritmo, efectos y diseño sonoro; pestaña "Catarsis" de la app |

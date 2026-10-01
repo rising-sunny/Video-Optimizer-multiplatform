@@ -17,6 +17,7 @@ from channel_profiles import select_channel, active_channel, DEFAULT_CHANNEL
 from studio_channel_controls import PilotDialog, open_pilot
 from test_studio_channel_controls import StudioStub
 from test_micro_documentary import package
+from studio_categories import MYSTERY_CATEGORY
 
 
 def studio_method(name):
@@ -50,11 +51,22 @@ class AutosaveTests(unittest.TestCase):
         trigger.assert_called_once_with('tema del nuevo proyecto')
         editor.deleteLater()
 
+    def test_changing_category_triggers_configuration_autosave(self):
+        combo = QComboBox()
+        combo.addItems(["War & Military History", MYSTERY_CATEGORY])
+        trigger = Mock()
+        tab = SimpleNamespace(category_combo=combo, _trigger_config_auto_save=trigger)
+        studio_method('_connect_auto_save_signals')(tab)
+        combo.setCurrentText(MYSTERY_CATEGORY)
+        trigger.assert_called_once_with('cambio de categoria')
+        combo.deleteLater()
+
     def test_named_draft_creates_folder_and_updates_without_storyboard_for_both_channels(self):
         for channel in (DEFAULT_CHANNEL, 'stunning-revelations'):
             with self.subTest(channel=channel), TemporaryDirectory() as tmp:
                 select_channel(channel)
-                tab = SimpleNamespace(parent_gui=SimpleNamespace(topic_input=SimpleNamespace(text=lambda: 'New topic')),
+                tab = SimpleNamespace(parent_gui=SimpleNamespace(topic_input=SimpleNamespace(text=lambda: 'New topic'),
+                    category_combo=SimpleNamespace(currentText=lambda: MYSTERY_CATEGORY)),
                     current_project_path=None, last_storyboard_data=None, last_generated_video_data=None,
                     platform_combo=SimpleNamespace(currentText=lambda: '16:9'),
                     duration_slider=SimpleNamespace(value=lambda: 270), lang_es=SimpleNamespace(isChecked=lambda: False),
@@ -75,6 +87,7 @@ class AutosaveTests(unittest.TestCase):
                     saved = json.loads(path.read_text(encoding='utf-8'))
                     self.assertEqual(saved['config']['channel_profile'], channel)
                     self.assertEqual(saved['config']['topic'], 'New topic')
+                    self.assertEqual(saved['config']['category'], MYSTERY_CATEGORY)
                     tab.duration_slider.value = lambda: 290
                     self.assertTrue(manager.auto_save_project('changed duration'))
                     self.assertEqual(tab.current_project_path, str(path))
@@ -88,10 +101,11 @@ class AutosaveTests(unittest.TestCase):
                 with self.subTest(channel=channel, storyboard=storyboard), TemporaryDirectory() as tmp:
                     path = Path(tmp) / 'project.json'
                     path.write_text(json.dumps({'config': {'topic': 'Draft topic', 'channel_profile': channel,
+                        'category': MYSTERY_CATEGORY,
                         'duration': 270, 'language': 'en', 'platform_key': 'youtube', 'style': 'Photorealism'},
                         'storyboard': storyboard, 'progress': {'storyboard_done': False}}), encoding='utf-8')
                     tab = StudioStub()
-                    tab.parent_gui = SimpleNamespace(topic_input=QLineEdit())
+                    tab.parent_gui = SimpleNamespace(topic_input=QLineEdit(), category_combo=QComboBox())
                     tab.lang_es = QRadioButton()
                     tab.subtitles_check = QCheckBox()
                     tab.style_combo = QComboBox()
@@ -107,6 +121,7 @@ class AutosaveTests(unittest.TestCase):
                     warning.assert_not_called()
                     self.assertEqual(tab.current_project_path, str(path))
                     self.assertEqual(tab.parent_gui.topic_input.text(), 'Draft topic')
+                    self.assertEqual(tab.parent_gui.category_combo.currentText(), MYSTERY_CATEGORY)
                     self.assertEqual(tab.duration_slider.value(), 270)
                     self.assertEqual(active_channel(), channel)
                     self.assertTrue(any('Proyecto cargado exitosamente' in line for line in tab.events))

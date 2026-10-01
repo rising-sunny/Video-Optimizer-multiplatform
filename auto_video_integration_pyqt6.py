@@ -490,6 +490,9 @@ class AutoVideoStudioTab(QWidget):
                 lambda: self._trigger_config_auto_save('tema del nuevo proyecto')
                 if not self.last_storyboard_data else None)
         # Conectar cambios en controles a auto-guardado
+        if hasattr(self, 'category_combo'):
+            self.category_combo.currentIndexChanged.connect(
+                lambda: self._trigger_config_auto_save("cambio de categoria"))
         if hasattr(self, 'platform_combo'):
             self.platform_combo.currentIndexChanged.connect(
                 lambda: self._trigger_config_auto_save("cambio de formato de video"))
@@ -2330,20 +2333,19 @@ Respond ONLY with valid JSON."""
         # Las categorias son las del perfil del canal activo (su Bible), no una
         # lista fija: hasta 2026-09-21 arrancaba con esta lista en espanol y
         # solo cambiaba al restaurar un proyecto.
-        try:
-            from channel_strategy import get_all_category_names
-            categorias = list(get_all_category_names())
-        except Exception:
-            categorias = []
-        self.category_combo.addItems(categorias or [
-            "Historia militar/guerras", "Historia antigua/civilizaciones",
-            "Documentales", "Eventos naturales extremos",
-            "Ciencia/Tecnologia actual", "Misterios con datos",
-            "Conspiraciones verificables", "Actualidad cientifica",
-        ])
+        from studio_categories import get_studio_category_names, MYSTERY_CATEGORY, MYSTERY_DESCRIPTION
+        self.category_combo.addItems(get_studio_category_names())
+        self.category_combo.setItemData(self.category_combo.findText(MYSTERY_CATEGORY),
+                                        MYSTERY_DESCRIPTION, Qt.ItemDataRole.ToolTipRole)
         category_layout.addWidget(self.category_combo)
         category_layout.addStretch()
         layout.addLayout(category_layout)
+        category_hint = QLabel(MYSTERY_DESCRIPTION)
+        category_hint.setWordWrap(True)
+        category_hint.setVisible(self.category_combo.currentText() == MYSTERY_CATEGORY)
+        self.category_combo.currentTextChanged.connect(
+            lambda name: category_hint.setVisible(name == MYSTERY_CATEGORY))
+        layout.addWidget(category_hint)
 
         # Duracion
         duration_layout = QHBoxLayout()

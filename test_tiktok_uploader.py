@@ -27,7 +27,7 @@ import time
 import unittest
 import urllib.parse
 import urllib.request
-from unittest.mock import patch
+from unittest.mock import patch, Mock
 
 import tiktok_uploader as tu
 
@@ -207,6 +207,9 @@ class LoginCompleto(ConTokenTemporal):
             with sin_proxy.open(
                     f"http://127.0.0.1:{puerto}/callback/?code=CODE123&state={q['state'][0]}", timeout=10) as r:
                 self.assertEqual(r.status, 200)
+                page = r.read().decode('utf-8')
+                self.assertIn('Autorización recibida', page)
+                self.assertNotIn('cuenta de TikTok quedó conectada', page)
             hilo.join(15)
         canje = api.token_posts[0]
         self.assertEqual(canje["code"], "CODE123")
@@ -214,6 +217,128 @@ class LoginCompleto(ConTokenTemporal):
         self.assertEqual(hashlib.sha256(canje["code_verifier"].encode()).hexdigest(), q["code_challenge"][0])
         self.assertEqual(salida["token"]["access_token"], "act.NUEVO")
         self.assertEqual(tu.load_token()["refresh_token"], "rft.NUEVO", "no guardo el token")
+
+    def test_el_rechazo_del_token_conserva_detalle_y_no_guarda_permiso(self):
+        server = Mock()
+        server.wait.return_value = 'CODE_TEST_123'
+        api = Mock()
+        api.post.return_value = _R(200, {'error': 'invalid_client',
+                                       'error_description': 'Client key or secret is incorrect.',
+                                       'log_id': 'TT_LOG_123'})
+        avisos = []
+        with patch.object(tu, '_CallbackServer', return_value=server), patch.object(tu.webbrowser, 'open', return_value=True):
+            with self.assertRaises(tu.TikTokAuthError) as ctx:
+                tu.authorize(on_status=avisos.append, http=api)
+        self.assertIn('Client key or secret is incorrect.', str(ctx.exception))
+        self.assertIn('TT_LOG_123', str(ctx.exception))
+        self.assertIn('--setup', str(ctx.exception))
+        self.assertTrue(any('autorización recibida' in m for m in avisos))
+        self.assertFalse(any('cuenta conectada' in m for m in avisos))
+        self.assertIsNone(tu.load_token())
+        server.close.assert_called_once()
+
+
+class ConfigurarCredenciales(unittest.TestCase):
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.path = tu.Path(self.tmp.name) / '.env'
+        self.original = '# otros ajustes\nOTHER_SECRET=preserve_this\nTIKTOK_CLIENT_KEY=old_key\nTIKTOK_CLIENT_SECRET=old_secret\n'
+        self.path.write_text(self.original, encoding='utf-8')
+        env = patch.dict(os.environ, {})
+        env.start()
+        self.addCleanup(env.stop)
+        self.messages = []
+
+    def setup(self, key='new_key', secret='new_secret'):
+        tu.setup_credentials(path=self.path, input_fn=lambda _: key, secret_fn=lambda _: secret,
+                             on_status=self.messages.append)
+
+    def test_guardado_del_par_preserva_otros_ajustes_y_actualiza_el_proceso(self):
+        from dotenv import dotenv_values
+        os.environ.update(TIKTOK_CLIENT_KEY='inherited_key', TIKTOK_CLIENT_SECRET='inherited_secret')
+        self.setup()
+        values = dotenv_values(self.path)
+        self.assertEqual(values['OTHER_SECRET'], 'preserve_this')
+        self.assertIn('# otros ajustes', self.path.read_text(encoding='utf-8'))
+        self.assertEqual(values['TIKTOK_CLIENT_KEY'], 'new_key')
+        self.assertEqual(values['TIKTOK_CLIENT_SECRET'], 'new_secret')
+        self.assertEqual(tu._client_credentials(), ('new_key', 'new_secret'))
+        self.assertNotIn('new_key', str(self.messages))
+        self.assertNotIn('new_secret', str(self.messages))
+        self.assertEqual(list(tu.Path(self.tmp.name).glob('.env.tiktok-*')), [])
+
+    def test_informa_si_son_los_mismos_valores_sin_mostrarlos(self):
+        self.setup(key='old_key', secret='old_secret')
+        self.assertIn('coinciden', str(self.messages))
+        self.assertNotIn('old_secret', str(self.messages))
+
+    def test_entrada_vacia_mascara_y_espacios_no_sobrescriben_env(self):
+        for key, secret in [('', 'secret'), ('key', ''), ('key', '********'), ('key', 'not a secret')]:
+            with self.subTest(key=key, secret=secret), self.assertRaises(tu.TikTokAuthError):
+                self.setup(key, secret)
+            self.assertEqual(self.path.read_text(encoding='utf-8'), self.original)
+
+    def test_cancelar_secreto_no_deja_la_clave_a_medio_guardar(self):
+        with self.assertRaises(tu.TikTokAuthError):
+            tu.setup_credentials(path=self.path, input_fn=lambda _: 'new_key',
+                                 secret_fn=Mock(side_effect=KeyboardInterrupt), on_status=self.messages.append)
+        self.assertEqual(self.path.read_text(encoding='utf-8'), self.original)
+
+    def test_error_de_guardado_conserva_archivo_y_entorno(self):
+        os.environ.update(TIKTOK_CLIENT_KEY='inherited_key', TIKTOK_CLIENT_SECRET='inherited_secret')
+        with patch.object(tu.os, 'replace', side_effect=PermissionError), self.assertRaises(tu.TikTokAuthError):
+            self.setup()
+        self.assertEqual(self.path.read_text(encoding='utf-8'), self.original)
+        self.assertEqual(tu._client_credentials(), ('inherited_key', 'inherited_secret'))
+        self.assertEqual(list(tu.Path(self.tmp.name).glob('.env.tiktok-*')), [])
+
+    def test_setup_cli_usa_los_valores_recien_guardados_en_la_autorizacion(self):
+        calls = []
+        def authorize(**kwargs):
+            calls.append(tu._client_credentials())
+            return _token()
+        with patch.object(tu, 'ROOT', self.path.parent), patch('builtins.input', return_value='new_key'), \
+                patch('getpass.getpass', return_value='new_secret'), patch.object(tu, 'authorize', side_effect=authorize), \
+                patch.object(tu, 'get_user_info', return_value={'display_name': 'Test'}), \
+                patch('sys.stdout', new=io.StringIO()) as output:
+            self.assertEqual(tu.main(['--setup']), 0)
+            self.assertNotIn('new_secret', output.getvalue())
+        self.assertEqual(calls, [('new_key', 'new_secret')])
+
+
+class DetalleOauth(unittest.TestCase):
+
+    def test_el_error_no_revela_secretos_ni_sus_variantes_codificadas(self):
+        data = {'client_key': 'client_test', 'client_secret': 'secret+example/test',
+                'code': 'code_test_123', 'code_verifier': 'verifier_test_123', 'refresh_token': 'refresh_test_123'}
+        secret_text = ' '.join(list(data.values()) + [urllib.parse.quote_plus(data['client_secret']), 'act.test_token'])
+        api = Mock()
+        api.post.return_value = _R(400, {'error': 'invalid_client', 'error_description': secret_text,
+                                       'access_token': 'act.test_token', 'log_id': 'LOG_987'})
+        with self.assertRaises(tu.TikTokAuthError) as ctx:
+            tu._token_request(data, http=api)
+        text = str(ctx.exception)
+        self.assertIn('[oculto]', text)
+        self.assertIn('LOG_987', text)
+        for value in list(data.values()) + ['act.test_token', urllib.parse.quote_plus(data['client_secret'])]:
+            self.assertNotIn(value, text)
+
+    def test_error_de_red_no_expone_el_secreto(self):
+        api = Mock()
+        api.post.side_effect = tu.requests.ConnectionError('secret=secret_test_abc')
+        with self.assertRaises(tu.TikTokAuthError) as ctx:
+            tu._token_request({'client_secret': 'secret_test_abc'}, http=api)
+        self.assertNotIn('secret_test_abc', str(ctx.exception))
+
+    def test_respuesta_no_json_no_vuelca_el_cuerpo(self):
+        api = Mock()
+        api.post.return_value = _R(502, text='upstream error with private diagnostic')
+        with self.assertRaises(tu.TikTokAuthError) as ctx:
+            tu._token_request({}, http=api)
+        self.assertIn('HTTP 502', str(ctx.exception))
+        self.assertNotIn('private diagnostic', str(ctx.exception))
 
 
 class Trozos(unittest.TestCase):

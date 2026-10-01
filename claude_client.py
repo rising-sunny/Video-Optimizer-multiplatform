@@ -8,6 +8,7 @@ import shutil
 import platform
 import json
 import re
+from studio_categories import is_mystery_inquiry, mystery_editorial_instructions
 
 
 def get_channel_name(default: str = "this channel") -> str:
@@ -972,10 +973,18 @@ State the resolved lens and depth of field. End with: {fmt.prompt_constraint}, p
         """
 
 
-    def _build_short_block(self) -> str:
+    def _build_short_block(self, category="") -> str:
         try:
             from channel_strategy import build_hook_prompt_instructions, get_shorts_rules as _get_sr
             _sr = _get_sr()
+            if is_mystery_inquiry(category):
+                return """
+        PACING FOR A MYSTERY SHORT:
+        - Open with the specific puzzle and attribute any source account from the hook itself.
+        - Every 5-8 seconds add a source, evidence, an explanation or its limits.
+        - Use short cinematic scenes. Close with what is known and the question that remains open.
+        - Preserve uncertainty in metadata, titles and cover text; never present a reported number as proven.
+        """
             _hook_instr = build_hook_prompt_instructions()
             return f"""
         STRICT RULES FOR SHORTS — {get_channel_name()} Channel Bible:
@@ -1208,7 +1217,7 @@ State the resolved lens and depth of field. End with: {fmt.prompt_constraint}, p
 
         CRITICAL:
         - Output ONLY the narration. No apology, no meta-commentary, no "I can't".
-        - This is a standard historical documentary, not disallowed content.
+        - {"This is an evidence-led investigation of documented accounts and open hypotheses." if is_mystery_inquiry(category) else "This is a standard historical documentary, not disallowed content."}
         - Use the aliases and documented outline above if the user title looks obscure.
 
         Format: narration text only.
@@ -1342,6 +1351,9 @@ State the resolved lens and depth of field. End with: {fmt.prompt_constraint}, p
         role_header = self._build_script_role_for_profile(tone_profile)
         narrative_approach = self._build_narrative_approach_for_profile(tone_profile)
         quality_block = self._build_script_quality_block_for_profile(tone_profile)
+        if is_mystery_inquiry(category):
+            narrative_approach = "Investigative cinematic narrative: source account, context, evidence, competing explanations and unresolved questions."
+            quality_block = mystery_editorial_instructions(category, "en")
         long_block = ""
         short_block = ""
         runtime_minutes = round(duration_seconds / 60)
@@ -1375,7 +1387,7 @@ State the resolved lens and depth of field. End with: {fmt.prompt_constraint}, p
         {"- STRICT MODE: If the opening is weak, rewrite aggressively for retention, even if style changes." if is_strict else ""}
         """
         elif is_short:
-            short_block = self._build_short_block()
+            short_block = self._build_short_block(category)
         from video_opening import opening_script_instructions
         opening_block = opening_script_instructions(opening_style, language=language)
 
@@ -1573,6 +1585,9 @@ Output ONLY valid JSON (no explanations, no markdown):
         role_header = self._build_script_role_for_profile(tone_profile)
         narrative_approach = self._build_narrative_approach_for_profile(tone_profile)
         quality_block = self._build_script_quality_block_for_profile(tone_profile)
+        if is_mystery_inquiry(category):
+            narrative_approach = "Investigative cinematic narrative: source account, context, evidence, competing explanations and unresolved questions."
+            quality_block = mystery_editorial_instructions(category, "en")
         long_block = ""
         short_block = ""
         runtime_minutes = round(duration_seconds / 60)
@@ -1606,7 +1621,7 @@ Output ONLY valid JSON (no explanations, no markdown):
         {"- STRICT MODE: If the opening is weak, rewrite aggressively for retention, even if style changes." if is_strict else ""}
         """
         elif is_short:
-            short_block = self._build_short_block()
+            short_block = self._build_short_block(category)
         from video_opening import opening_script_instructions
         opening_block = opening_script_instructions(opening_style, language=language)
 

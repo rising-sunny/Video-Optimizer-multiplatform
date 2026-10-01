@@ -1,11 +1,13 @@
 """Channel and microdocumentary controls for Auto Video Studio."""
 import json
+import html
 from pathlib import Path
 
-from PyQt6.QtCore import QThread, pyqtSignal, QTimer
+from PyQt6.QtCore import QThread, pyqtSignal, QTimer, Qt
 from PyQt6.QtWidgets import (QComboBox, QDialog, QFileDialog, QHBoxLayout, QLabel,
                             QMessageBox, QPushButton, QTextEdit, QVBoxLayout, QTabWidget,
-                            QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView)
+                            QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView, QTextBrowser,
+                            QSplitter, QProgressBar)
 
 from channel_profiles import CHANNELS, DEFAULT_CHANNEL, active_channel, select_channel
 
@@ -66,9 +68,17 @@ def set_editorial_channel(tab, key, reason=""):
     select_channel(key)
     parent = getattr(tab, 'parent_gui', None)
     if parent and hasattr(parent, 'category_combo'):
-        from channel_strategy import get_all_category_names
-        parent.category_combo.clear()
-        parent.category_combo.addItems(get_all_category_names())
+        from studio_categories import get_studio_category_names, MYSTERY_CATEGORY, MYSTERY_DESCRIPTION
+        combo = parent.category_combo
+        previous = combo.currentText()
+        blocked = combo.blockSignals(True)
+        combo.clear()
+        combo.addItems(get_studio_category_names())
+        combo.setItemData(combo.findText(MYSTERY_CATEGORY), MYSTERY_DESCRIPTION, Qt.ItemDataRole.ToolTipRole)
+        combo.setCurrentIndex(max(0, combo.findText(previous)))
+        combo.blockSignals(blocked)
+        if not blocked and combo.currentText() != previous:
+            combo.currentTextChanged.emit(combo.currentText())
     populate_archetype_combo(tab)
     if changed and hasattr(tab, 'log'):
         tab.log(f"Perfil editorial: {CHANNELS[key]['name']}" + (f" ({reason})" if reason else ""))
@@ -153,7 +163,7 @@ def install_controls(tab, layout):
     tab.btn_performance.clicked.connect(lambda: refresh_performance(tab))
     row.addWidget(tab.btn_performance)
     tab.btn_trends = QPushButton('Tendencias')
-    tab.btn_trends.setToolTip('Shorts de historia mas vistos del mes, Wikipedia y efemerides: temas listos con angulo y fecha')
+    tab.btn_trends.setToolTip('Demanda reciente en YouTube: vistas por día, varios canales y videos que respaldan cada tema')
     tab.btn_trends.clicked.connect(lambda: open_trends(tab))
     row.addWidget(tab.btn_trends)
     layout.addLayout(row)
@@ -439,10 +449,15 @@ class _TrendsWorker(QThread):
     done = pyqtSignal(dict)
     failed = pyqtSignal(str)
 
+    def __init__(self, options=None, force_refresh=False, parent=None):
+        super().__init__(parent)
+        self.options = dict(options or {})
+        self.force_refresh = force_refresh
+
     def run(self):
         try:
             import trend_report
-            self.done.emit(trend_report.build_report(log=self.line.emit))
+            self.done.emit(trend_report.build_report(log=self.line.emit, force_refresh=self.force_refresh, **self.options))
         except Exception as exc:
             self.failed.emit(f"{type(exc).__name__}: {exc}")
 
@@ -454,7 +469,9 @@ def apply_proposal_to_studio(tab, proposal):
     if topic_widget is not None and hasattr(topic_widget, 'setText'):
         topic_widget.setText(str(proposal.get('topic') or ''))
     cat = str(proposal.get('category') or '')
-    combo = getattr(parent, 'category_combo', None) if parent is not None else None
+    combo = getattr(tab, 'category_combo', None)
+    if combo is None and parent is not None:
+        combo = getattr(parent, 'category_combo', None)
     if cat and combo is not None:
         idx = combo.findText(cat)
         if idx >= 0:
@@ -468,34 +485,134 @@ def apply_proposal_to_studio(tab, proposal):
         tab.log(f"Tendencias: cargado '{proposal.get('topic')}' [{proposal.get('archetype')}]{gancho}")
 
 
+def studio_trend_options(tab):
+    """Read widgets on the GUI thread; workers receive a plain immutable snapshot."""
+    parent = getattr(tab, 'parent_gui', None)
+    combo = getattr(tab, 'category_combo', None)
+    if combo is None:
+        combo = getattr(parent, 'category_combo', None)
+    category = combo.currentText() if combo is not None else ''
+    es = getattr(tab, 'lang_es', None)
+    en = getattr(tab, 'lang_en', None)
+    language = 'es' if es is not None and es.isChecked() else 'en'
+    if es is None and en is None:
+        from channel_strategy import get_channel_strategy
+        language = get_channel_strategy().get('channel_identity', {}).get('language', 'en')
+    platform = getattr(tab, 'platform_combo', None)
+    data = platform.currentData() if platform is not None else None
+    text = platform.currentText().lower() if platform is not None else ''
+    if isinstance(data, dict):
+        short = data.get('platform') in {'youtube_short', 'tiktok', 'reels'}
+    else:
+        short = ('short' in text or 'tiktok' in text or 'reels' in text or
+                 ('9:16' in text and 'largo' not in text and 'long' not in text))
+    return dict(category=category, language=language, region='MX' if language == 'es' else 'US',
+                video_format='short' if short else 'long', days=30)
+
+
+class _TrendItem(QTableWidgetItem):
+    def __lt__(self, other):
+        left, right = self.data(Qt.ItemDataRole.UserRole + 1), other.data(Qt.ItemDataRole.UserRole + 1)
+        if left is not None and right is not None:
+            return left < right
+        return super().__lt__(other)
+
+
 class TrendsDialog(QDialog):
-    COLS = ("Tema", "Angulo", "Categoria", "Fecha", "Por que", "Gancho sugerido")
+    COLS = ("Tema / ángulo propuesto", "Prioridad", "Señal", "Vistas/día¹", "Canales", "En 7 días", "Categoría")
 
     def __init__(self, tab, report, parent=None):
         super().__init__(parent or tab)
         self.tab = tab
-        self.proposals = list(report.get('proposals') or [])
-        self.setWindowTitle(f"Tendencias ({report.get('generated_at', '')})")
-        self.resize(1100, 520)
+        self.proposals = []
+        self.editorial_ideas = []
+        available = self.screen().availableGeometry()
+        self.resize(min(1250, available.width() - 40), min(790, available.height() - 70))
         layout = QVBoxLayout(self)
-        pat = report.get('patterns') or {}
-        resumen = []
-        for a, g in (pat.get('by_archetype') or {}).items():
-            resumen.append(f"{a}: {g['n']} videos / {g['views']:,} vistas")
-        layout.addWidget(QLabel("YouTube nicho (30 dias, top 40): " + " · ".join(resumen[:5]) if resumen else "Sin muestreo de YouTube"))
-        self.table = QTableWidget(len(self.proposals), len(self.COLS))
+        controls = QHBoxLayout()
+        context = report.get('context') or studio_trend_options(tab)
+        from studio_categories import get_studio_category_names
+        self.category_filter = QComboBox()
+        self.category_filter.addItem('Todas las categorías', '')
+        for name in get_studio_category_names():
+            self.category_filter.addItem(name, name)
+        if context.get('category') and self.category_filter.findData(context['category']) < 0:
+            self.category_filter.addItem(context['category'], context['category'])
+        self.format_filter = QComboBox()
+        self.format_filter.addItem('Videos >3 min', 'long')
+        self.format_filter.addItem('Cortos ≤3 min', 'short')
+        self.language_filter = QComboBox()
+        self.language_filter.addItem('English', 'en')
+        self.language_filter.addItem('Español', 'es')
+        self.region_filter = QComboBox()
+        for code, name in [('US', 'Estados Unidos'), ('GB', 'Reino Unido'), ('MX', 'México'), ('ES', 'España'), ('CL', 'Chile')]:
+            self.region_filter.addItem(name, code)
+        self.days_filter = QComboBox()
+        for days in (7, 14, 30):
+            self.days_filter.addItem(f'{days} días', days)
+        for combo, key, default in [(self.category_filter, 'category', ''), (self.format_filter, 'video_format', 'long'),
+                                    (self.language_filter, 'language', 'en'), (self.region_filter, 'region', 'US')]:
+            combo.setCurrentIndex(max(0, combo.findData(context.get(key, default))))
+            controls.addWidget(combo)
+        self.days_filter.setCurrentIndex(max(0, self.days_filter.findData(report.get('window_days', 30))))
+        controls.addWidget(self.days_filter)
+        self.btn_refresh = QPushButton('Actualizar YouTube')
+        self.btn_refresh.setToolTip('Consulta de nuevo y consume cuota de YouTube Data API. Al abrir se reutilizan muestras de menos de 6 horas.')
+        self.btn_refresh.clicked.connect(lambda: open_trends(tab, options=self.options(), dialog=self, force_refresh=True))
+        controls.addWidget(self.btn_refresh)
+        layout.addLayout(controls)
+        self.progress_label = QLabel()
+        self.progress_label.setWordWrap(True)
+        self.progress_label.setTextFormat(Qt.TextFormat.PlainText)
+        layout.addWidget(self.progress_label)
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setRange(0, 0)
+        self.progress_bar.setTextVisible(False)
+        self.progress_bar.setFixedHeight(6)
+        layout.addWidget(self.progress_bar)
+        self.progress_label.hide()
+        self.progress_bar.hide()
+        self.status_label = QLabel()
+        self.status_label.setWordWrap(True)
+        self.status_label.setTextFormat(Qt.TextFormat.PlainText)
+        layout.addWidget(self.status_label)
+        self.warning_label = QLabel()
+        self.warning_label.setWordWrap(True)
+        self.warning_label.setTextFormat(Qt.TextFormat.PlainText)
+        layout.addWidget(self.warning_label)
+        self.tabs = QTabWidget()
+        self.table = QTableWidget(0, len(self.COLS))
         self.table.setHorizontalHeaderLabels(self.COLS)
-        self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        for r, p in enumerate(self.proposals):
-            values = (p.get('topic', ''), p.get('archetype', ''), p.get('category', ''), p.get('date') or '',
-                      p.get('why', ''), p.get('hook', ''))
-            for c, v in enumerate(values):
-                self.table.setItem(r, c, QTableWidgetItem(str(v)))
+        self.calendar_table = QTableWidget(0, 4)
+        self.calendar_table.setHorizontalHeaderLabels(('Tema', 'Fecha', 'Categoría', 'Motivo editorial'))
+        for table in (self.table, self.calendar_table):
+            table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+            table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+            table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+            table.setStyleSheet('QTableWidget::item { padding: 4px; }')
+            table.verticalHeader().setDefaultSectionSize(35)
+            table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+            table.itemSelectionChanged.connect(self.show_evidence)
+            table.doubleClicked.connect(lambda _i: self.use_selected())
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        self.table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
-        self.table.doubleClicked.connect(lambda _i: self.use_selected())
-        layout.addWidget(self.table)
+        self.table.setColumnWidth(0, 360)
+        self.calendar_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.calendar_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        self.tabs.addTab(self.table, 'Señales de YouTube')
+        self.tabs.addTab(self.calendar_table, 'Calendario · sin validar')
+        self.tabs.currentChanged.connect(self.show_evidence)
+        self.evidence_view = QTextBrowser()
+        self.evidence_view.setOpenExternalLinks(True)
+        self.evidence_view.setMinimumHeight(150)
+        splitter = QSplitter(Qt.Orientation.Vertical)
+        splitter.addWidget(self.tabs)
+        splitter.addWidget(self.evidence_view)
+        splitter.setSizes([340, 230])
+        layout.addWidget(splitter, 1)
+        footnote = QLabel('¹ Promedio desde publicación; crecimiento actual solo con dos mediciones. Cortos: filtro por duración, orientación sin verificar. '
+                          'País: resultados disponibles allí, no vistas por país. Prioridad comparativa; no garantiza vistas.')
+        footnote.setWordWrap(True)
+        layout.addWidget(footnote)
         buttons = QHBoxLayout()
         self.btn_use = QPushButton('Usar tema (tema + categoria + angulo)')
         self.btn_use.clicked.connect(self.use_selected)
@@ -504,10 +621,128 @@ class TrendsDialog(QDialog):
         btn_close.clicked.connect(self.reject)
         buttons.addWidget(btn_close)
         layout.addLayout(buttons)
+        self.load_report(report)
+
+    def options(self):
+        return dict(category=self.category_filter.currentData(), language=self.language_filter.currentData(),
+                    region=self.region_filter.currentData(), video_format=self.format_filter.currentData(),
+                    days=self.days_filter.currentData())
+
+    def set_busy(self, busy):
+        self.btn_refresh.setEnabled(not busy)
+        self.btn_refresh.setText('Consultando…' if busy else 'Actualizar YouTube')
+        self.progress_label.setVisible(busy)
+        self.progress_bar.setVisible(busy)
+        if busy:
+            self.show_progress('Conectando con YouTube…')
+        for combo in (self.category_filter, self.format_filter, self.language_filter, self.region_filter, self.days_filter):
+            combo.setEnabled(not busy)
+
+    def show_progress(self, message):
+        self.progress_label.setText(str(message).removeprefix('[Tendencias]').strip())
+
+    def load_report(self, report):
+        self.report = report
+        self.proposals = list(report.get('proposals') or [])
+        self.editorial_ideas = list(report.get('editorial_ideas') or [])
+        self.tabs.setCurrentIndex(0)
+        self.setWindowTitle(f"Oportunidades en YouTube ({report.get('generated_at', '')})")
+        yt = report.get('youtube') or {}
+        c = report.get('context') or {}
+        stamp = yt.get('sampled_at') or ''
+        if stamp:
+            from youtube_trend_signals import timestamp
+            captured = timestamp(stamp)
+            if captured:
+                stamp = captured.astimezone().strftime('%d/%m/%Y %H:%M')
+        scope = f"{c.get('category') or 'Todas las categorías'} · {c.get('language', 'en').upper()}/{c.get('region', 'US')} · {report.get('window_days', 30)} días"
+        qualified = yt.get('qualified_topics', 0)
+        demand_label = f"{qualified} {'tema' if qualified == 1 else 'temas'} con demanda reciente"
+        recovered = yt.get('refresh_failed') and yt.get('cached')
+        partial_label = (' · resultado anterior' if recovered else
+                         ' · muestra parcial' if yt.get('errors') and yt.get('sample_size') else '')
+        source_label = (' · conservada; no se pudo actualizar' if recovered else
+                        ' · guardada (menos de 6 horas)' if yt.get('cached') else ' · consultada en YouTube')
+        self.status_label.setText(f"{yt.get('sample_size', len(report.get('youtube_sample') or []))} videos únicos · "
+                                  f"{demand_label} · {scope}{partial_label}"
+                                  + (f"\nMuestra: {stamp}{source_label}" if stamp else ''))
+        warnings = list(yt.get('errors') or [])
+        if not self.proposals:
+            warnings.append('La consulta no pudo completarse. Pulsa Actualizar YouTube para volver a intentar.' if yt.get('errors') else
+                            'No hay temas con evidencia de YouTube en esta consulta. Prueba una ventana de más días o cambia los filtros.')
+        elif not yt.get('qualified_topics'):
+            warnings.append('No se encontró suficiente demanda reciente en varios canales. Las señales disponibles están por validar.')
+        self.warning_label.setText('\n'.join(warnings))
+        self.warning_label.setVisible(bool(warnings))
+        self.table.setSortingEnabled(False)
+        self.table.setRowCount(len(self.proposals))
+        for r, p in enumerate(self.proposals):
+            values = (p.get('topic', ''), p.get('score'), p.get('signal') or 'Sin verificar', p.get('views_per_day'),
+                      p.get('channel_count'), p.get('recent_count'), p.get('category', ''))
+            for col, value in enumerate(values):
+                numeric = col in (1, 3, 4, 5)
+                text = f'{value:,}' if numeric and value is not None else '—' if value is None else str(value)
+                item = _TrendItem(text)
+                item.setData(Qt.ItemDataRole.UserRole, r)
+                if numeric:
+                    item.setData(Qt.ItemDataRole.UserRole + 1, value if value is not None else -1)
+                item.setToolTip((p.get('topic', '') + '\n' if col == 0 else '') + p.get('why', '')
+                                + ('\n' + report.get('methodology', '') if col == 1 else ''))
+                if p.get('qualified') and col in (1, 2):
+                    font = item.font()
+                    font.setBold(True)
+                    item.setFont(font)
+                self.table.setItem(r, col, item)
+        # Rank order from the report is the default. Manual sorts keep their original proposal identity.
+        self.table.horizontalHeader().setSortIndicator(-1, Qt.SortOrder.DescendingOrder)
+        self.table.setSortingEnabled(True)
+        self.calendar_table.setRowCount(len(self.editorial_ideas))
+        for r, p in enumerate(self.editorial_ideas):
+            for col, value in enumerate((p.get('topic', ''), p.get('date') or '', p.get('category', ''), p.get('why', ''))):
+                item = QTableWidgetItem(str(value))
+                item.setToolTip(str(value))
+                self.calendar_table.setItem(r, col, item)
+        self.tabs.setTabText(0, f'Señales de YouTube ({len(self.proposals)})')
+        self.tabs.setTabText(1, f'Calendario · sin validar ({len(self.editorial_ideas)})')
+        if self.table.rowCount():
+            self.table.selectRow(0)
+        self.show_evidence()
 
     def selected_proposal(self):
+        if self.tabs.currentIndex() == 1:
+            row = self.calendar_table.currentRow()
+            return self.editorial_ideas[row] if 0 <= row < len(self.editorial_ideas) else None
         row = self.table.currentRow()
-        return self.proposals[row] if 0 <= row < len(self.proposals) else None
+        item = self.table.item(row, 0)
+        idx = item.data(Qt.ItemDataRole.UserRole) if item is not None else None
+        return self.proposals[idx] if isinstance(idx, int) and 0 <= idx < len(self.proposals) else None
+
+    def show_evidence(self):
+        p = self.selected_proposal()
+        self.btn_use.setEnabled(p is not None)
+        if not p:
+            self.evidence_view.setPlainText('Selecciona un tema para ver sus videos, fechas y métricas.\n\n' + (getattr(self, 'report', {}).get('methodology') or ''))
+            return
+        esc = html.escape
+        body = f"<h3>{esc(str(p.get('topic') or ''))}</h3><p>{esc(str(p.get('why') or 'Sin demanda de YouTube verificada.'))}</p>"
+        body += f"<p>Ángulo: {esc(str(p.get('archetype') or 'auto'))}" + (f" · Gancho: {esc(p['hook'])}" if p.get('hook') else '') + '</p>'
+        evidence = p.get('evidence') or []
+        if evidence:
+            body += '<table cellpadding="5"><tr><th>Video / canal</th><th>Publicado</th><th>Vistas</th><th>Promedio/día</th><th>Ritmo medido/día</th></tr>'
+            from urllib.parse import quote
+            for v in evidence[:12]:
+                url = 'https://www.youtube.com/watch?v=' + quote(str(v.get('video_id') or ''), safe='')
+                measured = v.get('measured_views_per_day')
+                rate = f'{measured:,.0f} ({v.get("measurement_hours", 0):.0f} h)' if measured is not None else 'Sin segunda medición'
+                body += (f'<tr><td><a href="{esc(url, quote=True)}">{esc(str(v.get("title") or ""))}</a><br>{esc(str(v.get("channel") or ""))}</td>'
+                         f'<td>{esc(str(v.get("published") or "")[:10])}</td><td>{v.get("views", 0):,}</td>'
+                         f'<td>{v.get("views_per_day", 0):,.0f}</td><td>{rate}</td></tr>')
+            body += '</table>'
+        else:
+            body += '<p>Idea editorial: no se ha comprobado su demanda en YouTube.</p>'
+        if getattr(self, 'report', {}).get('methodology'):
+            body += '<p>' + esc(self.report['methodology']) + '</p>'
+        self.evidence_view.setHtml(body)
 
     def use_selected(self):
         p = self.selected_proposal()
@@ -517,7 +752,7 @@ class TrendsDialog(QDialog):
         self.accept()
 
 
-def open_trends(tab):
+def open_trends(tab, *, options=None, dialog=None, force_refresh=False):
     """Boton 'Tendencias': informe en un hilo y dialogo con temas cargables."""
     worker = getattr(tab, '_trends_worker', None)
     if worker is not None and worker.isRunning():
@@ -527,27 +762,39 @@ def open_trends(tab):
     if btn is not None:
         btn.setEnabled(False)
         btn.setText('Buscando…')
+    if dialog is not None:
+        dialog.set_busy(True)
 
     def _restore():
         if btn is not None:
             btn.setEnabled(True)
             btn.setText('Tendencias')
+        if dialog is not None:
+            dialog.set_busy(False)
 
     def _done(report):
         _restore()
         import trend_report
         for ln in trend_report.format_report(report).splitlines()[:12]:
             tab.log(ln)
-        dlg = TrendsDialog(tab, report, parent=tab)
-        tab._trends_dialog = dlg
-        dlg.show()
+        if dialog is not None:
+            dialog.load_report(report)
+        else:
+            dlg = TrendsDialog(tab, report, parent=tab)
+            tab._trends_dialog = dlg
+            dlg.show()
 
     def _failed(msg):
         _restore()
         tab.log(f"Tendencias: no se pudo calcular ({msg})")
+        if dialog is not None:
+            dialog.warning_label.setText('No se pudo actualizar. Se conserva la muestra anterior. ' + msg)
+            dialog.warning_label.show()
 
-    worker = _TrendsWorker(parent=tab)
+    worker = _TrendsWorker(options=options if options is not None else studio_trend_options(tab), force_refresh=force_refresh, parent=tab)
     worker.line.connect(tab.log)
+    if dialog is not None:
+        worker.line.connect(dialog.show_progress)
     worker.done.connect(_done)
     worker.failed.connect(_failed)
     tab._trends_worker = worker

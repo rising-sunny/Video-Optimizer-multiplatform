@@ -893,6 +893,9 @@ class StudioProjectManager:
 
             topic_widget = getattr(getattr(self.studio_tab, 'parent_gui', None), 'topic_input', None)
             draft_topic = topic_widget.text().strip() if topic_widget else ''
+            category_widget = (getattr(self.studio_tab, 'category_combo', None) or
+                               getattr(getattr(self.studio_tab, 'parent_gui', None), 'category_combo', None))
+            draft_category = category_widget.currentText() if category_widget else ''
             if not self.studio_tab.last_storyboard_data and not draft_topic:
                 return True  # Todavía no hay contenido de proyecto.
 
@@ -928,6 +931,8 @@ class StudioProjectManager:
                     config = project_data.get('config', {})
                     config.update(project_channel_config(self.studio_tab))
                     config['topic'] = draft_topic or config.get('topic', '')
+                    if draft_category:
+                        config['category'] = draft_category
 
                     # Actualizar todas las opciones de Auto Video Studio Pro
 
@@ -1108,6 +1113,7 @@ class StudioProjectManager:
 
             config = {
                 'topic': topic,
+                'category': draft_category,
                 **project_channel_config(self.studio_tab),
                 'platform': self.studio_tab.platform_combo.currentText(),
                 'platform_key': self.studio_tab.get_selected_platform_key() if hasattr(self.studio_tab, 'get_selected_platform_key') else self.studio_tab.platform_combo.currentText(),

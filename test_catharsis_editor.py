@@ -15,11 +15,13 @@ y el ultimo cuadro son iguales; la rampa de velocidad entrega todos sus cuadros.
 """
 
 import importlib.util
+import json
 import shutil
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import Mock, patch
 
 import numpy as np
 from PIL import Image
@@ -261,6 +263,64 @@ class EffectsTest(unittest.TestCase):
 
 
 class CardsTest(unittest.TestCase):
+    COMPLETE = json.dumps({
+        "direction": {"speaker": "Narrador externo", "moment": "Trinity, 1945",
+                      "conflict": "Construccion y consecuencias", "turn": "La prueba",
+                      "payoff": "La responsabilidad sigue"},
+        "opening": "What follows the first flash?",
+        "lines": ["July 16, 1945.", "A desert test.", "Scientists stand back.",
+                  "The countdown ends.", "A flash appears.", "The test succeeds.", "The questions remain."],
+        "climax": ["BEYOND", "THE", "FLASH"], "final": ["The test ends. Responsibility remains."],
+        "end": "Trinity, 1945"})
+
+    def test_reintenta_respuesta_truncada_con_mas_margen(self):
+        client = Mock()
+        client._generate.side_effect = [None, self.COMPLETE]
+        log = Mock()
+        with patch('ai_factory.AIFactory.get_instance') as factory:
+            factory.return_value.get_llm_client.return_value = client
+            cards = ce.write_cards("Trinity", check=False, log=log)
+        self.assertEqual(len(cards["lines"]), 7)
+        self.assertEqual([c.kwargs for c in client._generate.call_args_list], [
+            {"max_tokens": 4096, "task_type": "script_quality"},
+            {"max_tokens": 8192, "task_type": "script_quality"},
+        ])
+        self.assertIn("ENTIRE JSON", client._generate.call_args.args[0])
+        self.assertTrue(any("reintentando" in c.args[0] for c in log.call_args_list))
+
+    def test_no_reintenta_una_respuesta_completa(self):
+        generate = Mock(return_value=self.COMPLETE)
+        ce.write_cards("Trinity", generate_fn=generate, check=False, log=lambda m: None)
+        generate.assert_called_once()
+
+    def test_etiqueta_dramatizacion_en_ambos_idiomas_sin_alterar_narrador(self):
+        for language, label in (("en", "Dramatization"), ("es", "Dramatización")):
+            with self.subTest(language=language):
+                cards = ce.write_cards("Trinity", "character", language,
+                                       generate_fn=lambda p: self.COMPLETE, check=False, log=lambda m: None)
+                self.assertTrue(cards["end"].startswith(label))
+                again = ce.write_cards("Trinity", "character", language,
+                                       generate_fn=lambda p: json.dumps(cards), check=False, log=lambda m: None)
+                self.assertEqual(again["end"], cards["end"])
+        narrator = ce.write_cards("Trinity", "narrator", generate_fn=lambda p: self.COMPLETE,
+                                  check=False, log=lambda m: None)
+        self.assertEqual(narrator["end"], "Trinity, 1945")
+
+    def test_no_acepta_tarjetas_truncadas_ni_campos_inventados_por_defecto(self):
+        for raw in (None, "ERROR: token limit", '{"opening": "Who?", "lines": ["July',
+                    '{"lines": ["July 16, 1945."]}', '[]',
+                    self.COMPLETE.replace('"July 16, 1945."', '{"text": "July"}')):
+            with self.subTest(raw=raw), self.assertRaises(ValueError):
+                ce.parse_cards(raw)
+
+    def test_fallo_final_limitado_no_verifica_tarjetas_incompletas(self):
+        generate = Mock(return_value=None)
+        with patch('script_fact_check.fact_check_scenes') as check:
+            with self.assertRaisesRegex(RuntimeError, "tras dos intentos"):
+                ce.write_cards("Trinity", generate_fn=generate, log=lambda m: None)
+            check.assert_not_called()
+        self.assertEqual(generate.call_count, 2)
+
     def test_lee_respuestas_desordenadas_del_modelo(self):
         raw = ('Here you go:\n```json\n{"opening": "Who am I?", "lines": ["July 16, 1945.", "What did I build?",],'
                ' "climax": ["who", "am", "i"], "final": ["Now I am become Death,"], "end": "Oppenheimer (1965)"}\n```')
@@ -273,12 +333,80 @@ class CardsTest(unittest.TestCase):
 
         def fake(prompt):
             seen["prompt"] = prompt
-            return '{"opening": "Who was he?", "lines": ["July 16, 1945."], "climax": ["WHO"], "final": [], "end": ""}'
+            return self.COMPLETE
 
         cards = ce.write_cards("Trinity test", "narrator", generate_fn=fake, check=False, log=lambda m: None)
         self.assertIn("Trinity test", seen["prompt"])
         self.assertIn("third person", seen["prompt"])
-        self.assertEqual(cards["opening"], "Who was he?")
+        self.assertEqual(cards["opening"], "What follows the first flash?")
+
+    def test_verifica_climax_y_firma_sin_reparador_de_narraciones(self):
+        def fact_check(texts, topic, **kwargs):
+            self.assertEqual(texts[-1], "Trinity, 1945")
+            self.assertIn("BEYOND THE FLASH", texts)
+            self.assertIs(kwargs["repair"], False)
+            fixed = list(texts)
+            fixed[1] = "The corrected date."
+            return fixed, {"status": "verified", "remaining": []}
+        generate = Mock(side_effect=[self.COMPLETE, '{"issues": []}'])
+        with patch('script_fact_check.fact_check_scenes', side_effect=fact_check):
+            cards = ce.write_cards("Trinity", "narrator", generate_fn=generate, log=lambda m: None)
+        self.assertNotIn("The corrected date.", generate.call_args.args[0])
+        self.assertEqual(cards["lines"][0], "July 16, 1945.")
+        self.assertEqual(cards["fact_check"]["status"], "verified")
+        self.assertEqual(cards["narrative_review"]["status"], "reviewed")
+
+    def test_rechazo_editorial_reescribe_y_vuelve_a_verificar(self):
+        responses = [self.COMPLETE, '{"issues": ["Opening is disconnected from final"]}',
+                     self.COMPLETE, '{"issues": []}']
+        generate = Mock(side_effect=responses)
+        with patch('script_fact_check.fact_check_scenes', side_effect=lambda texts, *a, **k:
+                   (texts, {"status": "verified"})) as check:
+            ce.write_cards("Trinity", "narrator", generate_fn=generate, log=lambda m: None)
+        self.assertEqual(check.call_count, 2)
+        self.assertIn("Opening is disconnected", generate.call_args_list[2].args[0])
+
+    def test_fallo_editorial_no_se_presenta_como_exito(self):
+        review = '{"issues": ["Voice changes after death"]}'
+        generate = Mock(side_effect=[self.COMPLETE, review, self.COMPLETE, review])
+        with patch('script_fact_check.fact_check_scenes', side_effect=lambda texts, *a, **k:
+                   (texts, {"status": "verified"})):
+            cards = ce.write_cards("Trinity", generate_fn=generate, log=lambda m: None)
+        self.assertEqual(cards["narrative_review"]["status"], "needs_review")
+        self.assertIn("Voice changes after death", cards["narrative_review"]["issues"])
+        self.assertEqual(generate.call_count, 4)
+
+    def test_revision_ilegible_no_aprueba_tarjetas(self):
+        generate = Mock(side_effect=[self.COMPLETE, 'ERROR: truncated', 'ERROR: truncated'])
+        with patch('script_fact_check.fact_check_scenes', side_effect=lambda texts, *a, **k:
+                   (texts, {"status": "verified"})):
+            with self.assertRaisesRegex(RuntimeError, 'revision narrativa'):
+                ce.write_cards("Trinity", generate_fn=generate, log=lambda m: None)
+
+    def test_reparacion_factual_reescribe_el_arco_con_la_voz_elegida(self):
+        reports = iter([{"status": "needs_review", "remaining": [
+            {"quote": "July 16, 1945.", "verdict": "false", "correction": "Use the documented date"}]},
+                        {"status": "verified"}])
+        def fact_check(texts, topic, **kwargs):
+            self.assertFalse(kwargs["repair"])
+            return texts, next(reports)
+        generate = Mock(side_effect=[self.COMPLETE, '{"issues": []}', self.COMPLETE, '{"issues": []}'])
+        with patch('script_fact_check.fact_check_scenes', side_effect=fact_check):
+            ce.write_cards("Trinity", "character", "es", generate_fn=generate, log=lambda m: None)
+        repair_prompt = generate.call_args_list[2].args[0]
+        self.assertIn("No foreknowledge", repair_prompt)
+        self.assertIn("Use the documented date", repair_prompt)
+        self.assertIn("Visible language: Spanish", generate.call_args.args[0])
+
+    def test_rechaza_arco_incompleto_sin_cambiar_tarjetas_manuales(self):
+        for change in ({"direction": {}}, {"climax": ["WHO AM I"]}, {"final": []},
+                       {"lines": ["Just one card"]}):
+            data = json.loads(self.COMPLETE)
+            data.update(change)
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                ce._validate_generated_cards(data)
+        legacy = ce.normalize_project(SCRIPT)
+        self.assertEqual(legacy["cards"]["climax"], SCRIPT["climax"])
 
 
 class LimitFlashesTest(unittest.TestCase):

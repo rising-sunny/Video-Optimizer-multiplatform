@@ -345,9 +345,15 @@ estrategia se mide y entra a los prompts.
 - **Channel Bible** (`channel_strategy_profile.json`): palabras prohibidas medidas,
   aperturas prohibidas, ejemplos ganadores, franja de largo del título. Es la configuración
   por nicho que usa el puntaje del título.
-- **`trend_report.py`**: shorts del nicho más vistos en los últimos N días (Data API),
-  artículos más vistos de Wikipedia filtrados al nicho, efemérides próximas y lo medido en
-  el canal. Resultado: temas propuestos con su ángulo, cargables con un clic.
+- **`trend_report.py` + `youtube_trend_signals.py`**: muestreo real de YouTube adaptado a
+  categoría, idioma y duración, con búsquedas de descubrimiento y comprobación de temas.
+  Prioriza demanda reciente en varios canales, muestra evidencia enlazada y separa el promedio
+  de vistas/día del crecimiento medido entre consultas. Comparación con otros videos
+  muestreados del mismo canal cuando existen al menos tres referencias. La prioridad es una
+  heurística de la muestra, no una probabilidad de viralidad. Efemérides aparte, sin validación
+  de demanda. Caché de 6 horas y progreso visible al actualizar. Los fallos de conexión se
+  reintentan con la misma sesión; si falla la actualización, se conserva una muestra de menos
+  de 24 horas con los mismos filtros, indicando su fecha original y el error.
 - **Primeros segundos** (retención, conectado al título y la miniatura):
   - la primera frase lleva una cifra concreta o una pregunta de CÓMO o POR QUÉ, con 14
     palabras como máximo;

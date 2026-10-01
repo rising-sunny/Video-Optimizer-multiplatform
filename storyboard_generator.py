@@ -51,6 +51,7 @@ if not RESEARCH_SEARCH_AVAILABLE:
         GOOGLE_SEARCH_AVAILABLE = False
 
 from video_config import VideoConfig
+from studio_categories import is_mystery_inquiry, mystery_editorial_instructions
 
 
 def get_channel_name(default: str = "this channel") -> str:
@@ -1217,13 +1218,26 @@ TONO Y ESTILO:
         )
 
     @staticmethod
-    def _build_channel_bible_section(is_short: bool, lang_label: str, tone_profile: str = "mystery") -> str:
+    def _build_channel_bible_section(is_short: bool, lang_label: str, tone_profile: str = "mystery",
+                                    category: str = "") -> str:
         """Build channel-bible instructions for the unified prompt.
 
         Includes hook patterns, narrative structure, quality rules,
         editorial filter, and credibility guidelines — all sourced
         from channel_strategy.py when available.
         """
+        # The explicitly selected investigation category is a per-video exception
+        # to the channel's usual subject exclusions, not a global Bible rewrite.
+        if is_mystery_inquiry(category):
+            instructions = mystery_editorial_instructions(category)
+            if is_short:
+                instructions += """
+RITMO PARA SHORTS:
+- Abre con el enigma concreto y atribuye el relato desde el gancho; nunca conviertas sus cifras en hechos probados.
+- Entrega información nueva cada 5-8 segundos: fuente, evidencia, explicación o límite de esa explicación.
+- Mantén las escenas breves, con suspenso y precisión. Cierra con lo conocido y la pregunta que sigue abierta.
+"""
+            return instructions
         sections: list[str] = []
 
         # ── Channel Bible (hooks, structure, tone) ──
@@ -1570,7 +1584,7 @@ REGLA ABSOLUTA — CERO TEXTO EN LAS IMAGENES:
 - Siempre termina cada visual_prompt con: "no text, no writing, no signs, no captions, no watermarks"
 
 {tone_section}
-{self._build_channel_bible_section(is_short_vertical, lang_label, tone_profile)}
+{self._build_channel_bible_section(is_short_vertical, lang_label, tone_profile, category)}
 ESTRUCTURA JSON REQUERIDA (responde SOLO con este JSON, sin texto adicional):
 {{
   "title": "Título impactante del video en {lang_label}",{self._build_json_metadata_fields(is_short_vertical)}
@@ -1939,6 +1953,8 @@ REGLAS CRÍTICAS:
         _meta_cover_text = str(json_data.get("cover_text", "")).strip().upper()
         _meta_hook_pattern = str(json_data.get("hook_pattern", "")).strip().upper()[:1]
         _meta_category = str(json_data.get("category_fit", category)).strip()
+        if is_mystery_inquiry(category):
+            _meta_category = category
         _meta_long_form = str(json_data.get("long_form_potential", "NO")).strip().upper()
         _meta_long_angle = str(json_data.get("long_form_angle", "")).strip()
         _meta_series = str(json_data.get("series_fit", "NONE")).strip()
@@ -2302,6 +2318,7 @@ PERFIL DE TONO: {tone_profile}
 IDIOMA DE NARRACIÓN: {lang_label}
 {prev_context}
 {opening_batch}
+{mystery_editorial_instructions(category)}
 
 FRAGMENTO DE GUION A CONVERTIR:
 {chunk_text}

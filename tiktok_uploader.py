@@ -31,7 +31,8 @@ Configuracion en `.env` (el local): TIKTOK_CLIENT_KEY y TIKTOK_CLIENT_SECRET (la
 sandbox) y, opcional, TIKTOK_REDIRECT_PORT (8723). El token queda en
 token_tiktok.json (gitignored por `token_*.json`).
 
-    .venv\\Scripts\\python.exe tiktok_uploader.py --auth      # una vez: abre el navegador
+    .venv\\Scripts\\python.exe tiktok_uploader.py --setup     # ingresar credenciales y conectar
+    .venv\\Scripts\\python.exe tiktok_uploader.py --auth      # conectar con las credenciales guardadas
     .venv\\Scripts\\python.exe tiktok_uploader.py --check     # cuenta, token y Telegram
     .venv\\Scripts\\python.exe tiktok_uploader.py --upload CARPETA_O_MP4
 
@@ -48,6 +49,7 @@ import secrets
 import shutil
 import string
 import subprocess
+import tempfile
 import time
 import urllib.parse
 import webbrowser
@@ -196,8 +198,8 @@ class _CallbackServer:
                     return
                 try:
                     box["code"] = parse_callback(self.path, expected_state)
-                    titulo, texto, codigo = ("Listo", "La cuenta de TikTok quedó conectada. "
-                                             "Podés cerrar esta pestaña.", 200)
+                    titulo, texto, codigo = ("Autorización recibida", "Vuelve a la app para comprobar "
+                                             "si la conexión se completó. Ya puedes cerrar esta pestaña.", 200)
                 except TikTokAuthError as exc:
                     box["error"] = exc
                     titulo, texto, codigo = "No se pudo conectar", str(exc), 400
@@ -245,16 +247,94 @@ def _client_credentials() -> Tuple[str, str]:
     return key, secret
 
 
+def setup_credentials(*, path: Optional[Path] = None, input_fn=None, secret_fn=None,
+                      on_status=None) -> None:
+    """Console setup: collect both values before saving; never print credentials."""
+    from getpass import getpass
+    from dotenv import dotenv_values, set_key
+
+    path = Path(path or ROOT / ".env")
+    input_fn, secret_fn = input_fn or input, secret_fn or getpass
+    _status(on_status, "Copia Client key y Client secret del mismo Sandbox de TikTok for Developers.")
+    try:
+        key = input_fn("TIKTOK_CLIENT_KEY: ").strip()
+        secret = secret_fn("TIKTOK_CLIENT_SECRET (oculto): ").strip()
+    except (EOFError, KeyboardInterrupt):
+        raise TikTokAuthError("Configuración cancelada. No se guardaron cambios.") from None
+    if not key or not secret:
+        raise TikTokAuthError("Falta una credencial. No se guardaron cambios.")
+    if any(c.isspace() or ord(c) < 32 or ord(c) == 127 for c in key + secret):
+        raise TikTokAuthError("Las credenciales contienen espacios o caracteres de control. Copia los valores otra vez.")
+    if set(secret) <= set("*•●"):
+        raise TikTokAuthError("Se copió la máscara del secreto. Usa el botón de copiar de Client secret.")
+
+    values = {"TIKTOK_CLIENT_KEY": key, "TIKTOK_CLIENT_SECRET": secret}
+    tmp = None
+    try:
+        before = dotenv_values(path, encoding="utf-8-sig", interpolate=False) if path.exists() else {}
+        changes = [name for name, value in values.items() if value != before.get(name)]
+        # Stage both changes together. The temporary filename is also gitignored.
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", prefix=".env.tiktok-",
+                                         suffix=".tmp", dir=path.parent, delete=False) as handle:
+            tmp = Path(handle.name)
+            if path.exists():
+                handle.write(path.read_text(encoding="utf-8-sig"))
+        for name, value in values.items():
+            set_key(str(tmp), name, value, encoding="utf-8")
+        parsed = dotenv_values(tmp, encoding="utf-8")
+        if any(parsed.get(name) != value for name, value in values.items()):
+            raise TikTokAuthError("No se pudieron guardar las credenciales sin alterarlas. No se guardaron cambios.")
+        os.replace(tmp, path)
+    except (OSError, UnicodeError):
+        raise TikTokAuthError("No se pudo actualizar .env. Revisa los permisos del archivo.") from None
+    finally:
+        if tmp is not None:
+            try:
+                tmp.unlink(missing_ok=True)
+            except OSError:
+                pass
+    # The just-entered pair must also replace stale inherited environment values.
+    os.environ.update(values)
+    if changes:
+        _status(on_status, "Credenciales guardadas en .env. Actualizadas: " + ", ".join(changes) + ".")
+    else:
+        _status(on_status, "Los dos valores coinciden con los que ya estaban guardados en .env.")
+
+
 # ================================================================ token
 
-def _token_error_help(error: str, description: str) -> str:
+def _safe_oauth_detail(value: Any, request_data: Dict[str, str], payload=None) -> str:
+    """OAuth diagnostics must not echo keys, codes, verifiers or tokens."""
+    text = str(value or "")
+    sensitive = {"client_key", "client_secret", "code", "code_verifier", "refresh_token", "access_token", "open_id"}
+    secrets_to_hide = set()
+    for source in (request_data, payload or {}):
+        for name in sensitive:
+            secret = source.get(name)
+            if isinstance(secret, str) and secret:
+                secrets_to_hide.update((secret, urllib.parse.quote(secret, safe=""), urllib.parse.quote_plus(secret)))
+    for secret in sorted(secrets_to_hide, key=len, reverse=True):
+        text = text.replace(secret, "[oculto]")
+    return " ".join(text.split())[:500]
+
+
+def _token_error_help(error: str, description: str, log_id: str = "") -> str:
     if error == "invalid_client":
-        return ("TikTok rechazó la app (invalid_client): revisá TIKTOK_CLIENT_KEY y TIKTOK_CLIENT_SECRET "
-                "en .env; si la app está en sandbox, tienen que ser las del sandbox.")
-    if error == "invalid_grant":
-        return ("El permiso de TikTok venció o fue revocado (invalid_grant): corré "
-                ".venv\\Scripts\\python.exe tiktok_uploader.py --auth.")
-    return f"TikTok no dio el token ({error}): {description}"
+        message = ("TikTok rechazó las credenciales de la app (invalid_client) al solicitar el token. "
+                   "Para ingresar de nuevo Client key y Client secret: "
+                   ".venv\\Scripts\\python.exe tiktok_uploader.py --setup. "
+                   "Si usas Sandbox, ambos valores deben ser los vigentes de ese mismo Sandbox.")
+    elif error == "invalid_grant":
+        message = ("TikTok rechazó el código o permiso (invalid_grant): puede haber vencido, sido revocado "
+                   "o no coincidir con la app o su redirect_uri. Corré "
+                   ".venv\\Scripts\\python.exe tiktok_uploader.py --auth.")
+    else:
+        message = f"TikTok no dio el token ({error})."
+    if description:
+        message += f" Detalle de TikTok: {description}"
+    if log_id:
+        message += f" [log_id {log_id}]"
+    return message
 
 
 def _token_from_payload(payload: Dict[str, Any], *, client_key: str = "", now: Optional[float] = None,
@@ -282,15 +362,19 @@ def _token_request(data: Dict[str, str], *, http=None, client_key: str = "",
         resp = http.post(TOKEN_URL, data=data, timeout=60, headers={
             "Content-Type": "application/x-www-form-urlencoded", "Cache-Control": "no-cache"})
     except requests.RequestException as exc:
-        raise TikTokAuthError(f"No se pudo conectar con TikTok para el token: {exc}") from None
+        raise TikTokAuthError("No se pudo conectar con TikTok para el token: " +
+                              _safe_oauth_detail(exc, data)) from None
     try:
         payload = resp.json()
     except ValueError:
         payload = {}
+    if not isinstance(payload, dict):
+        payload = {}
     if resp.status_code >= 400 or payload.get("error") or not payload.get("access_token"):
         raise TikTokAuthError(_token_error_help(
-            str(payload.get("error") or f"HTTP {resp.status_code}"),
-            str(payload.get("error_description") or (resp.text or "")[:200])))
+            _safe_oauth_detail(payload.get("error") or f"HTTP {resp.status_code}", data, payload),
+            _safe_oauth_detail(payload.get("error_description") or "Respuesta sin token de acceso.", data, payload),
+            _safe_oauth_detail(payload.get("log_id"), data, payload)))
     return _token_from_payload(payload, client_key=client_key, previous=previous)
 
 
@@ -363,6 +447,7 @@ def authorize(*, open_browser: bool = True, timeout_s: int = AUTH_TIMEOUT_S, on_
         code = server.wait(timeout_s)
     finally:
         server.close()
+    _status(on_status, "autorización recibida del navegador; solicitando el token a TikTok...")
     token = exchange_code(code, verifier, redirect, client_key, client_secret, http=http)
     save_token(token)
     _status(on_status, f"cuenta conectada; permiso guardado en {TOKEN_PATH.name}")
@@ -877,6 +962,7 @@ def main(argv=None) -> int:
         pass
     ap = argparse.ArgumentParser(description="Borradores de TikTok (bandeja) con el texto por Telegram")
     grupo = ap.add_mutually_exclusive_group(required=True)
+    grupo.add_argument("--setup", action="store_true", help="ingresar Client key y Client secret, guardarlos en .env y conectar la cuenta")
     grupo.add_argument("--auth", action="store_true", help="conectar la cuenta (abre el navegador)")
     grupo.add_argument("--check", action="store_true", help="estado de la cuenta, el permiso y Telegram")
     grupo.add_argument("--list", action="store_true", help="videos publicos de la cuenta (JSON)")
@@ -884,7 +970,9 @@ def main(argv=None) -> int:
                        help="mandar un borrador a la bandeja (carpeta con video+metadata o un .mp4)")
     args = ap.parse_args(argv)
     try:
-        if args.auth:
+        if args.setup:
+            setup_credentials(on_status=print)
+        if args.auth or args.setup:
             token = authorize(on_status=lambda m: print(m))
             try:
                 nombre = get_user_info(token).get("display_name")
