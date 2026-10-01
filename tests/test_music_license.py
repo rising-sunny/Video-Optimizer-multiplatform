@@ -15,7 +15,7 @@ from unittest import mock
 
 import music_license as ml
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parent.parent
 
 PROPHECY_OLD_PROJECT = {   # como quedo guardado en los proyectos de enero-febrero
     "title": "The Prophecy", "artist": "Paul Werner",

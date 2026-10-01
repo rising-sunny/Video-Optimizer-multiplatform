@@ -309,7 +309,7 @@ class TestCinematicEffectsAreReachable(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         import ast
-        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "video_assembler.py")
+        path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "video_assembler.py")
         with open(path, encoding="utf-8") as fh:
             cls.tree = ast.parse(fh.read())
         cls.ast = ast

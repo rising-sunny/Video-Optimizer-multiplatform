@@ -1060,7 +1060,7 @@ concreta + sujeto nombrado**, duración corta. Ej: "72 Seconds: The Wow! Signal"
     verdad contra el filtergraph. Ademas cada render imprime al final un bloque
     **QA DE AUDIO / SINCRONIA** con `[OK]/[FAIL]` por ducking, SFX, cover frame, duración
     video-vs-audio y % de palabras ancladas a Whisper (también en `result['audio_qa_problems']`).
-    Correr las guardas: `.\.venv\Scripts\python.exe test_audio_mix_sync_guards.py`
+    Correr las guardas: `.\.venv\Scripts\python.exe -m unittest tests.test_audio_mix_sync_guards`
   - **Limitación conocida:** `_estimate_scene_durations_with_selected_tts` devuelve `None`
     ("bypass to prevent async hang in Windows") desde el commit inicial, así que los tiempos
     por escena salen de un reparto por cantidad de palabras, no de medir el TTS real. Es la

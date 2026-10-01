@@ -6,7 +6,7 @@ from unittest.mock import Mock
 from thumbnail_art_direction import compile_title, parse_art_response, readable_color, contextual_composition_rules
 from thumbnail_typography import contrast_ratio
 from thumbnail_formats import SHORT_9_16, LANDSCAPE_16_9
-from test_thumbnail_superprompt import art_response, cliente_con
+from tests.test_thumbnail_superprompt import art_response, cliente_con
 
 
 class ContextualTitle(unittest.TestCase):

@@ -462,7 +462,7 @@ class GuiTests(unittest.TestCase):
         from PyQt6.QtTest import QTest
         from PyQt6.QtCore import Qt
         from studio_channel_controls import TrendsDialog
-        from test_studio_channel_controls import StudioStub
+        from tests.test_studio_channel_controls import StudioStub
         tab = StudioStub()
         context = dict(category='Ancient Civilizations & Empires', language='en', region='US', video_format='short')
         report = dict(context=context, window_days=7, youtube={'sample_size': 1},
@@ -511,7 +511,7 @@ class GuiTests(unittest.TestCase):
 
     def test_recovered_sample_is_visible_with_original_date_and_explicit_warning(self):
         from studio_channel_controls import TrendsDialog
-        from test_studio_channel_controls import StudioStub
+        from tests.test_studio_channel_controls import StudioStub
         tab = StudioStub()
         dlg = TrendsDialog(tab, {'proposals': [{'topic': 'Roman Concrete'}],
                                 'youtube': {'sample_size': 1, 'cached': True, 'refresh_failed': True,
@@ -528,7 +528,7 @@ class GuiTests(unittest.TestCase):
     def test_sorting_still_selects_correct_subject_and_links_evidence(self):
         from PyQt6.QtCore import Qt
         from studio_channel_controls import TrendsDialog
-        from test_studio_channel_controls import StudioStub
+        from tests.test_studio_channel_controls import StudioStub
         tab = StudioStub()
         report = {"proposals": [{"topic": "A", "score": 9, "evidence": [row("abc", "Title <unsafe>", "Channel")]},
                                 {"topic": "B", "score": 80}], "youtube": {"sample_size": 2}}
@@ -546,7 +546,7 @@ class GuiTests(unittest.TestCase):
 
     def test_empty_primary_list_and_separate_calendar(self):
         from studio_channel_controls import TrendsDialog
-        from test_studio_channel_controls import StudioStub
+        from tests.test_studio_channel_controls import StudioStub
         tab = StudioStub()
         dlg = TrendsDialog(tab, {"proposals": [], "editorial_ideas": [{"topic": "Trafalgar", "source": "anniversary"}],
                                  "youtube": {"errors": ["Cuota agotada"]}})
@@ -562,7 +562,7 @@ class GuiTests(unittest.TestCase):
     def test_studio_category_language_and_long_vertical_are_captured(self):
         from PyQt6.QtWidgets import QComboBox, QRadioButton
         from studio_channel_controls import studio_trend_options
-        from test_studio_channel_controls import StudioStub
+        from tests.test_studio_channel_controls import StudioStub
         tab = StudioStub()
         tab.category_combo = QComboBox(); tab.category_combo.addItem("Misterios y Conspiraciones")
         tab.lang_es = QRadioButton(); tab.lang_es.setChecked(True)

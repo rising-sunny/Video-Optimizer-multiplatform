@@ -122,7 +122,7 @@ class ElStudioLoEligeYLoGuarda(unittest.TestCase):
         cs.set_active_archetype("")
 
     def test_combo_config_y_restauracion(self):
-        from test_studio_channel_controls import StudioStub
+        from tests.test_studio_channel_controls import StudioStub
         from studio_channel_controls import project_channel_config, restore_channel_config, resolve_archetype_for_topic
         tab = StudioStub()
         datos = [tab.archetype_combo.itemData(i) for i in range(tab.archetype_combo.count())]
@@ -136,7 +136,7 @@ class ElStudioLoEligeYLoGuarda(unittest.TestCase):
         tab.close()
 
     def test_auto_resuelve_por_tema(self):
-        from test_studio_channel_controls import StudioStub
+        from tests.test_studio_channel_controls import StudioStub
         from studio_channel_controls import resolve_archetype_for_topic
         tab = StudioStub()
         tab.archetype_combo.setCurrentIndex(0)
@@ -144,7 +144,7 @@ class ElStudioLoEligeYLoGuarda(unittest.TestCase):
         tab.close()
 
     def test_el_perfil_viejo_solo_ofrece_auto(self):
-        from test_studio_channel_controls import StudioStub
+        from tests.test_studio_channel_controls import StudioStub
         from studio_channel_controls import set_editorial_channel
         tab = StudioStub()
         set_editorial_channel(tab, "stunning-revelations")

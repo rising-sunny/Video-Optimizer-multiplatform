@@ -16,7 +16,7 @@ from pathlib import Path
 
 import music_recommender as mr
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parent.parent
 URL = "https://prod-1.storage.jamendo.com/?trackid=1509464&format=mp31&from=abc"
 DATA = bytes(range(256)) * 400          # ~100 KB
 

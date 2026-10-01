@@ -136,7 +136,7 @@ class ElDialogoCargaElTema(unittest.TestCase):
 
     def test_usar_tema_llena_tema_categoria_y_angulo(self):
         from PyQt6.QtWidgets import QWidget, QComboBox, QLineEdit
-        from test_studio_channel_controls import StudioStub
+        from tests.test_studio_channel_controls import StudioStub
         from studio_channel_controls import TrendsDialog
         tab = StudioStub()
         parent = QWidget(); parent.category_combo = QComboBox(); parent.category_combo.addItems(["Ancient Civilizations & Empires", "War & Military History"])

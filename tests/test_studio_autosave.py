@@ -15,8 +15,8 @@ from studio_project_manager import StudioProjectManager
 from project_manager_v2 import ProjectManagerV2
 from channel_profiles import select_channel, active_channel, DEFAULT_CHANNEL
 from studio_channel_controls import PilotDialog, open_pilot
-from test_studio_channel_controls import StudioStub
-from test_micro_documentary import package
+from tests.test_studio_channel_controls import StudioStub
+from tests.test_micro_documentary import package
 from studio_categories import MYSTERY_CATEGORY
 
 
@@ -195,7 +195,7 @@ class AutosaveTests(unittest.TestCase):
 
     def test_microdoc_reuses_the_autosaved_config_draft(self):
         from micro_documentary import build, write_json
-        from test_micro_documentary import FakeClient
+        from tests.test_micro_documentary import FakeClient
         with TemporaryDirectory() as tmp:
             write_json(Path(tmp) / 'project.json', {'config': {'topic': 'Coronel', 'channel_profile': 'stunning-revelations'}, 'storyboard': {}})
             result = build('Coronel', tmp, channel='stunning-revelations', client=FakeClient([package()]))

@@ -234,7 +234,7 @@ verde. Dentro de cada paquete, el script de migración calcula el orden hoja-pri
 | Fase | Qué se mueve | Riesgo | Validación |
 |---|---|---|---|
 | **0. Línea base** | Commitear el WIP (15 modificados + 5 nuevos) + correr suite | — | suite verde + repo limpio |
-| **1. `tests/`** | los 76 `test_*.py` | ≈ 0 | suite verde con `pytest` |
+| **1. `tests/`** | los 76 `test_*.py` | ≈ 0 | suite verde con `unittest discover` |
 | **2. `infra/`** | `env_loader`, `video_config`, utilidades hoja | bajo | suite verde |
 | **3. `ai/`** | clientes + fact-check + prompts | bajo | suite verde |
 | **4. `media/`** | clientes de búsqueda + diálogos | bajo-medio | suite verde |
@@ -295,7 +295,7 @@ El script se puede re-ejecutar por fase y se revierte con git.
 
 - [ ] Repo limpio con la suite completa en verde tras la Fase 0.
 - [ ] 0 archivos `.py` de producción en la raíz (solo shims de CLI).
-- [ ] 76 tests en `tests/`, corriendo con `pytest`.
+- [x] 76 tests en `tests/`, corriendo con `unittest discover -s tests -t .`.
 - [ ] `RUN.bat`, `GENERATE_SHORT.bat` y los comandos CLI del playbook funcionan sin cambios.
 - [ ] `python -m compileall` sin errores.
 - [ ] Ningún módulo de producción importa `test_*`.
@@ -304,5 +304,9 @@ El script se puede re-ejecutar por fase y se revierte con git.
 
 ## Changelog
 
+- **2026-10-01 (Fase 1)** — Tests movidos a `tests/` (76 archivos + `tests/__init__.py`).
+  Imports entre tests pasaron a `from tests.test_...` (16 en 8 archivos); 5 tests que leían
+  fuentes de producción recalcularon la raíz (`__file__` → raíz del repo). Suite verde con
+  `unittest discover -s tests -t .`. Nota: no hay pytest instalado; la suite es unittest.
 - **2026-10-01** — Documento inicial: métricas del grafo de imports, estructura objetivo,
   mapa módulo→paquete, plan de fases y mecánica de migración.

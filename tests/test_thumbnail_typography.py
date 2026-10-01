@@ -135,7 +135,7 @@ class ElSuperPrompt(unittest.TestCase):
 
         def fake(prompt, *a, **k):
             caja["p"] = prompt
-            from test_thumbnail_superprompt import art_response
+            from tests.test_thumbnail_superprompt import art_response
             return art_response(hook="100 KILOMETERS")
         cc._generate = fake
         res = cc.generate_thumbnail_super_prompt("Mongol horses", thumbnail_format=SHORT_9_16, research_brief=brief)

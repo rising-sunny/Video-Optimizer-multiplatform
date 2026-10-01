@@ -16,7 +16,7 @@ from unittest import mock
 
 import script_fact_check as sfc
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parent.parent
 
 TOPIC = "How Nelson Won Trafalgar Against a Bigger Fleet"
 TRAFALGAR = [

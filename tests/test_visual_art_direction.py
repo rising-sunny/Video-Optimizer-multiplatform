@@ -14,7 +14,7 @@ from unittest import mock
 
 import visual_art_direction as vad
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parent.parent
 
 NARR = [
     "How did Admiral Nelson break a numerically superior fleet on October 21 1805?",

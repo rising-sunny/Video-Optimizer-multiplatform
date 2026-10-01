@@ -157,7 +157,7 @@ class ElBriefYElPrompt(unittest.TestCase):
 
         def fake_generate(prompt, *a, **k):
             capturado["p"] = prompt
-            from test_thumbnail_superprompt import art_response
+            from tests.test_thumbnail_superprompt import art_response
             return art_response(hook="1,000 CASTS", evidence="More than 1,000 casts exist.")
         cc._generate = fake_generate
         cc.generate_thumbnail_super_prompt(topic="Pompeii", script_excerpt=SCRIPT, category="", language="en",
