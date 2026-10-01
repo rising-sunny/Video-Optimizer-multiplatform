@@ -15,11 +15,11 @@ from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QApplication, QComboBox, QPushButton
 from PIL import Image
 
-import catharsis_editor as ce
-import catharsis_tab as ct
-from catharsis_preview import composition_preview
-from catharsis_media_input import can_import
-from catharsis_timeline import assignment_summary, media_slots, plan_timings, slot_value
+from catharsis import catharsis_editor as ce
+from catharsis import catharsis_tab as ct
+from catharsis.catharsis_preview import composition_preview
+from catharsis.catharsis_media_input import can_import
+from catharsis.catharsis_timeline import assignment_summary, media_slots, plan_timings, slot_value
 
 
 class CatarsisGuiTest(unittest.TestCase):

@@ -5,7 +5,7 @@ from PyQt6.QtCore import Qt, QUrl, pyqtSignal
 from PyQt6.QtGui import QImage, QKeySequence, QPixmap
 from PyQt6.QtWidgets import QAbstractItemView, QListWidget, QWidget
 
-from catharsis_editor import VIDEO_EXT
+from catharsis.catharsis_editor import VIDEO_EXT
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}
 IMAGE_MIME_TYPES = ("image/png", "image/jpeg", "image/webp", "image/bmp")

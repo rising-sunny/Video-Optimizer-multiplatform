@@ -24,13 +24,13 @@ from PyQt6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDoubleSpi
                              QApplication, QSpinBox, QSplitter, QStackedWidget, QTabWidget,
                              QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
 
-import catharsis_editor as ce
-from catharsis_media_input import (IMAGE_EXTENSIONS, MediaDropArea, MediaDropList, can_import,
+from catharsis import catharsis_editor as ce
+from catharsis.catharsis_media_input import (IMAGE_EXTENSIONS, MediaDropArea, MediaDropList, can_import,
                                   image_from_mime, local_paths, supported_file)
-from catharsis_timeline import assignment_summary, media_slots, missing_slots, plan_timings, set_slot, slot_value, timecode
-from catharsis_timeline_view import TimelineStrip
+from catharsis.catharsis_timeline import assignment_summary, media_slots, missing_slots, plan_timings, set_slot, slot_value, timecode
+from catharsis.catharsis_timeline_view import TimelineStrip
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parent.parent
 OUTPUT_DIR = ROOT / "auto_videos" / "output"
 PREVIEW_PATH = ROOT / "auto_videos" / "cache" / "catarsis_preview.mp4"
 PROJECTS_DIR = ROOT / "projects" / "catarsis"
@@ -131,7 +131,7 @@ class _CompositionWorker(QThread):
         self.revision, self.project, self.tasks = revision, project, tasks
 
     def run(self):
-        from catharsis_preview import composition_preview
+        from catharsis.catharsis_preview import composition_preview
         for key, spec, size in self.tasks:
             if self.isInterruptionRequested():
                 return
@@ -771,7 +771,7 @@ class CatharsisTab(QWidget):
         except ImportError:
             pass
         if self._player is None:
-            from catharsis_player import VlcPreviewPlayer
+            from catharsis.catharsis_player import VlcPreviewPlayer
             self._video_widget = QWidget()
             self._video_widget.setStyleSheet("background:black;")
             self.viewer_stack.addWidget(self._video_widget)

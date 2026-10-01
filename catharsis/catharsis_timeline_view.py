@@ -3,7 +3,7 @@ from PyQt6.QtCore import QRectF, Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QPainter, QPen
 from PyQt6.QtWidgets import QWidget
 
-from catharsis_timeline import timecode
+from catharsis.catharsis_timeline import timecode
 
 
 class TimelineStrip(QWidget):

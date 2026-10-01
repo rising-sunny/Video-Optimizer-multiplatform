@@ -26,7 +26,7 @@ from unittest.mock import Mock, patch
 import numpy as np
 from PIL import Image
 
-import catharsis_editor as ce
+from catharsis import catharsis_editor as ce
 
 SCRIPT = {
     "images": [{"file": "a.png"}, {"file": "b.png", "focus": [0.3, 0.6], "zoom": 2.0}, {"file": "c.png"}],

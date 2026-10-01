@@ -10,7 +10,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-import catharsis_editor as ce
+from catharsis import catharsis_editor as ce
 
 
 def composition_preview(project, spec, size=(144, 256)):

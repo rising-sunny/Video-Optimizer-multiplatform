@@ -6,8 +6,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-import catharsis_editor as ce
-from catharsis_timeline import assignment_summary, media_slots, plan_timings, slot_value
+from catharsis import catharsis_editor as ce
+from catharsis.catharsis_timeline import assignment_summary, media_slots, plan_timings, slot_value
 
 
 class TimelinePlanTest(unittest.TestCase):

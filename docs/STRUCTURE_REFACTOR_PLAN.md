@@ -122,7 +122,7 @@ tests/        → los 76 test_*.py
 | `video_region_editor`, `video_region_effects` | |
 | `subtitle_style_preview`, `subtitle_style_preview_dialog` | preview GUI |
 
-### `catharsis/` — formato Catarsis
+### `catharsis/` — formato Catarsis ✅ (Fase 8)
 
 `catharsis_editor`, `catharsis_tab`, `catharsis_media_input`, `catharsis_player`,
 `catharsis_preview`, `catharsis_timeline`, `catharsis_timeline_view`.
@@ -301,6 +301,9 @@ El script se puede re-ejecutar por fase y se revierte con git.
 
 ## Changelog
 
+- **2026-10-01 (Fase 8)** — `catharsis/` con 7 módulos (formato Catarsis; 20 imports
+  reescritos). `__file__`→raíz en `catharsis_editor` (transition_overlays) y `catharsis_tab`
+  (ROOT); shim raíz para el CLI `catharsis_editor`. Suite verde: 1205 tests.
 - **2026-10-01 (Fase 7)** — `pipeline/` con 26 módulos (guión, TTS, imágenes, ensamblaje,
   subtítulos, thumbnails; 163 imports + 39 strings reescritos). `__file__`→raíz en 8 módulos
   (`PROJECT_DIR`, `transition_overlays`, worker Whisper, TTS, cover); `sys.modules` por string
