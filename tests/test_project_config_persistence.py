@@ -28,7 +28,14 @@ import io
 import re
 import unittest
 
-FUENTE = io.open("studio/studio_project_manager.py", encoding="utf-8", errors="replace").read()
+_ARCHIVOS = (
+    "studio/studio_project_manager.py",
+    "studio/project_save_mixin.py",
+    "studio/project_load_mixin.py",
+    "studio/project_thumbnail_state_mixin.py",
+    "studio/project_media_mixin.py",
+)
+FUENTE = "\n".join(io.open(r, encoding="utf-8", errors="replace").read() for r in _ARCHIVOS)
 
 # Opciones que el usuario espera encontrar tal como las dejo.
 CLAVES_ESPERADAS = (

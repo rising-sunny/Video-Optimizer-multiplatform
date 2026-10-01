@@ -89,7 +89,11 @@ class ElProjectManagerLoEscribe(unittest.TestCase):
 
     def test_el_guardado_normal_conserva_publish_results(self):
         import io
-        fuente = io.open("studio/studio_project_manager.py", encoding="utf-8", errors="replace").read()
+        fuente = "\n".join(io.open(r, encoding="utf-8", errors="replace").read() for r in (
+            "studio/studio_project_manager.py",
+            "studio/project_save_mixin.py",
+            "studio/project_load_mixin.py",
+        ))
         self.assertGreaterEqual(fuente.count("project_data['publish_results'] = dict(self.studio_tab.publish_results)"), 2)
         self.assertIn("self.studio_tab.publish_results = dict(project_data.get('publish_results') or {})", fuente)
 

@@ -340,7 +340,7 @@ class Cableado(unittest.TestCase):
 
     def test_la_gui_guarda_y_envia_la_entrada_elegida(self):
         ui = self._src("studio/auto_video_integration_pyqt6.py")
-        projects = self._src("studio/studio_project_manager.py")
+        projects = self._src("studio/studio_project_manager.py") + self._src("studio/project_save_mixin.py")
         handler = self._src("studio/studio_storyboard_handlers.py")
         self.assertIn("self.opening_style_combo = QComboBox()", ui)
         self.assertIn("OpeningStylePreview", ui)
