@@ -397,7 +397,7 @@ def build(topic, out, *, channel=None, seconds=270, editorial=None, approve=Fals
             missing = missing_manual_visuals(sb, out)
             if missing:
                 raise ValueError('Modo manual: faltan imágenes o videos en los segmentos ' + ', '.join(map(str, missing)) + '. Usa Cargar en Studio para agregarlos; no se generarán imágenes automáticamente.')
-        from project_media_paths import prepare_existing_media, resolve_project_media
+        from infra.project_media_paths import prepare_existing_media, resolve_project_media
         if image_provider == 'manual':
             prepare_existing_media(sb, out)
         config = project.get('config') or {}

@@ -19,7 +19,7 @@ segmento que YA apuntaba a ese archivo cambiaba de contenido en silencio.
 import re
 import unittest
 
-from output_naming import build_clip_filename
+from infra.output_naming import build_clip_filename
 
 VID = "dQw4w9WgXcQ"
 TITULO = "Leningrad: the Road of Life"

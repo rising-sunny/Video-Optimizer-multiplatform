@@ -17,7 +17,7 @@ import shutil
 import tempfile
 import unittest
 
-from project_autoload import (
+from infra.project_autoload import (
     NEW_PROJECT_SENTINEL,
     decide_project_to_load,
     list_recent_projects,

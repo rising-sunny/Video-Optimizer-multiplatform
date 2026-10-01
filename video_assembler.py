@@ -12,7 +12,7 @@ from typing import List, Dict, Optional, Tuple
 # ANTES de importar moviepy: sin este shim, moviepy 1.0.3 sobre Pillow >= 10
 # revienta en cada clip.resize() (Image.ANTIALIAS ya no existe) y los efectos
 # de movimiento mueren en silencio. Ver moviepy_pillow_compat.py.
-import moviepy_pillow_compat  # noqa: F401
+from infra import moviepy_pillow_compat  # noqa: F401
 
 # Verificar dependencias
 MOVIEPY_AVAILABLE = False

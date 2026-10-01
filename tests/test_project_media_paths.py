@@ -1,7 +1,7 @@
 import tempfile
 import unittest
 from pathlib import Path
-from project_media_paths import project_directory, prepare_existing_media
+from infra.project_media_paths import project_directory, prepare_existing_media
 
 
 class ProjectMediaPathsTests(unittest.TestCase):

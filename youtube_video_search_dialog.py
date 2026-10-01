@@ -40,7 +40,7 @@ except ImportError:
     YT_DLP_AVAILABLE = False
 
 try:
-    from attribution_manager import get_attribution_manager
+    from infra.attribution_manager import get_attribution_manager
     ATTRIBUTION_AVAILABLE = True
 except ImportError:
     ATTRIBUTION_AVAILABLE = False
@@ -1413,7 +1413,7 @@ class YouTubeVideoSearchDialog(QDialog):
                 # Aplicar recorte si esta habilitado (usando ffmpeg)
                 if crop_enabled and crop_start >= 0 and crop_end > crop_start and crop_end <= video_duration:
                     try:
-                        from output_naming import build_clip_filename
+                        from infra.output_naming import build_clip_filename
 
                         clip_name = build_clip_filename(
                             video_data.get('video_id', ''), video_data.get('title', ''),
@@ -1479,7 +1479,7 @@ class YouTubeVideoSearchDialog(QDialog):
 
                     if reply == QMessageBox.StandardButton.Yes:
                         try:
-                            from output_naming import build_clip_filename
+                            from infra.output_naming import build_clip_filename
 
                             trim_name = build_clip_filename(
                                 video_data.get('video_id', ''), video_data.get('title', ''),
@@ -1562,7 +1562,7 @@ class YouTubeVideoSearchDialog(QDialog):
                             # A su propio archivo: si el loop pisara la fuente,
                             # el siguiente recorte del mismo video partiria de
                             # un video ya repetido.
-                            from output_naming import build_clip_filename
+                            from infra.output_naming import build_clip_filename
 
                             loop_name = build_clip_filename(
                                 video_data.get('video_id', ''), video_data.get('title', ''),

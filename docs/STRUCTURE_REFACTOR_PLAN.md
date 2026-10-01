@@ -192,12 +192,10 @@ tests/        → los 76 test_*.py
 
 | Módulo actual | Nota |
 |---|---|
-| `env_loader`, `video_config` | fundacionales (20 y 14 importadores) |
-| `vast_ai_instance_manager`, `vast_ai_provisioner` | |
-| `_whisper_subprocess_worker`, `worker_context` | Whisper en VPS |
-| `moviepy_pillow_compat`, `attribution_manager` | |
-| `project_autoload`, `project_media_paths`, `project_video_result` | estado/persistencia |
-| `output_naming` | nombrado de salida (compartido) |
+| `output_naming`, `worker_context`, `moviepy_pillow_compat`, `attribution_manager`, `project_autoload`, `project_media_paths`, `project_video_result` | ✅ movidos (Fase 2) |
+| `env_loader`, `video_config` | ⏳ Fase 2b: `env_loader` se envía al VPS plano (`_upload_via_vps`); `video_config` depende de él |
+| `vast_ai_instance_manager`, `vast_ai_provisioner` | ⏳ Fase 2b: `vast_ai_provisioner` es CLI |
+| `_whisper_subprocess_worker` | ⏳ Fase 2b: subprocess worker |
 
 ---
 
@@ -235,7 +233,8 @@ verde. Dentro de cada paquete, el script de migración calcula el orden hoja-pri
 |---|---|---|---|
 | **0. Línea base** | Commitear el WIP (15 modificados + 5 nuevos) + correr suite | — | suite verde + repo limpio |
 | **1. `tests/`** | los 76 `test_*.py` | ≈ 0 | suite verde con `unittest discover` |
-| **2. `infra/`** | `env_loader`, `video_config`, utilidades hoja | bajo | suite verde |
+| **2. `infra/`** | 7 utilidades hoja (`output_naming`, `worker_context`, `moviepy_pillow_compat`, `attribution_manager`, `project_autoload`, `project_media_paths`, `project_video_result`) | bajo | suite verde |
+| **2b. `infra/`** | `env_loader`, `video_config`, `vast_ai_*`, `_whisper_subprocess_worker` | bajo-medio | suite verde + VPS |
 | **3. `ai/`** | clientes + fact-check + prompts | bajo | suite verde |
 | **4. `media/`** | clientes de búsqueda + diálogos | bajo-medio | suite verde |
 | **5. `channel/`** | estrategia + analytics | medio | suite verde |
@@ -304,6 +303,11 @@ El script se puede re-ejecutar por fase y se revierte con git.
 
 ## Changelog
 
+- **2026-10-01 (Fase 2)** — `infra/` con 7 utilidades hoja movidas: `output_naming`,
+  `worker_context`, `moviepy_pillow_compat`, `attribution_manager`, `project_autoload`,
+  `project_media_paths`, `project_video_result` (27 imports reescritos). `env_loader` +
+  `video_config` se difieren a Fase 2b: `env_loader` se envía plano al VPS
+  (`_upload_via_vps`) y `video_config` depende de él. Suite verde: 1205 tests.
 - **2026-10-01 (Fase 1)** — Tests movidos a `tests/` (76 archivos + `tests/__init__.py`).
   Imports entre tests pasaron a `from tests.test_...` (16 en 8 archivos); 5 tests que leían
   fuentes de producción recalcularon la raíz (`__file__` → raíz del repo). Suite verde con

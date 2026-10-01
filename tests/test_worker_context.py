@@ -13,7 +13,7 @@ descartaba. En consola no quedaba rastro.
 
 import unittest
 
-from worker_context import should_accept_worker_result
+from infra.worker_context import should_accept_worker_result
 
 P = r"C:\dev\proj\Bagdad\project.json"
 OTRO = r"C:\dev\proj\Gunnerside\project.json"

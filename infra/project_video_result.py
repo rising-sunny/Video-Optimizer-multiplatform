@@ -1,7 +1,7 @@
 """Resolve the project's committed render instead of a stale GUI reference."""
 import json
 from pathlib import Path
-from project_media_paths import resolve_project_media
+from infra.project_media_paths import resolve_project_media
 
 
 def saved_video_result(project_path):

@@ -18,7 +18,7 @@ import re
 # Image.ANTIALIAS, que Pillow >= 10 elimino. Sin este shim cada efecto levanta
 # AttributeError y los stills quedan congelados. Se importa aca ademas de en
 # video_assembler para que el modulo funcione sea cual sea el orden de imports.
-import moviepy_pillow_compat  # noqa: F401
+from infra import moviepy_pillow_compat  # noqa: F401
 
 
 # Colchon de zoom minimo para cualquier movimiento. Un paneo sobre una imagen

@@ -2,7 +2,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
-from project_video_result import saved_video_result
+from infra.project_video_result import saved_video_result
 
 
 class ProjectVideoResultTests(unittest.TestCase):

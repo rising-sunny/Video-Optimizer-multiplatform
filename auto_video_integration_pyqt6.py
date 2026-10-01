@@ -330,7 +330,7 @@ class AutoVideoStudioTab(QWidget):
         tiraba, con el storyboard ya guardado en disco y todos los botones
         deshabilitados (2026-09-10, "El saqueo de Bagdad").
         """
-        from worker_context import should_accept_worker_result
+        from infra.worker_context import should_accept_worker_result
 
         aceptar, motivo = should_accept_worker_result(
             self._current_worker_project_token,
@@ -1225,7 +1225,7 @@ class AutoVideoStudioTab(QWidget):
         "el usuario pidio empezar de cero" de "el puntero se perdio", y por esa
         confusion la app arrancaba sin proyecto y sin explicar por que.
         """
-        from project_autoload import NEW_PROJECT_SENTINEL
+        from infra.project_autoload import NEW_PROJECT_SENTINEL
 
         self._save_last_project_path(NEW_PROJECT_SENTINEL)
         print("[Project] Proyecto nuevo: no se reabrira el anterior al reiniciar")
@@ -1254,7 +1254,7 @@ class AutoVideoStudioTab(QWidget):
         """Reproduce el último video ensamblado."""
         video_path = None
 
-        from project_video_result import saved_video_result
+        from infra.project_video_result import saved_video_result
         saved = saved_video_result(getattr(self, 'current_project_path', None))
         if saved:
             self.last_generated_video_data = saved

@@ -1,5 +1,5 @@
 """Use the saved Studio selections when rendering a pilot."""
-from project_media_paths import resolve_project_media
+from infra.project_media_paths import resolve_project_media
 
 
 def pilot_render_settings(config, profile, root):

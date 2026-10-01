@@ -1326,7 +1326,7 @@ def assemble_video(storyboard: dict, output_dir: Path,
 
     output_dir = Path(output_dir)
     if strict_existing_visuals:
-        from project_media_paths import prepare_existing_media
+        from infra.project_media_paths import prepare_existing_media
         prepare_existing_media(storyboard, output_dir)
     generator = storyboard.pop("_generator", None)
     manual_bgm = storyboard.pop("_manual_bgm_path", None)

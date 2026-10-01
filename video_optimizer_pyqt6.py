@@ -669,7 +669,7 @@ class VideoOptimizerGUI(QMainWindow, ThumbnailsMixin):
             if not target_widget or not hasattr(target_widget, 'project_manager'):
                 return False
 
-            from project_autoload import decide_project_to_load, list_recent_projects
+            from infra.project_autoload import decide_project_to_load, list_recent_projects
 
             puntero = ""
             last_project_file = Path("last_project_path.txt")

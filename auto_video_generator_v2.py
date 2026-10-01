@@ -2608,7 +2608,7 @@ Reglas:
         if project_hint:
             try:
                 project_hint_path = Path(str(project_hint))
-                from project_media_paths import project_directory
+                from infra.project_media_paths import project_directory
                 project_base_dir = project_directory(project_hint_path)
             except Exception:
                 project_base_dir = None
@@ -3312,7 +3312,7 @@ Reglas:
 
             # El nombre lleva el tema: un timestamp Unix suelto no permite
             # reconocer un video sin abrirlo.
-            from output_naming import build_video_filename
+            from infra.output_naming import build_video_filename
             requested_out = VideoConfig.OUTPUT_DIR / build_video_filename(
                 platform, storyboard_data.get("topic", ""))
             out, using_local_safe_output = _resolve_safe_video_output_path(requested_out)
@@ -3539,7 +3539,7 @@ Reglas:
             return None
         
         # 5. Exportar
-        from output_naming import build_video_filename
+        from infra.output_naming import build_video_filename
         requested_out = VideoConfig.OUTPUT_DIR / build_video_filename(
             platform, storyboard_data.get("topic", ""))
         out, using_local_safe_output = _resolve_safe_video_output_path(requested_out)

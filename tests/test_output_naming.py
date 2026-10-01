@@ -11,7 +11,7 @@ import datetime
 import re
 import unittest
 
-from output_naming import MAX_SLUG_LEN, build_video_filename, slugify_topic
+from infra.output_naming import MAX_SLUG_LEN, build_video_filename, slugify_topic
 
 CUANDO = datetime.datetime(2026, 9, 3, 16, 15, 42)
 

@@ -1433,7 +1433,7 @@ class CatharsisTab(QWidget):
                 self.play_btn.setEnabled(False)
                 self.video_seek.setEnabled(False)
         else:
-            from output_naming import build_video_filename
+            from infra.output_naming import build_video_filename
             out = OUTPUT_DIR / build_video_filename("catarsis", project.get("topic") or "catarsis")
         self._busy(True)
         self.progress.setValue(0)

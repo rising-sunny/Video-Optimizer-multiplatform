@@ -355,7 +355,7 @@ class PilotDialog(QDialog):
         self.editor.setPlainText(json.dumps(result['manifest'], indent=2, ensure_ascii=False))
         self.tab.log(f"Piloto: {result['status']} — {self.out}")
         if result.get('status') == 'assembled' and result.get('video_path'):
-            from project_media_paths import normalize_project_path
+            from infra.project_media_paths import normalize_project_path
             path = self.out / 'project.json'
             if normalize_project_path(getattr(self.tab, 'current_project_path', None)) == normalize_project_path(path):
                 # Restore the committed render, narration timings and button state

@@ -42,7 +42,7 @@ except ImportError:
 
 # Importar attribution manager
 try:
-    from attribution_manager import get_attribution_manager
+    from infra.attribution_manager import get_attribution_manager
     ATTRIBUTION_AVAILABLE = True
 except ImportError:
     ATTRIBUTION_AVAILABLE = False
