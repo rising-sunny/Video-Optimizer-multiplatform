@@ -25,7 +25,7 @@ def get_channel_name(default: str = "this channel") -> str:
 
 # Importar Groq como backend unico
 try:
-    from groq_client import GroqAiClient
+    from ai.groq_client import GroqAiClient
     GROQ_AVAILABLE = True
 except ImportError:
     GroqAiClient = None
@@ -33,7 +33,7 @@ except ImportError:
 
 # Shared tone-profile mapping (single source of truth; also used by storyboard_generator)
 try:
-    from tone_profile import get_tone_profile_for_category
+    from ai.tone_profile import get_tone_profile_for_category
 except ImportError:
     # Defensive fallback so this file still loads if tone_profile.py is missing.
     def get_tone_profile_for_category(category):  # noqa: D401
@@ -42,7 +42,7 @@ except ImportError:
 
 def load_env_file():
     """Cargar manualmente variables desde .env"""
-    env_file = os.path.join(os.path.dirname(__file__), '.env')
+    env_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env')
     if os.path.exists(env_file):
         with open(env_file, 'r') as f:
             for line in f:
@@ -1145,7 +1145,7 @@ State the resolved lens and depth of field. End with: {fmt.prompt_constraint}, p
         raw = (topic or "").strip()
         aliases = []
         try:
-            from research_search import topic_search_queries
+            from ai.research_search import topic_search_queries
             aliases = topic_search_queries(raw)
         except Exception:
             aliases = [raw] if raw else []

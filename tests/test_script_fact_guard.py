@@ -12,7 +12,7 @@ es el error mas caro: es justo lo que la gente recuerda y comenta.
 
 import unittest
 
-import script_fact_guard as fg
+from ai import script_fact_guard as fg
 
 
 class NormalizacionDeNumeros(unittest.TestCase):

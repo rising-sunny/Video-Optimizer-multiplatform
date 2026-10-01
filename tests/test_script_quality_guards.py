@@ -1,12 +1,12 @@
 import unittest
 
-from claude_client import (
+from ai.claude_client import (
     ClaudeAiClient,
     is_llm_refusal,
     minimum_script_words,
     script_is_too_short,
 )
-from research_search import (
+from ai.research_search import (
     _match_is_relevant,
     _relevance_tokens,
     _simplify_query,

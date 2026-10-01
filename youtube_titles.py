@@ -522,7 +522,7 @@ def parse_titles(raw: Any) -> list[str]:
 
 def _default_generate(prompt: str) -> list[str]:
     """Groq en modo JSON; si el modo JSON falla (pasa con los modelos que razonan), en texto."""
-    from groq_client import GroqAiClient
+    from ai.groq_client import GroqAiClient
     client = GroqAiClient()
     if not getattr(client, "client", None):
         return []
@@ -594,7 +594,7 @@ def parse_factcheck(raw: Any) -> dict[int, tuple[bool, str]]:
 
 
 def _default_verify(prompt: str) -> str:
-    from groq_client import GroqAiClient
+    from ai.groq_client import GroqAiClient
     client = GroqAiClient()
     if not getattr(client, "client", None):
         return ""

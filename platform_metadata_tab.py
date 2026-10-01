@@ -25,7 +25,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from groq_client import GroqAiClient
+from ai.groq_client import GroqAiClient
 
 
 class MetadataGenerationWorker(QThread):

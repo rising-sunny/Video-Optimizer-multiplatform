@@ -36,7 +36,7 @@ except ImportError:
 
 RESEARCH_SEARCH_AVAILABLE = False
 try:
-    from research_search import search_research_context, RESEARCH_AVAILABLE
+    from ai.research_search import search_research_context, RESEARCH_AVAILABLE
     RESEARCH_SEARCH_AVAILABLE = RESEARCH_AVAILABLE
 except ImportError:
     pass
@@ -45,7 +45,7 @@ except ImportError:
 GOOGLE_SEARCH_AVAILABLE = False
 if not RESEARCH_SEARCH_AVAILABLE:
     try:
-        from google_search_api import search_google_trends
+        from ai.google_search_api import search_google_trends
         GOOGLE_SEARCH_AVAILABLE = True
     except ImportError:
         GOOGLE_SEARCH_AVAILABLE = False
@@ -68,7 +68,7 @@ def get_channel_name(default: str = "this channel") -> str:
 
 def _import_script_quality_guards():
     try:
-        from claude_client import is_llm_refusal, script_is_too_short, minimum_script_words
+        from ai.claude_client import is_llm_refusal, script_is_too_short, minimum_script_words
         return is_llm_refusal, script_is_too_short, minimum_script_words
     except Exception:
         return (
@@ -201,7 +201,7 @@ def script_matches_topic(topic: str, title: str, script: str):
     guion en ingles no comparte una sola palabra y marcaria todo como error.
     """
     try:
-        from research_search import _relevance_tokens
+        from ai.research_search import _relevance_tokens
     except Exception:
         return True, "sin validador de tokens disponible"
 
@@ -831,7 +831,7 @@ class StoryboardGenerator:
         'unchecked' y la subida vuelve a verificar.
         """
         try:
-            from script_fact_check import fact_check_scenes, format_report, default_rewriter
+            from ai.script_fact_check import fact_check_scenes, format_report, default_rewriter
         except Exception as exc:
             self.log(f"   [WARN] Verificacion de hechos no disponible: {exc}")
             return scenes, None
@@ -1119,7 +1119,7 @@ SCRIPT:
         Lives here for backward-compatible call sites; the canonical mapping is in
         tone_profile.py so claude_client.py shares it.
         """
-        from tone_profile import get_tone_profile_for_category
+        from ai.tone_profile import get_tone_profile_for_category
         return get_tone_profile_for_category(category)
 
     @staticmethod
@@ -1735,7 +1735,7 @@ REGLAS CRÍTICAS:
         # (rechazo, largo, tema) no miran los datos, y el canal se apoya en
         # cifras: un numero inventado en el gancho es el error mas caro.
         try:
-            from script_fact_guard import audit_script, format_report
+            from ai.script_fact_guard import audit_script, format_report
 
             texto_para_datos = " ".join(scene_narration_text(s) for s in scenes)
             informe = audit_script(texto_para_datos, research_context)
@@ -2976,7 +2976,7 @@ Sin explicaciones antes ni después. Solo JSON válido."""
         # --- 4.5. Corregir Errores Comunes de TranscripciÃ³n ---
         self.log(f"ðŸ”§ Corrigiendo errores comunes de transcripciÃ³n...")
         try:
-            from text_correction_engine import TextCorrectionEngine
+            from ai.text_correction_engine import TextCorrectionEngine
             corrector = TextCorrectionEngine()
             segments = corrector.correct_segments(segments)
         except ImportError:
@@ -3042,7 +3042,7 @@ Sin explicaciones antes ni después. Solo JSON válido."""
                         retry_segments = self.subtitle_gen.transcribe_audio(retry_audio_path, language=language)
                         if retry_segments:
                             try:
-                                from text_correction_engine import TextCorrectionEngine
+                                from ai.text_correction_engine import TextCorrectionEngine
                                 corrector = TextCorrectionEngine()
                                 retry_segments = corrector.correct_segments(retry_segments)
                             except Exception:

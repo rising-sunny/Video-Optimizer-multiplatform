@@ -142,7 +142,7 @@ from timeline_video_widget import VideoTimelineWidget
 from timeline_segment_widget import TimelineSegment, GroupedSegmentsWidget
 from timeline_segment_editor import SegmentEditor
 try:
-    from text_correction_engine import TextCorrectionEngine
+    from ai.text_correction_engine import TextCorrectionEngine
     TEXT_CORRECTION_AVAILABLE = True
 except ImportError:
     TextCorrectionEngine = None
@@ -589,7 +589,7 @@ class TimelineEditorWidget(QWidget):
         if not (0 <= segment_index < len(self.segments)):
             return
         try:
-            import visual_art_direction as vad
+            from ai import visual_art_direction as vad
         except Exception as exc:
             QMessageBox.warning(self, "Prompt de video", f"No disponible: {exc}")
             return
@@ -610,7 +610,7 @@ class TimelineEditorWidget(QWidget):
     def _ensure_art_view(self, indices):
         """(vad, vista, aspecto, estilo) con la direccion de arte al dia para esos segmentos, o None."""
         try:
-            import visual_art_direction as vad
+            from ai import visual_art_direction as vad
         except Exception as exc:
             print(f"[TimelineEditor] Direccion de arte no disponible: {exc}")
             return None
@@ -1635,7 +1635,7 @@ class TimelineEditorWidget(QWidget):
         if not abs_path or not os.path.isfile(abs_path):
             return
         try:
-            from gemini_watermark_remover import remove_gemini_watermark
+            from ai.gemini_watermark_remover import remove_gemini_watermark
             remove_gemini_watermark(abs_path)
             print(f"[TimelineEditor] Watermark Gemini removido del grupo: {os.path.basename(abs_path)}")
             self._refresh_media_widgets(list(indices), {idx: image_path for idx in indices})
@@ -2007,19 +2007,19 @@ class TimelineEditorWidget(QWidget):
         provider = str(provider_key or "").strip().lower()
         try:
             if provider == "fal":
-                from fal_ai_client import FalAiClient
+                from ai.fal_ai_client import FalAiClient
                 client = FalAiClient()
                 if getattr(client, "client_available", False):
                     return True, ""
                 return False, "Configura FAL_KEY o FAL_API_KEY en tu archivo .env para usar Fal.ai."
             if provider == "google_ai":
-                from google_ai_image_client import GoogleAiImageClient
+                from ai.google_ai_image_client import GoogleAiImageClient
                 client = GoogleAiImageClient()
                 if getattr(client, "client_available", False):
                     return True, ""
                 return False, "Configura GEMINI_API_KEY/GOOGLE_API_KEY en tu archivo .env para usar Google AI."
 
-            from recraft_client import RecraftClient
+            from ai.recraft_client import RecraftClient
             client = RecraftClient()
             if getattr(client, "api_key", None):
                 return True, ""
@@ -2656,7 +2656,7 @@ class TimelineEditorWidget(QWidget):
             return self._segment_regen_ai_client
 
         try:
-            from gemini_ai_client import GeminiAiClient
+            from ai.gemini_ai_client import GeminiAiClient
             fallback_client = GeminiAiClient()
             if fallback_client and hasattr(fallback_client, "_generate"):
                 self._segment_regen_ai_client = fallback_client
@@ -5098,7 +5098,7 @@ Next segment:
         if not abs_path or not os.path.isfile(abs_path):
             return
         try:
-            from gemini_watermark_remover import remove_gemini_watermark
+            from ai.gemini_watermark_remover import remove_gemini_watermark
             remove_gemini_watermark(abs_path)
             print(f"[TimelineEditor] Watermark de Gemini removido: {os.path.basename(abs_path)}")
         except Exception as e:

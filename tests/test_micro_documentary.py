@@ -66,7 +66,7 @@ class MicroTests(unittest.TestCase):
         self.assertEqual(client._generate.call_count, 3)
 
     def test_groq_json_mode_rejects_token_truncation_and_falls_back(self):
-        from groq_client import GroqAiClient
+        from ai.groq_client import GroqAiClient
         client = GroqAiClient.__new__(GroqAiClient)
         client.client = MagicMock()
         client.model_cursors = {}

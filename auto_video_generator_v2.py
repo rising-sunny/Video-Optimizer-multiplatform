@@ -7,7 +7,7 @@ import requests
 from pathlib import Path
 from datetime import datetime
 import json
-from ai_factory import AIFactory
+from ai.ai_factory import AIFactory
 import sys
 
 
@@ -179,7 +179,7 @@ except Exception as e:
 
 # --- MÃ“DULOS DEL PROYECTO (IA y Utilidades) ---
 try:
-    from gemini_ai_client import GeminiAiClient
+    from ai.gemini_ai_client import GeminiAiClient
     GEMINI_AVAILABLE = True
 except ImportError:
     GEMINI_AVAILABLE = False
@@ -206,7 +206,7 @@ except ImportError as e:
     print(f"[!] music_recommender.py no disponible: {e}")
 
 try:
-    from google_search_api import search_google_trends
+    from ai.google_search_api import search_google_trends
     GOOGLE_SEARCH_AVAILABLE = True
 except ImportError:
     GOOGLE_SEARCH_AVAILABLE = False
@@ -228,7 +228,7 @@ except ImportError:
 
 
 try:
-    from recraft_client import RecraftClient
+    from ai.recraft_client import RecraftClient
     RECRAFT_AVAILABLE = True
     print("[OK] Recraft client cargado")
 except ImportError:
@@ -237,7 +237,7 @@ except ImportError:
 
 # Importar clientes de Google Images y Wikimedia
 try:
-    from google_images_client import GoogleImagesClient
+    from ai.google_images_client import GoogleImagesClient
     GOOGLE_IMAGES_AVAILABLE = True
     print("[OK] Google Images client cargado")
 except ImportError:
@@ -253,7 +253,7 @@ except ImportError:
     print("[!] wikimedia_client.py no encontrado. La busqueda de imagenes en Wikimedia no funcionara.")
 
 try:
-    from google_ai_image_client import GoogleAiImageClient
+    from ai.google_ai_image_client import GoogleAiImageClient
     GOOGLE_AI_IMAGE_AVAILABLE = True
     print("[OK] Google AI Image client cargado")
 except ImportError:
@@ -261,7 +261,7 @@ except ImportError:
     print("[!] google_ai_image_client.py no encontrado. Google AI Image no funcionara.")
 
 try:
-    from stability_client import StabilityClient
+    from ai.stability_client import StabilityClient
     STABILITY_AVAILABLE = True
     print("[OK] Stability AI client cargado")
 except ImportError:
@@ -269,7 +269,7 @@ except ImportError:
     print("[!] stability_client.py no encontrado. Stability AI no funcionara.")
 
 try:
-    from comfyui_image_client import ComfyUiImageClient
+    from ai.comfyui_image_client import ComfyUiImageClient
     COMFYUI_AVAILABLE = True
     print("[OK] ComfyUI image client cargado")
 except ImportError:
@@ -489,7 +489,7 @@ except ImportError:
 # ========== IMPORTAR PROMPT PROCESSOR DESDE MÃ“DULO SEPARADO ==========
 # PromptProcessor ha sido movido a prompt_processor.py
 try:
-    from prompt_processor import PromptProcessor
+    from ai.prompt_processor import PromptProcessor
 except ImportError:
     print("âš ï¸ prompt_processor.py no encontrado, PromptProcessor no disponible")
     PromptProcessor = None
@@ -633,7 +633,7 @@ class AutoVideoGenerator:
         self.fal_image_client = None
         self.fal_video_client = None
         try:
-            from fal_ai_client import build_fal_clients, is_fal_configured
+            from ai.fal_ai_client import build_fal_clients, is_fal_configured
             if is_fal_configured():
                 img_c, vid_c = build_fal_clients(log_callback=self.log)
                 self.fal_image_client = img_c

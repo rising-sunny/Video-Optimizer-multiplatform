@@ -16,7 +16,7 @@ FAL_API_KEY) y se apoyan en el SDK oficial `fal_client`.
 
 Uso tipico (Image-to-Video automatico):
 
-    from fal_ai_client import FalAiImageClient, FalAiVideoClient
+    from ai.fal_ai_client import FalAiImageClient, FalAiVideoClient
 
     img = FalAiImageClient()
     vid = FalAiVideoClient()

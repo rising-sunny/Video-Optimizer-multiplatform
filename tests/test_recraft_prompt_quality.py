@@ -1,7 +1,7 @@
 import unittest
 
 from image_generation_manager import ImageGenerationManager
-from recraft_client import RecraftClient
+from ai.recraft_client import RecraftClient
 
 
 class RecraftPromptQualityTests(unittest.TestCase):
@@ -64,7 +64,7 @@ class RecraftPromptQualityTests(unittest.TestCase):
     def test_negative_prompt_is_not_cut_mid_term(self):
         """El recorte por caracteres dejaba fragmentos como "modern" (de
         "modern clothing"), que no sirven y pueden confundir al modelo."""
-        from recraft_client import RecraftClient
+        from ai.recraft_client import RecraftClient
         negative = self.manager._build_negative_prompt(
             "Nubian priests before the pyramids of Meroe in 300 BC"
         )

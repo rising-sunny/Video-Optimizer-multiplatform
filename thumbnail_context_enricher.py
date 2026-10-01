@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Optional
 from thumbnail_formats import LANDSCAPE_16_9, resolve_format
 
 try:
-    from research_search import RESEARCH_AVAILABLE, search_research_context
+    from ai.research_search import RESEARCH_AVAILABLE, search_research_context
 except Exception:
     RESEARCH_AVAILABLE = False
     search_research_context = None

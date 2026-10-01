@@ -581,17 +581,17 @@ def _cooling(name: str) -> bool:
 
 
 def gemini_judge(prompt: str, model: Optional[str] = None) -> Tuple[str, List[Dict]]:
-    from gemini_vision import ask_grounded
+    from ai.gemini_vision import ask_grounded
     return ask_grounded(prompt, model=model)
 
 
 def gemini_plain_judge(prompt: str, model: Optional[str] = None) -> Tuple[str, List[Dict]]:
-    from gemini_vision import ask_images
+    from ai.gemini_vision import ask_images
     return ask_images(prompt, [], model=model, json_mode=True, timeout=150), []
 
 
 def groq_judge(prompt: str) -> Tuple[str, List[Dict]]:
-    from groq_client import GroqAiClient
+    from ai.groq_client import GroqAiClient
     client = GroqAiClient()
     # 8000: gpt-oss-120b gasta tokens razonando y con 4000 la respuesta llegaba truncada.
     raw = client._generate(prompt, max_tokens=8000, task_type="script_quality", json_mode=True)
@@ -685,7 +685,7 @@ def default_rewriter(fallback: Optional[Callable[[str], Any]] = None,
                     _UNAVAILABLE["rewrite:claude-cli"] = time.time()
                 log(f"   [Hechos] reescritura con Claude CLI no disponible: {' '.join(str(exc).split())[:140]}")
         if os.getenv("GEMINI_API_KEY"):
-            from gemini_vision import ask_images
+            from ai.gemini_vision import ask_images
             for model in _gemini_models():
                 name = f"rewrite:{model}"
                 if _cooling(name):
@@ -699,7 +699,7 @@ def default_rewriter(fallback: Optional[Callable[[str], Any]] = None,
         if fallback:
             return fallback(prompt)
         if os.getenv("GROQ_API_KEY"):
-            from groq_client import GroqAiClient
+            from ai.groq_client import GroqAiClient
             return GroqAiClient()._generate(prompt, max_tokens=8000, task_type="script_quality",
                                             json_mode=True)
         return None

@@ -14,7 +14,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-import script_fact_check as sfc
+from ai import script_fact_check as sfc
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -662,7 +662,7 @@ class ElJuezClaudeCLI(Base):
     def test_rewriter_tries_claude_first(self):
         with mock.patch.dict(os.environ, {"GEMINI_API_KEY": "g", "FACT_CHECK_CLAUDE": "1"}), \
                 mock.patch.object(sfc, "run_claude_cli", return_value='{"scenes": []}') as cli, \
-                mock.patch("gemini_vision.ask_images") as gemini:
+                mock.patch("ai.gemini_vision.ask_images") as gemini:
             groq = mock.Mock(return_value="groq")
             out = sfc.default_rewriter(fallback=groq, log=lambda m: None)("prompt")
         self.assertEqual(out, '{"scenes": []}')

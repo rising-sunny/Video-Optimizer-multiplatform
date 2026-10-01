@@ -409,14 +409,14 @@ def negative_prompt(shot: Dict, bible: Dict) -> str:
 def default_llm(log: Callable = print) -> Callable[[str], Any]:
     """Gemini (sabe historia y escribe bien) -> Groq. Salta modelos sin cuota por un rato."""
     try:
-        from script_fact_check import _gemini_models, _cooling, _is_capacity_error, _UNAVAILABLE
+        from ai.script_fact_check import _gemini_models, _cooling, _is_capacity_error, _UNAVAILABLE
     except Exception:
         _gemini_models, _cooling, _is_capacity_error, _UNAVAILABLE = (lambda: [], lambda n: False,
                                                                       lambda e: False, {})
 
     def ask(prompt: str) -> Any:
         if os.getenv("GEMINI_API_KEY"):
-            from gemini_vision import ask_images
+            from ai.gemini_vision import ask_images
             for model in _gemini_models():
                 name = f"art:{model}"
                 if _cooling(name):
@@ -434,7 +434,7 @@ def default_llm(log: Callable = print) -> Callable[[str], Any]:
                         log(f"   [Arte] {model} no disponible: {' '.join(text.split())[:100]}")
                         break
         if os.getenv("GROQ_API_KEY"):
-            from groq_client import GroqAiClient
+            from ai.groq_client import GroqAiClient
             return GroqAiClient()._generate(prompt, max_tokens=6000, task_type="script_quality", json_mode=True)
         return None
     return ask

@@ -249,7 +249,7 @@ def review_relevance(videos, *, category="", use_ai=True, log=print):
     if not use_ai or not videos:
         return videos
     try:
-        from groq_client import GroqAiClient
+        from ai.groq_client import GroqAiClient
         client = GroqAiClient()
         if not getattr(client, "client", None):
             return videos
@@ -282,7 +282,7 @@ def discover_subjects(videos, *, category="", language="en", use_ai=True, log=pr
     subjects = []
     if use_ai and videos:
         try:
-            from groq_client import GroqAiClient
+            from ai.groq_client import GroqAiClient
             client = GroqAiClient()
             if getattr(client, "client", None):
                 data = [{"id": i, "title": v["snippet"]["title"], "channel": v["snippet"].get("channelTitle", "")}

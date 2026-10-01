@@ -31,13 +31,13 @@ except ImportError:
     print("️ pytrends no instalado. pip install pytrends")
 
 try:
-    from serp_api_client import SerpApiClient, SERP_API_AVAILABLE
+    from ai.serp_api_client import SerpApiClient, SERP_API_AVAILABLE
 except ImportError:
     SERP_API_AVAILABLE = False
     SerpApiClient = None
 
 try:
-    from groq_client import GroqAiClient
+    from ai.groq_client import GroqAiClient
 except ImportError:
     GroqAiClient = None
 

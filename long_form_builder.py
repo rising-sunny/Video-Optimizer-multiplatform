@@ -302,7 +302,7 @@ def build_long_form(
     _log(f"target ~{minutes} min -> {n_chapters} chapters x {paras_per_chapter} paragraphs "
          f"(word budget ~{word_budget})")
 
-    from groq_client import GroqAiClient
+    from ai.groq_client import GroqAiClient
     client = GroqAiClient()
     if not getattr(client, "client", None):
         raise RuntimeError("Groq client not available (check GROQ_API_KEY)")

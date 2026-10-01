@@ -113,7 +113,7 @@ class ElTitularUnaSolaVez(unittest.TestCase):
     def test_title_directive_and_negative_say_the_headline_appears_once(self):
         hook, design, clean, _ = parse_art_response(art_response(hook="9,000", scene=AGINCOURT_REAL))
         self.assertIn("the headline appears ONLY ONCE", compile_title(hook, SHORT_9_16, design))
-        from claude_client import ClaudeAiClient
+        from ai.claude_client import ClaudeAiClient
         client = ClaudeAiClient.__new__(ClaudeAiClient)
         with mock.patch.object(ClaudeAiClient, "_generate",
                                return_value=art_response(hook="9,000", scene=AGINCOURT_REAL)) as gen:
@@ -127,7 +127,7 @@ class ElTitularUnaSolaVez(unittest.TestCase):
 
 class ElSuperPromptNoSeCae(unittest.TestCase):
     def test_a_stray_typography_word_no_longer_leaves_the_user_without_a_prompt(self):
-        from claude_client import ClaudeAiClient
+        from ai.claude_client import ClaudeAiClient
         client = ClaudeAiClient.__new__(ClaudeAiClient)
         reply = art_response(hook="MUDDY STAKES", scene=SCENE + ", bold serif lettering space at the top")
         with mock.patch.object(ClaudeAiClient, "_generate", return_value=reply) as gen:

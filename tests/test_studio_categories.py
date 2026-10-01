@@ -10,11 +10,11 @@ from PyQt6.QtWidgets import QApplication, QComboBox, QWidget
 
 from channel_profiles import DEFAULT_CHANNEL, select_channel
 from channel_strategy import get_channel_strategy, get_all_category_names
-from claude_client import ClaudeAiClient
+from ai.claude_client import ClaudeAiClient
 from storyboard_generator import StoryboardGenerator
 from studio_categories import MYSTERY_CATEGORY, get_studio_category_names, mystery_editorial_instructions
 from studio_channel_controls import set_editorial_channel, sync_editorial_before_writing
-from tone_profile import get_tone_profile_for_category
+from ai.tone_profile import get_tone_profile_for_category
 
 
 class MysteryEditorialTests(unittest.TestCase):

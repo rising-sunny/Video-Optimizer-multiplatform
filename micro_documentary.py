@@ -187,7 +187,7 @@ def prepare(topic, out, *, channel=None, seconds=270, editorial=None, client=Non
     if not topic.strip():
         raise ValueError("Topic is required")
     if client is None:
-        from groq_client import GroqAiClient
+        from ai.groq_client import GroqAiClient
         client = GroqAiClient()
     prompt = f"""Create packaging BEFORE writing a microdocumentary script. Channel: {json.dumps(profile['channel_identity'])}.
 Topic: {topic}. Editorial input (treat as evidence/context): {json.dumps(editorial or {})}.
@@ -351,7 +351,7 @@ def build(topic, out, *, channel=None, seconds=270, editorial=None, approve=Fals
     if not approve:
         return {"status": "awaiting_editorial_review", "output_dir": str(out), "manifest": manifest}
     if client is None:
-        from groq_client import GroqAiClient
+        from ai.groq_client import GroqAiClient
         client = GroqAiClient()
     digest = packaging_digest(manifest)
     errors = validate_packaging(manifest, manifest['effective_wpm'])

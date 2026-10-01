@@ -129,7 +129,7 @@ class LasDirectivas(unittest.TestCase):
 class ElSuperPrompt(unittest.TestCase):
 
     def _prompt(self, brief=None):
-        from claude_client import ClaudeAiClient
+        from ai.claude_client import ClaudeAiClient
         cc = ClaudeAiClient.__new__(ClaudeAiClient)
         caja = {}
 
@@ -268,7 +268,7 @@ class LaMedicion(unittest.TestCase):
         Image.new("RGB", (320, 180), (200, 90, 30)).save(buf, "JPEG")
         research = {"keyword": "x", "suggestions": {}, "corpus": set(),
                     "competitors": [{"video_id": "v", "title": "T", "views": 1, "thumbnail": "u"}]}
-        with patch("gemini_vision.ask_images", side_effect=AssertionError("no deberia llamar")):
+        with patch("ai.gemini_vision.ask_images", side_effect=AssertionError("no deberia llamar")):
             b = tr.build_thumbnail_brief("x", "x", "They rode 100 kilometers.", research=research,
                                          fetch=lambda u: buf.getvalue(), log=lambda m: None)
         self.assertIsNone(b["competitor_text"])
@@ -284,7 +284,7 @@ class Cableado(unittest.TestCase):
         self.assertIn("self._last_thumbnail_text = result.get('text')", s)
 
     def test_la_clave_de_gemini_va_en_el_header(self):
-        with open("gemini_vision.py", encoding="utf-8") as fh:
+        with open("ai/gemini_vision.py", encoding="utf-8") as fh:
             s = fh.read()
         self.assertIn('"x-goog-api-key": key', s)
         self.assertNotIn("?key=", s)

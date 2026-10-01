@@ -214,8 +214,8 @@ class ElCableado(unittest.TestCase):
         # Regresion: "Seleccionar Musica" con recorte -> "cannot access local variable 'shutil'".
         files = ["music_browser_dialog.py", "music_recommender.py", "music_license.py",
                  "auto_video_integration_pyqt6.py", "timeline_editor_widget.py", "storyboard_generator.py",
-                 "daily_short_pipeline.py", "auto_video_generator_v2.py", "script_fact_check.py",
-                 "visual_art_direction.py", "facebook_uploader.py", "instagram_uploader.py", "youtube_uploader.py"]
+                 "daily_short_pipeline.py", "auto_video_generator_v2.py", "ai/script_fact_check.py",
+                 "ai/visual_art_direction.py", "facebook_uploader.py", "instagram_uploader.py", "youtube_uploader.py"]
         problems = [p for f in files for p in shadowed_imports(ROOT / f)]
         self.assertEqual(problems, [])
 

@@ -12,7 +12,7 @@ nada mas que aparecer en el prompt.
 
 import unittest
 
-from tone_profile import (PROFILE_DOCUMENTARY, PROFILE_DRAMATIC_FACTUAL, PROFILE_MYSTERY,
+from ai.tone_profile import (PROFILE_DOCUMENTARY, PROFILE_DRAMATIC_FACTUAL, PROFILE_MYSTERY,
                           get_tone_profile_for_category)
 
 

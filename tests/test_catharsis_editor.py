@@ -277,7 +277,7 @@ class CardsTest(unittest.TestCase):
         client = Mock()
         client._generate.side_effect = [None, self.COMPLETE]
         log = Mock()
-        with patch('ai_factory.AIFactory.get_instance') as factory:
+        with patch('ai.ai_factory.AIFactory.get_instance') as factory:
             factory.return_value.get_llm_client.return_value = client
             cards = ce.write_cards("Trinity", check=False, log=log)
         self.assertEqual(len(cards["lines"]), 7)
@@ -315,7 +315,7 @@ class CardsTest(unittest.TestCase):
 
     def test_fallo_final_limitado_no_verifica_tarjetas_incompletas(self):
         generate = Mock(return_value=None)
-        with patch('script_fact_check.fact_check_scenes') as check:
+        with patch('ai.script_fact_check.fact_check_scenes') as check:
             with self.assertRaisesRegex(RuntimeError, "tras dos intentos"):
                 ce.write_cards("Trinity", generate_fn=generate, log=lambda m: None)
             check.assert_not_called()
@@ -349,7 +349,7 @@ class CardsTest(unittest.TestCase):
             fixed[1] = "The corrected date."
             return fixed, {"status": "verified", "remaining": []}
         generate = Mock(side_effect=[self.COMPLETE, '{"issues": []}'])
-        with patch('script_fact_check.fact_check_scenes', side_effect=fact_check):
+        with patch('ai.script_fact_check.fact_check_scenes', side_effect=fact_check):
             cards = ce.write_cards("Trinity", "narrator", generate_fn=generate, log=lambda m: None)
         self.assertNotIn("The corrected date.", generate.call_args.args[0])
         self.assertEqual(cards["lines"][0], "July 16, 1945.")
@@ -360,7 +360,7 @@ class CardsTest(unittest.TestCase):
         responses = [self.COMPLETE, '{"issues": ["Opening is disconnected from final"]}',
                      self.COMPLETE, '{"issues": []}']
         generate = Mock(side_effect=responses)
-        with patch('script_fact_check.fact_check_scenes', side_effect=lambda texts, *a, **k:
+        with patch('ai.script_fact_check.fact_check_scenes', side_effect=lambda texts, *a, **k:
                    (texts, {"status": "verified"})) as check:
             ce.write_cards("Trinity", "narrator", generate_fn=generate, log=lambda m: None)
         self.assertEqual(check.call_count, 2)
@@ -369,7 +369,7 @@ class CardsTest(unittest.TestCase):
     def test_fallo_editorial_no_se_presenta_como_exito(self):
         review = '{"issues": ["Voice changes after death"]}'
         generate = Mock(side_effect=[self.COMPLETE, review, self.COMPLETE, review])
-        with patch('script_fact_check.fact_check_scenes', side_effect=lambda texts, *a, **k:
+        with patch('ai.script_fact_check.fact_check_scenes', side_effect=lambda texts, *a, **k:
                    (texts, {"status": "verified"})):
             cards = ce.write_cards("Trinity", generate_fn=generate, log=lambda m: None)
         self.assertEqual(cards["narrative_review"]["status"], "needs_review")
@@ -378,7 +378,7 @@ class CardsTest(unittest.TestCase):
 
     def test_revision_ilegible_no_aprueba_tarjetas(self):
         generate = Mock(side_effect=[self.COMPLETE, 'ERROR: truncated', 'ERROR: truncated'])
-        with patch('script_fact_check.fact_check_scenes', side_effect=lambda texts, *a, **k:
+        with patch('ai.script_fact_check.fact_check_scenes', side_effect=lambda texts, *a, **k:
                    (texts, {"status": "verified"})):
             with self.assertRaisesRegex(RuntimeError, 'revision narrativa'):
                 ce.write_cards("Trinity", generate_fn=generate, log=lambda m: None)
@@ -391,7 +391,7 @@ class CardsTest(unittest.TestCase):
             self.assertFalse(kwargs["repair"])
             return texts, next(reports)
         generate = Mock(side_effect=[self.COMPLETE, '{"issues": []}', self.COMPLETE, '{"issues": []}'])
-        with patch('script_fact_check.fact_check_scenes', side_effect=fact_check):
+        with patch('ai.script_fact_check.fact_check_scenes', side_effect=fact_check):
             ce.write_cards("Trinity", "character", "es", generate_fn=generate, log=lambda m: None)
         repair_prompt = generate.call_args_list[2].args[0]
         self.assertIn("No foreknowledge", repair_prompt)

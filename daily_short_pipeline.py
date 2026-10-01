@@ -1193,7 +1193,7 @@ def prepare_short_draft(topic: str = None, voice_id: str = None,
     """Crea un draft persistente listo para generar imágenes más tarde."""
     output_dir = Path(output_dir) if output_dir else create_output_dir()
 
-    from ai_factory import AIFactory
+    from ai.ai_factory import AIFactory
 
     ai_client = AIFactory.get_instance().get_llm_client()
     used_titles = get_used_titles()
@@ -1470,20 +1470,20 @@ def generate_thumbnail(storyboard: dict, output_dir: Path) -> str:
 
     try:
         from thumbnail_pipeline import ThumbnailPipeline
-        from groq_client import GroqAiClient
+        from ai.groq_client import GroqAiClient
 
         groq = GroqAiClient()
 
         # Intentar cargar clientes de imagen disponibles
         recraft_client = None
         try:
-            from recraft_client import RecraftClient
+            from ai.recraft_client import RecraftClient
             recraft_client = RecraftClient()
         except Exception:
             pass
         comfyui_image_client = None
         try:
-            from comfyui_image_client import ComfyUiImageClient
+            from ai.comfyui_image_client import ComfyUiImageClient
             comfyui_image_client = ComfyUiImageClient(log_callback=lambda msg: log(msg, "INFO"))
         except Exception:
             pass
@@ -1712,7 +1712,7 @@ def _generate_longform_youtube_metadata(storyboard: dict, output_dir: Path,
     chapters_block = build_youtube_chapters(storyboard)
 
     try:
-        from groq_client import GroqAiClient
+        from ai.groq_client import GroqAiClient
         groq = GroqAiClient()
         if not getattr(groq, "client", None):
             raise RuntimeError("Groq no disponible")
@@ -1817,7 +1817,7 @@ def generate_youtube_metadata(storyboard: dict, output_dir: Path, used_titles: l
         used_titles = []
 
     try:
-        from groq_client import GroqAiClient
+        from ai.groq_client import GroqAiClient
         groq = GroqAiClient()
         if not groq.client:
             raise RuntimeError("Groq no disponible")
@@ -1925,7 +1925,7 @@ def generate_facebook_metadata(storyboard: dict, output_dir: Path,
     log("Generando metadata para Facebook Reel...", "STEP")
 
     try:
-        from groq_client import GroqAiClient
+        from ai.groq_client import GroqAiClient
         groq = GroqAiClient()
         if not groq.client:
             raise RuntimeError("Groq no disponible")
@@ -1981,7 +1981,7 @@ def generate_instagram_metadata(storyboard: dict, output_dir: Path, youtube_meta
     log("Generando metadata para Instagram Reel...", "STEP")
 
     try:
-        from groq_client import GroqAiClient
+        from ai.groq_client import GroqAiClient
         groq = GroqAiClient()
         if not groq.client:
             raise RuntimeError("Groq no disponible")
@@ -2413,7 +2413,7 @@ def upload_to_x_pipeline(output_dir: Path, youtube_url: str = None) -> bool:
         title = meta.get("title", "Nuevo Video")
         description = meta.get("description", "")
         # Generar texto dinámico con LLM
-        from groq_client import GroqAiClient
+        from ai.groq_client import GroqAiClient
         groq = GroqAiClient()
         if groq.client:
             prompt = f"""You are a master social media copywriter for a dark historical mystery channel.
@@ -2483,7 +2483,7 @@ def run_pipeline(topic: str = None, voice_id: str = None, upload: bool = False,
 
     # ── Inicializar IA ────────────────────────────────────────────────
     log("Inicializando clientes de IA...", "STEP")
-    from ai_factory import AIFactory
+    from ai.ai_factory import AIFactory
     ai_client = AIFactory.get_instance().get_llm_client()
 
     # ── Crear directorio de salida ────────────────────────────────────
@@ -2581,7 +2581,7 @@ def run_pipeline(topic: str = None, voice_id: str = None, upload: bool = False,
     # Nada con afirmaciones falsas o inventadas se sube (Trafalgar 2026-09-23).
     if upload:
         try:
-            from script_fact_check import upload_gate
+            from ai.script_fact_check import upload_gate
             facts_ok, _fc_report, _fc_msg = upload_gate(storyboard, log=lambda m: log(m, "INFO"))
             save_storyboard(output_dir, storyboard)   # deja el informe junto al proyecto
             if facts_ok:

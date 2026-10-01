@@ -280,7 +280,7 @@ def _default_text_vision():
     if str(os.getenv("THUMBNAIL_TEXT_RESEARCH", "1")).strip().lower() in ("0", "false", "no", "off"):
         return None
     try:
-        import gemini_vision
+        from ai import gemini_vision
     except ImportError:
         return None
     if not gemini_vision.available():

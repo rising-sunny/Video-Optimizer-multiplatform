@@ -13,7 +13,7 @@ import json
 load_dotenv()
 
 try:
-    from google_search_api import GOOGLE_API_KEY
+    from ai.google_search_api import GOOGLE_API_KEY
     YOUTUBE_API_AVAILABLE = True
 except ImportError:
     YOUTUBE_API_AVAILABLE = False
@@ -26,13 +26,13 @@ except ImportError:
     TRENDS_AVAILABLE = False
 
 try:
-    from gemini_ai_client import GeminiAiClient
+    from ai.gemini_ai_client import GeminiAiClient
     GEMINI_AVAILABLE = True
 except ImportError:
     GEMINI_AVAILABLE = False
 
 try:
-    from serp_api_client import SerpApiClient, SERP_API_AVAILABLE
+    from ai.serp_api_client import SerpApiClient, SERP_API_AVAILABLE
 except ImportError:
     SERP_API_AVAILABLE = False
     SerpApiClient = None

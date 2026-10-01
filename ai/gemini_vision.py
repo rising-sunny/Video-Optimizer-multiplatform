@@ -6,7 +6,7 @@ Por que Gemini (2026-09-23): la clave de Groq ya no tiene modelos de vision
 en el .env. La clave va en el header `x-goog-api-key`, nunca en la URL (la URL
 termina en logs y tracebacks).
 
-    from gemini_vision import ask_images
+    from ai.gemini_vision import ask_images
     ask_images("Read the headline text.", [jpeg_bytes])
 """
 

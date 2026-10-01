@@ -200,7 +200,7 @@ class LlegaAlGenerador(unittest.TestCase):
         micro = io.open("micro_documentary.py", encoding="utf-8", errors="replace").read()
         self.assertIn("format_archetype=format_archetype", micro)
         self.assertIn("{angle_block}", micro)
-        cc = io.open("claude_client.py", encoding="utf-8", errors="replace").read()
+        cc = io.open("ai/claude_client.py", encoding="utf-8", errors="replace").read()
         self.assertIn("render_text=True, format_archetype=None", cc)
         self.assertIn("Narrative angle:", cc)
 

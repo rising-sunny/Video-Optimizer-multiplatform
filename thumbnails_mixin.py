@@ -6,7 +6,7 @@ from pathlib import Path
 from PIL import Image
 import threading
 import time
-from recraft_style_catalog import RECRAFT_STYLE_OPTIONS
+from ai.recraft_style_catalog import RECRAFT_STYLE_OPTIONS
 
 class ThumbnailsMixin:
 

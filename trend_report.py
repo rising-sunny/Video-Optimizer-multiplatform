@@ -204,7 +204,7 @@ def llm_proposals(rows: list[dict[str, Any]], patterns: dict[str, Any], annivers
     """Groq propone temas nuevos para ESTE canal a partir del muestreo. Vacio si no hay cliente."""
     try:
         if client is None:
-            from groq_client import GroqAiClient
+            from ai.groq_client import GroqAiClient
             client = GroqAiClient()
         if not getattr(client, "client", None):
             return []
@@ -266,7 +266,7 @@ def refine_measured_topics(proposals, *, category="", language="en", video_forma
         return proposals
     try:
         if client is None:
-            from groq_client import GroqAiClient
+            from ai.groq_client import GroqAiClient
             client = GroqAiClient()
         if not getattr(client, "client", None):
             return proposals

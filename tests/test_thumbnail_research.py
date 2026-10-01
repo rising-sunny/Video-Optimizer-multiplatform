@@ -149,7 +149,7 @@ class ElBriefYElPrompt(unittest.TestCase):
         self.assertIn("#3fb6c6", b["prompt_block"])
 
     def test_el_super_prompt_usa_la_paleta_y_la_luminancia_del_brief(self):
-        from claude_client import ClaudeAiClient
+        from ai.claude_client import ClaudeAiClient
         from thumbnail_formats import SHORT_9_16
         b = self._brief()
         cc = ClaudeAiClient.__new__(ClaudeAiClient)
@@ -169,7 +169,7 @@ class ElBriefYElPrompt(unittest.TestCase):
         self.assertNotIn('use EXACTLY', prompt)
 
     def test_la_fuente_del_super_prompt_tiene_los_defaults_solo_sin_brief(self):
-        src = open("claude_client.py", encoding="utf-8", errors="replace").read()
+        src = open("ai/claude_client.py", encoding="utf-8", errors="replace").read()
         self.assertIn("research_brief=None", src)
         self.assertIn("{color_line}", src)
         self.assertIn("{lum_line}", src)

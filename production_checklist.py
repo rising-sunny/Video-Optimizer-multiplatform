@@ -179,7 +179,7 @@ def run_pre_publish_checklist(
     # Hechos verificados (script_fact_check, 2026-09-24). Solo lee el informe guardado
     # (sin red): si falta o la narracion cambio desde entonces, la subida vuelve a verificar.
     try:
-        from script_fact_check import report_is_current, status_line
+        from ai.script_fact_check import report_is_current, status_line
         fc = storyboard.get("fact_check") or {}
         current = report_is_current(storyboard)
         fc_ok = current and fc.get("status") in ("verified", "corrected", "verified_with_notes")

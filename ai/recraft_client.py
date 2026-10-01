@@ -9,7 +9,7 @@ import time
 from collections import deque
 
 try:
-    from recraft_style_catalog import normalize_recraft_style, to_recraft_style_family
+    from ai.recraft_style_catalog import normalize_recraft_style, to_recraft_style_family
 except Exception as _catalog_import_error:
     print(
         f"️ No se pudo importar recraft_style_catalog ({_catalog_import_error}). "

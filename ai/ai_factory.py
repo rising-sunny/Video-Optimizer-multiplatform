@@ -39,13 +39,13 @@ class AIFactory:
         client = None
         try:
             if name == "gemini":
-                from gemini_ai_client import GeminiAiClient
+                from ai.gemini_ai_client import GeminiAiClient
                 client = GeminiAiClient()
             elif name in {"claude", "groq", "text_ai"}:
-                from claude_client import ClaudeAiClient
+                from ai.claude_client import ClaudeAiClient
                 client = ClaudeAiClient()
             elif name == "recraft":
-                from recraft_client import RecraftClient
+                from ai.recraft_client import RecraftClient
                 client = RecraftClient()
             elif name == "bing":
                 from bing_images_client import BingImagesClient
@@ -54,13 +54,13 @@ class AIFactory:
                 from wikimedia_client import WikimediaClient
                 client = WikimediaClient()
             elif name == "google_ai":
-                from google_ai_image_client import GoogleAiImageClient
+                from ai.google_ai_image_client import GoogleAiImageClient
                 client = GoogleAiImageClient()
             elif name == "google_images":
-                from google_images_client import GoogleImagesClient
+                from ai.google_images_client import GoogleImagesClient
                 client = GoogleImagesClient()
             elif name in {"comfyui", "comfy"}:
-                from comfyui_image_client import ComfyUiImageClient
+                from ai.comfyui_image_client import ComfyUiImageClient
                 client = ComfyUiImageClient()
             elif name == "image_manager":
                 from image_generation_manager import ImageGenerationManager

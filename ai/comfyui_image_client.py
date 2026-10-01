@@ -20,7 +20,7 @@ import requests
 from infra.env_loader import load_project_env
 from infra.vast_ai_instance_manager import get_default_vast_manager
 
-PROJECT_DIR = Path(__file__).resolve().parent
+PROJECT_DIR = Path(__file__).resolve().parent.parent
 load_project_env(PROJECT_DIR)
 
 DEFAULT_BASE_URL = "http://127.0.0.1:8188"

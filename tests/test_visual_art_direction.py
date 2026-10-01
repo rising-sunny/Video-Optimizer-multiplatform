@@ -12,7 +12,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-import visual_art_direction as vad
+from ai import visual_art_direction as vad
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -370,7 +370,7 @@ class LaReparacionDelPromptVisual(unittest.TestCase):
     """Si el verificador corrige una escena, su prompt de imagen tambien se corrige."""
 
     def test_corrected_scene_gets_a_corrected_image_prompt(self):
-        import script_fact_check as sfc
+        from ai import script_fact_check as sfc
         sfc._UNAVAILABLE.clear()
         texts = ["Nelson led the attack at Trafalgar in 1805 with great daring and skill.",
                  "Within forty minutes, the British flagship Victory fired the fatal shot that killed Admiral Villeneuve, sealing the British triumph."]

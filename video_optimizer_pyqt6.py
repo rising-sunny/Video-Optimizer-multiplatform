@@ -1,5 +1,5 @@
 import os
-from ai_factory import AIFactory
+from ai.ai_factory import AIFactory
 import sys
 import platform as _platform
 from infra.env_loader import load_project_env
@@ -170,7 +170,7 @@ def _load_recraft_style_options():
     con OSError intermitente (Errno 22).
     """
     try:
-        from recraft_style_catalog import RECRAFT_STYLE_OPTIONS as _catalog_options
+        from ai.recraft_style_catalog import RECRAFT_STYLE_OPTIONS as _catalog_options
         return list(_catalog_options)
     except Exception as exc:
         print(
@@ -394,7 +394,7 @@ except ImportError as e:
     print(f"[!] Auto Video Generator no disponible: {e}")
 
 try:
-    from gemini_ai_client import GeminiAiClient
+    from ai.gemini_ai_client import GeminiAiClient
     GEMINI_AVAILABLE = True
     print("[OK] LLM Client (Groq/Gemini) cargado")
 except ImportError as e:
@@ -402,7 +402,7 @@ except ImportError as e:
     print(f"[!] LLM Client no disponible: {e}")
 
 try:
-    from google_search_api import (
+    from ai.google_search_api import (
         search_google_trends,
         GOOGLE_API_KEY,
         GOOGLE_SEARCH_ENGINE_ID
@@ -593,7 +593,7 @@ class VideoOptimizerGUI(QMainWindow, ThumbnailsMixin):
         self.recraft_client = None
         if AUTO_VIDEO_AVAILABLE:
             try:
-                from recraft_client import RecraftClient
+                from ai.recraft_client import RecraftClient
                 self.recraft_client = self.ai_factory.get_client('recraft')
                 if self.recraft_client and getattr(self.recraft_client, "api_key", None):
                     print("[OK] Cliente Recraft inicializado")

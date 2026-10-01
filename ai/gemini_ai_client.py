@@ -2,7 +2,7 @@
 # Wrapper de compatibilidad historica. La generacion de texto ahora usa solo Groq.
 
 try:
-    from claude_client import ClaudeAiClient
+    from ai.claude_client import ClaudeAiClient
     CLAUDE_AVAILABLE = True
 except ImportError:
     ClaudeAiClient = None

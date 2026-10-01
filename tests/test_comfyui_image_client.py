@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from comfyui_image_client import ComfyUiImageClient
+from ai.comfyui_image_client import ComfyUiImageClient
 
 
 class _FakeResponse:
@@ -93,7 +93,7 @@ class ComfyUiImageClientTests(unittest.TestCase):
                 session=fake_session,
             )
 
-            with patch("comfyui_image_client.time.sleep"):
+            with patch("ai.comfyui_image_client.time.sleep"):
                 result = client.generate_image(
                     prompt="cinematic castle",
                     width=1080,

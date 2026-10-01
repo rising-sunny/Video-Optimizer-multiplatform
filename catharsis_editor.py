@@ -957,7 +957,7 @@ Return an empty issues list if there are no concrete failures. Do not output rep
 
 
 def _check_card_facts(cards, topic, language, log):
-    from script_fact_check import fact_check_scenes
+    from ai.script_fact_check import fact_check_scenes
     # El climax se lee como una frase, aunque se muestre palabra a palabra.
     texts = [cards["opening"], *cards["lines"], " ".join(cards["climax"]),
              *cards["final"], cards["end"]]
@@ -979,7 +979,7 @@ def write_cards(topic: str, perspective: str = "character", language: str = "en"
     Los hallazgos provocan una sola reescritura integral, que se vuelve a verificar."""
     client = None
     if generate_fn is None:
-        from ai_factory import AIFactory
+        from ai.ai_factory import AIFactory
         client = AIFactory.get_instance().get_llm_client()
         if client is None:
             raise RuntimeError("La IA no esta disponible para generar tarjetas")

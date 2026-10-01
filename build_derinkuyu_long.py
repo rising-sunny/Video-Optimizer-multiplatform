@@ -105,7 +105,7 @@ def _save_storyboard(storyboard: dict) -> None:
 
 
 def generate_storyboard_and_tts() -> dict:
-    from groq_client import GroqAiClient
+    from ai.groq_client import GroqAiClient
     from pydub import AudioSegment
     from tts_generator import TextToSpeechGenerator
 

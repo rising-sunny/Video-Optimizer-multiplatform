@@ -573,8 +573,8 @@ class AIImageRegenerationWorker(QThread):
         """Ejecuta la generacion de imagen segun el proveedor configurado."""
         try:
             from infra.video_config import VideoConfig
-            from recraft_client import RecraftClient
-            from google_ai_image_client import GoogleAiImageClient
+            from ai.recraft_client import RecraftClient
+            from ai.google_ai_image_client import GoogleAiImageClient
 
             provider = str(self.generation_config.get("image_provider") or "recraft").strip().lower()
             style = str(self.generation_config.get("style") or "").strip() or None
@@ -662,15 +662,15 @@ class ContextualAIImageRegenerationWorker(QThread):
             from pathlib import Path
 
             from infra.video_config import VideoConfig
-            from gemini_ai_client import GeminiAiClient
-            from prompt_processor import PromptProcessor
+            from ai.gemini_ai_client import GeminiAiClient
+            from ai.prompt_processor import PromptProcessor
             from image_generation_manager import (
                 ImageGenerationManager,
                 apply_aspect_ratio_to_visual_prompt,
                 primary_aspect_ratio_from_format,
             )
-            from recraft_client import RecraftClient
-            from google_ai_image_client import GoogleAiImageClient
+            from ai.recraft_client import RecraftClient
+            from ai.google_ai_image_client import GoogleAiImageClient
 
             platform = str(self.generation_config.get("platform") or "youtube").strip().lower()
             style = str(self.generation_config.get("style") or "Realistic Image").strip()
@@ -700,7 +700,7 @@ class ContextualAIImageRegenerationWorker(QThread):
             # FAL.AI (opcional, se salta si falta FAL_KEY o SDK)
             fal_image_client = None
             try:
-                from fal_ai_client import FalAiImageClient, is_fal_configured
+                from ai.fal_ai_client import FalAiImageClient, is_fal_configured
                 if is_fal_configured():
                     fal_image_client = FalAiImageClient(log_callback=self._log)
             except Exception as exc:
@@ -1554,7 +1554,7 @@ class FalI2VWorker(QThread):
     def run(self):
         import os
         try:
-            from fal_ai_client import build_fal_clients, is_fal_configured
+            from ai.fal_ai_client import build_fal_clients, is_fal_configured
             if not is_fal_configured():
                 self.error.emit(self.segment_index, "FAL.AI no configurado (falta FAL_KEY en .env.txt)")
                 return

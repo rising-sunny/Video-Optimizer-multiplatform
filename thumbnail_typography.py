@@ -97,7 +97,7 @@ def _box_metrics(d: dict[str, Any]) -> None:
 def analyze_text_styles(images: list, vision_fn: Callable[[str, list], str], batch: int = 6,
                         log: Callable[[str], None] = print) -> list[dict[str, Any]]:
     """Mide el texto de cada miniatura (bytes). Una fila por imagen, en orden."""
-    from gemini_vision import parse_json
+    from ai.gemini_vision import parse_json
     rows: list[dict[str, Any]] = []
     for start in range(0, len(images), batch):
         chunk = images[start:start + batch]
@@ -438,7 +438,7 @@ def grid_view(image_bytes: bytes, vertical: bool = True) -> bytes:
 def check_thumbnail_text(image_bytes: bytes, vision_fn: Callable[[str, list], str], expected: str = "",
                          vertical: bool = True) -> dict[str, Any]:
     """Lee y mide el texto de la miniatura. {text, grid_text, cap_pct, weight, outline, verdict, warnings}."""
-    from gemini_vision import parse_json
+    from ai.gemini_vision import parse_json
     kind = "vertical" if vertical else "landscape"
     d = parse_json(vision_fn(CHECK_PROMPT, [image_bytes]))
     if isinstance(d, list):
@@ -485,7 +485,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         from pathlib import Path
 
         from infra.env_loader import load_project_env
-        import gemini_vision
+        from ai import gemini_vision
         load_project_env(Path(__file__).resolve().parent)
         data = Path(argv[1]).read_bytes()
         res = check_thumbnail_text(data, lambda p, ims: gemini_vision.ask_images(p, ims),

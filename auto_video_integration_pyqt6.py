@@ -39,9 +39,9 @@ from studio_project_manager import StudioProjectManager
 from studio_storyboard_handlers import StudioStoryboardHandlers
 from studio_image_handlers import StudioImageHandlers
 from studio_video_assembly_handlers import StudioVideoAssemblyHandlers
-from recraft_style_catalog import RECRAFT_STYLE_OPTIONS
+from ai.recraft_style_catalog import RECRAFT_STYLE_OPTIONS
 from thumbnail_pipeline import ThumbnailPipeline
-from groq_client import GroqAiClient
+from ai.groq_client import GroqAiClient
 
 
 def get_channel_name(default: str = "this channel") -> str:
@@ -1288,7 +1288,7 @@ class AutoVideoStudioTab(QWidget):
         muestra cuales son y deja elegir: cancelar (por defecto) o publicar igual.
         """
         try:
-            import script_fact_check as sfc
+            from ai import script_fact_check as sfc
         except Exception as exc:
             self.log(f" Verificacion de hechos no disponible: {exc}")
             return True
@@ -1549,7 +1549,7 @@ class AutoVideoStudioTab(QWidget):
             self.log(" Generando metadatos SEO...")
             QApplication.processEvents()
             try:
-                from groq_client import GroqAiClient
+                from ai.groq_client import GroqAiClient
                 import json
                 groq = GroqAiClient()
                 if not groq.client:
@@ -3906,7 +3906,7 @@ Respond ONLY with valid JSON."""
             # Un solo bloque: positivo + negativo juntos. Dos cuadros con dos
             # botones obligaban a pegar dos veces y se prestaba a llevarse solo
             # la mitad. Es editable por si querés retocarlo antes de copiar.
-            from claude_client import build_copyable_prompt
+            from ai.claude_client import build_copyable_prompt
             combinado = result.get('combined') or build_copyable_prompt(positive, negative)
 
             layout.addWidget(QLabel("<b>Prompt completo (positivo + negativo)</b>"))
@@ -4527,7 +4527,7 @@ Respond ONLY with valid JSON."""
         if str(os.getenv("THUMBNAIL_TEXT_CHECK", "1")).strip().lower() in ("0", "false", "no", "off"):
             return
         try:
-            import gemini_vision
+            from ai import gemini_vision
             if not gemini_vision.available():
                 return
         except ImportError:

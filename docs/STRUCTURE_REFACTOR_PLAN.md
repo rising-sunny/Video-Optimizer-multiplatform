@@ -142,7 +142,7 @@ tests/        → los 76 test_*.py
 | `audio_mix_utils`, `sfx_client` | |
 | `thumbnail_pipeline`, `thumbnail_compositor`, `thumbnail_context_enricher`, `thumbnail_intelligence` | |
 
-### `ai/` — clientes + fact-check + prompts
+### `ai/` — clientes + fact-check + prompts ✅ (Fase 3)
 
 | Módulo actual | Nota |
 |---|---|
@@ -301,6 +301,10 @@ El script se puede re-ejecutar por fase y se revierte con git.
 
 ## Changelog
 
+- **2026-10-01 (Fase 3)** — `ai/` con 22 módulos (clientes LLM/imagen/búsqueda, fact-check,
+  prompts; 127 imports + 17 strings reescritos). Ajustes: `__file__`→raíz en `claude_client`
+  (`env_file`) y `comfyui_image_client` (`PROJECT_DIR`); `patch()`/`open()` por string en tests
+  pasaron a `ai.`/`ai/`. Suite verde: 1205 tests.
 - **2026-10-01 (Fase 2b)** — `infra/` completo: `env_loader`, `video_config`,
   `vast_ai_instance_manager`, `vast_ai_provisioner`, `_whisper_subprocess_worker` (45 imports
   reescritos). Ajustes: `Path(__file__).resolve().parent` → `.parent.parent` en 4 módulos;

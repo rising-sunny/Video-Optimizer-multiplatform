@@ -343,7 +343,7 @@ class SamplingTests(unittest.TestCase):
                               {'source_id': 0, 'query': 'Atlantis'},
                               {'source_id': 99, 'query': 'Roman concrete'},
                               {'source_id': True, 'query': 'Roman concrete'}]}
-        with patch('groq_client.GroqAiClient', return_value=Client()), patch.object(ys, 'request_json', return_value=edits):
+        with patch('ai.groq_client.GroqAiClient', return_value=Client()), patch.object(ys, 'request_json', return_value=edits):
             subjects = ys.discover_subjects([video(title='Wake Island 1941')], log=lambda _: None)
         self.assertEqual(subjects, ['Wake Island'])
 
@@ -396,7 +396,7 @@ class SamplingTests(unittest.TestCase):
         class Client:
             client = object()
         vids = [video('a', title='Midway 1942'), video('b', title='Midway airport')]
-        with patch('groq_client.GroqAiClient', return_value=Client()), patch.object(ys, 'request_json', return_value={'keep_ids': [0, 99, True]}):
+        with patch('ai.groq_client.GroqAiClient', return_value=Client()), patch.object(ys, 'request_json', return_value={'keep_ids': [0, 99, True]}):
             accepted = ys.review_relevance(vids, log=lambda _: None)
         self.assertEqual([v['id'] for v in accepted], ['a'])
 

@@ -17,7 +17,7 @@ import json
 from types import SimpleNamespace
 from unittest.mock import Mock
 
-from claude_client import ClaudeAiClient
+from ai.claude_client import ClaudeAiClient
 from thumbnail_formats import LANDSCAPE_16_9, SHORT_9_16
 
 
@@ -127,7 +127,7 @@ class RespuestasIncompletas(unittest.TestCase):
         self.assertEqual(cli._generate.call_count, 2)
 
     def test_groq_rechaza_length_aunque_el_texto_tenga_los_tres_bloques(self):
-        from groq_client import GroqAiClient
+        from ai.groq_client import GroqAiClient
         client = GroqAiClient.__new__(GroqAiClient)
         client.model_cursors = {}
         client._get_models_for_task = lambda task: ["first", "second"]
@@ -205,14 +205,14 @@ class UnSoloTextoParaCopiar(unittest.TestCase):
         self.assertIn('"20,000 PEOPLE"', res["combined"])
 
     def test_sin_negativo_no_agrega_la_linea(self):
-        from claude_client import build_copyable_prompt
+        from ai.claude_client import build_copyable_prompt
         self.assertEqual(build_copyable_prompt("un prompt", ""), "un prompt")
         self.assertEqual(build_copyable_prompt("un prompt", "   "), "un prompt")
 
     def test_normaliza_los_saltos_del_llm(self):
         # El LLM devuelve el positivo partido en varias lineas; pegado asi en
         # algunas herramientas se corta en el primer salto.
-        from claude_client import build_copyable_prompt
+        from ai.claude_client import build_copyable_prompt
         salida = build_copyable_prompt("linea uno\nlinea dos\n\nlinea tres", "malo")
         self.assertIn("linea uno linea dos linea tres", salida)
         self.assertEqual(salida.count("\n\n"), 1, "solo el separador del negativo")
@@ -226,7 +226,7 @@ class TitularEnInglesSinTildes(unittest.TestCase):
     """
 
     def test_las_tildes_se_quitan_del_hook(self):
-        from claude_client import _ascii_hook
+        from ai.claude_client import _ascii_hook
         self.assertEqual(_ascii_hook("6 Pirámides"), "6 PIRAMIDES")
         self.assertEqual(_ascii_hook('"Año Cero"'), "ANO CERO")
         self.assertEqual(_ascii_hook("  50   toneladas  "), "50 TONELADAS")

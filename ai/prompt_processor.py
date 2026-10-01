@@ -8,7 +8,7 @@ import re
 from typing import List, Dict
 
 try:
-    from recraft_style_catalog import normalize_recraft_style
+    from ai.recraft_style_catalog import normalize_recraft_style
 except Exception:
     def normalize_recraft_style(style: str) -> str:
         return str(style or "").strip()
