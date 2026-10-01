@@ -459,7 +459,7 @@ class ElCableado(unittest.TestCase):
         self.assertIn("una frase", src)
 
     def test_studio_publish_is_gated(self):
-        src = self._src("auto_video_integration_pyqt6.py")
+        src = self._src("studio/auto_video_integration_pyqt6.py")
         body = src[src.index("    def publish_video_to_platforms("):]
         self.assertLess(body.index("self._fact_check_gate(storyboard)"), body.index("youtube_meta = None"))
         self.assertIn("_sync_timeline_editor_to_storyboard()", body[:body.index("self._fact_check_gate(")])

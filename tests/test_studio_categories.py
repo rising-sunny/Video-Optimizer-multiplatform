@@ -12,8 +12,8 @@ from channel.channel_profiles import DEFAULT_CHANNEL, select_channel
 from channel.channel_strategy import get_channel_strategy, get_all_category_names
 from ai.claude_client import ClaudeAiClient
 from pipeline.storyboard_generator import StoryboardGenerator
-from studio_categories import MYSTERY_CATEGORY, get_studio_category_names, mystery_editorial_instructions
-from studio_channel_controls import set_editorial_channel, sync_editorial_before_writing
+from studio.studio_categories import MYSTERY_CATEGORY, get_studio_category_names, mystery_editorial_instructions
+from studio.studio_channel_controls import set_editorial_channel, sync_editorial_before_writing
 from ai.tone_profile import get_tone_profile_for_category
 
 

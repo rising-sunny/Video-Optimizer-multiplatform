@@ -28,7 +28,7 @@ import io
 import re
 import unittest
 
-FUENTE = io.open("studio_project_manager.py", encoding="utf-8", errors="replace").read()
+FUENTE = io.open("studio/studio_project_manager.py", encoding="utf-8", errors="replace").read()
 
 # Opciones que el usuario espera encontrar tal como las dejo.
 CLAVES_ESPERADAS = (

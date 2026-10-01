@@ -21,7 +21,7 @@ from PyQt6.QtWidgets import (
     QListWidgetItem, QVBoxLayout, QWidget,
 )
 
-from subtitle_style_preview import (
+from studio.subtitle_style_preview import (
     GIF_W, SAMPLE_TEXT, build_preview, describe_style, style_key_from_label,
 )
 

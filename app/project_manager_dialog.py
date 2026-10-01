@@ -15,7 +15,7 @@ from datetime import datetime
 from pathlib import Path
 import os
 
-from project_manager_v2 import ProjectManagerV2
+from app.project_manager_v2 import ProjectManagerV2
 
 
 class ProjectManagerDialog(QDialog):

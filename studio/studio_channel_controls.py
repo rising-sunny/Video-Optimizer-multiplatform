@@ -68,7 +68,7 @@ def set_editorial_channel(tab, key, reason=""):
     select_channel(key)
     parent = getattr(tab, 'parent_gui', None)
     if parent and hasattr(parent, 'category_combo'):
-        from studio_categories import get_studio_category_names, MYSTERY_CATEGORY, MYSTERY_DESCRIPTION
+        from studio.studio_categories import get_studio_category_names, MYSTERY_CATEGORY, MYSTERY_DESCRIPTION
         combo = parent.category_combo
         previous = combo.currentText()
         blocked = combo.blockSignals(True)
@@ -531,7 +531,7 @@ class TrendsDialog(QDialog):
         layout = QVBoxLayout(self)
         controls = QHBoxLayout()
         context = report.get('context') or studio_trend_options(tab)
-        from studio_categories import get_studio_category_names
+        from studio.studio_categories import get_studio_category_names
         self.category_filter = QComboBox()
         self.category_filter.addItem('Todas las categorías', '')
         for name in get_studio_category_names():

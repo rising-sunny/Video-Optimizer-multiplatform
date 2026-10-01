@@ -80,7 +80,7 @@ class LaGuiNoEscribeNull(unittest.TestCase):
     """Capa 1: el arreglo de fondo, para que el archivo nunca traiga `null`."""
 
     def _fuente(self):
-        return io.open("auto_video_integration_pyqt6.py", encoding="utf-8",
+        return io.open("studio/auto_video_integration_pyqt6.py", encoding="utf-8",
                        errors="replace").read()
 
     def test_facebook_cae_a_la_metadata_de_youtube(self):

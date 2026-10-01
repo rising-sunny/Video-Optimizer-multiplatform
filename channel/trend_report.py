@@ -271,7 +271,7 @@ def refine_measured_topics(proposals, *, category="", language="en", video_forma
         if not getattr(client, "client", None):
             return proposals
         from channel.channel_strategy import get_format_archetypes
-        from studio_categories import mystery_editorial_instructions
+        from studio.studio_categories import mystery_editorial_instructions
         angles = {a["id"] for a in get_format_archetypes()}
         evidence = [{"id": i, "subject": p["topic"], "titles": [v["title"] for v in p["evidence"][:5]]}
                     for i, p in enumerate(candidates)]

@@ -8,7 +8,7 @@ import shutil
 import platform
 import json
 import re
-from studio_categories import is_mystery_inquiry, mystery_editorial_instructions
+from studio.studio_categories import is_mystery_inquiry, mystery_editorial_instructions
 
 
 def get_channel_name(default: str = "this channel") -> str:

@@ -94,7 +94,7 @@ def discovery_queries(category="", language="en"):
 def configured_categories():
     try:
         from channel.channel_strategy import get_categories_by_priority
-        from studio_categories import MYSTERY_CATEGORY
+        from studio.studio_categories import MYSTERY_CATEGORY
         return list(dict.fromkeys([c['name'] for c in get_categories_by_priority() if c.get('name')] + [MYSTERY_CATEGORY]))
     except Exception:
         return []

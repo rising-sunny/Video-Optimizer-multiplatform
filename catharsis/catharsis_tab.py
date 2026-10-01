@@ -1103,7 +1103,7 @@ class CatharsisTab(QWidget):
 
     def _jamendo(self):
         try:
-            from music_browser_dialog import MusicBrowserDialog
+            from studio.music_browser_dialog import MusicBrowserDialog
             dlg = MusicBrowserDialog(self, log_callback=self.log)
             if dlg.exec() and getattr(dlg, "selected_music_path", None):
                 self._set_music(dlg.selected_music_path)

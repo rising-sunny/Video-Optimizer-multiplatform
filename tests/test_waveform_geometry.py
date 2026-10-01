@@ -13,7 +13,7 @@ Sin Qt: la matematica vive en `waveform_geometry`.
 
 import unittest
 
-import waveform_geometry as wg
+from studio import waveform_geometry as wg
 
 DUR = 300.0    # 5:00
 ANCHO = 600    # 2 px por segundo

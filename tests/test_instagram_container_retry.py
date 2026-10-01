@@ -126,7 +126,7 @@ class ElVpsSePuedeApagar(unittest.TestCase):
     """Con el VPS sin usar, cada plataforma esperaba 40 s a un ssh mudo."""
 
     def test_la_gui_respeta_vps_upload_enabled(self):
-        fuente = io.open("auto_video_integration_pyqt6.py", encoding="utf-8", errors="replace").read()
+        fuente = io.open("studio/auto_video_integration_pyqt6.py", encoding="utf-8", errors="replace").read()
         inicio = fuente.index("def _upload_via_vps(")
         cuerpo = fuente[inicio:fuente.index("proc_mkdir = subprocess.run", inicio)]
         self.assertIn("VPS_UPLOAD_ENABLED", cuerpo)

@@ -176,7 +176,7 @@ class ElBriefYElPrompt(unittest.TestCase):
         self.assertIn("{research_block}", src)
 
     def test_la_gui_pasa_el_brief(self):
-        src = open("auto_video_integration_pyqt6.py", encoding="utf-8", errors="replace").read()
+        src = open("studio/auto_video_integration_pyqt6.py", encoding="utf-8", errors="replace").read()
         self.assertIn("build_thumbnail_brief(topic, _title_for_brief", src)
         self.assertIn("research_brief=brief if brief and not brief.get(\"error\") else None", src)
 

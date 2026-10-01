@@ -161,7 +161,7 @@ class LasFuentesUsanElModulo(unittest.TestCase):
         self.assertIn("find_staged_thumbnail(output_dir)", up)
         self.assertIn("set_thumbnail_with_retry(", up)
         self.assertIn("NO SE PUSO", up)
-        st = open("auto_video_integration_pyqt6.py", encoding="utf-8", errors="replace").read()
+        st = open("studio/auto_video_integration_pyqt6.py", encoding="utf-8", errors="replace").read()
         self.assertIn("Miniatura a publicar:", st)
         self.assertIn("la miniatura NO se puso", st)
 

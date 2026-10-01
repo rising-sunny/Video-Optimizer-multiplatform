@@ -146,7 +146,7 @@ class LaGuiEntraPorLaDecision(unittest.TestCase):
             return fh.read()
 
     def test_el_arranque_real_usa_decide_project_to_load(self):
-        fuente = self._fuente("video_optimizer_pyqt6.py")
+        fuente = self._fuente("app/video_optimizer_pyqt6.py")
         inicio = fuente.index("def _load_last_project_once(")
         fin = fuente.index("    def ", inicio + 10)  # siguiente metodo
         cuerpo = fuente[inicio:fin]
@@ -155,7 +155,7 @@ class LaGuiEntraPorLaDecision(unittest.TestCase):
         self.assertIn("Sin proyecto para abrir", cuerpo, "un puntero roto tiene que dejar rastro en el log")
 
     def test_no_vuelve_el_metodo_que_nadie_llamaba(self):
-        fuente = self._fuente("auto_video_integration_pyqt6.py")
+        fuente = self._fuente("studio/auto_video_integration_pyqt6.py")
         self.assertNotIn("def _load_last_project(self)", fuente)
 
 

@@ -94,10 +94,10 @@ class TimelineEditorWindow(QMainWindow):
             # Importar y crear TimelineEditorWidget con fallback seguro
             print("[TimelineEditorWindow] Importando TimelineEditorWidget...")
             if safe_import_module:
-                timeline_module = safe_import_module("timeline_editor_widget")
+                timeline_module = safe_import_module("studio.timeline_editor_widget")
                 TimelineEditorWidget = timeline_module.TimelineEditorWidget
             else:
-                from timeline_editor_widget import TimelineEditorWidget
+                from studio.timeline_editor_widget import TimelineEditorWidget
 
             print("[TimelineEditorWindow] Creando widget del timeline...")
             self.timeline_editor = TimelineEditorWidget(studio_tab=self.studio_tab)

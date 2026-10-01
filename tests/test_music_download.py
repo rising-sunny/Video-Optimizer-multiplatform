@@ -212,8 +212,8 @@ class ElCableado(unittest.TestCase):
 
     def test_no_function_shadows_a_module_import(self):
         # Regresion: "Seleccionar Musica" con recorte -> "cannot access local variable 'shutil'".
-        files = ["music_browser_dialog.py", "media/music_recommender.py", "publish/music_license.py",
-                 "auto_video_integration_pyqt6.py", "timeline_editor_widget.py", "pipeline/storyboard_generator.py",
+        files = ["studio/music_browser_dialog.py", "media/music_recommender.py", "publish/music_license.py",
+                 "studio/auto_video_integration_pyqt6.py", "studio/timeline_editor_widget.py", "pipeline/storyboard_generator.py",
                  "pipeline/daily_short_pipeline.py", "pipeline/auto_video_generator_v2.py", "ai/script_fact_check.py",
                  "ai/visual_art_direction.py", "publish/facebook_uploader.py", "publish/instagram_uploader.py", "publish/youtube_uploader.py"]
         problems = [p for f in files for p in shadowed_imports(ROOT / f)]
@@ -226,7 +226,7 @@ class ElCableado(unittest.TestCase):
         self.assertIn("reuse_existing=False", body[:body.index("\ndef ")])
 
     def test_dialog_preview_and_waveform_share_the_robust_download(self):
-        src = self._src("music_browser_dialog.py")
+        src = self._src("studio/music_browser_dialog.py")
         self.assertEqual(src.count("from media.music_recommender import download_audio"), 2)
         self.assertNotIn("requests.get(audio_url, timeout=(10, 15), stream=True)", src)
         self.assertIn("WaveformWorker(track, self._preview_cache_path(track))", src)

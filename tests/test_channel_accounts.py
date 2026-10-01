@@ -135,7 +135,7 @@ class Instagram(unittest.TestCase):
 class EnElStudio(unittest.TestCase):
 
     def test_el_studio_manda_el_canal_a_facebook_e_instagram(self):
-        with io.open("auto_video_integration_pyqt6.py", encoding="utf-8", errors="replace") as fh:
+        with io.open("studio/auto_video_integration_pyqt6.py", encoding="utf-8", errors="replace") as fh:
             fuente = fh.read()
         self.assertIn("_facebook_meta['upload_channel'] = upload_channel", fuente)
         self.assertIn("_instagram_meta['upload_channel'] = upload_channel", fuente)

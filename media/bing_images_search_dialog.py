@@ -23,11 +23,11 @@ except ImportError:
     BING_IMAGES_AVAILABLE = False
 
 try:
-    from timeline_workers import BingImagesSearchWorker
+    from studio.timeline_workers import BingImagesSearchWorker
 except ImportError:
     # Compatibilidad con versiones donde el worker aun se llama GoogleImagesSearchWorker
     try:
-        from timeline_workers import GoogleImagesSearchWorker as BingImagesSearchWorker
+        from studio.timeline_workers import GoogleImagesSearchWorker as BingImagesSearchWorker
     except ImportError:
         BingImagesSearchWorker = None
 

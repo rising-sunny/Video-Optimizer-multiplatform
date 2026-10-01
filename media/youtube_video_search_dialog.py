@@ -21,11 +21,11 @@ import subprocess
 import shutil
 
 # Importar worker
-from timeline_workers import YouTubeVideoSearchWorker, VideoFrameExtractorWorker
+from studio.timeline_workers import YouTubeVideoSearchWorker, VideoFrameExtractorWorker
 
 # Importar VideoTimelineWidget
 try:
-    from timeline_video_widget import VideoTimelineWidget
+    from studio.timeline_video_widget import VideoTimelineWidget
 except ImportError:
     VideoTimelineWidget = None
     print("️ timeline_video_widget.py no encontrado. VideoTimelineWidget no estará disponible.")
@@ -649,7 +649,7 @@ class YouTubeVideoSearchDialog(QDialog):
         position = getattr(self, 'playback_position', 0.0)
         self.stop_playback()
         try:
-            from video_region_editor import VideoRegionEditor
+            from studio.video_region_editor import VideoRegionEditor
             dialog = VideoRegionEditor(self.current_video_path, position, self.region_edit, self)
             if dialog.exec() == QDialog.DialogCode.Accepted:
                 self.region_edit = dialog.edit
@@ -1582,7 +1582,7 @@ class YouTubeVideoSearchDialog(QDialog):
                             )
 
                 if self.region_edit:
-                    from video_region_editor import export_region_copy
+                    from studio.video_region_editor import export_region_copy
                     downloaded_path = export_region_copy(downloaded_path, self.region_edit, self)
                 self.selected_video_path = downloaded_path
                 print(f" Ruta asignada al segmento: {self.selected_video_path}")

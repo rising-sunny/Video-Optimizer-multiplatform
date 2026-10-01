@@ -425,7 +425,7 @@ def build(topic, out, *, channel=None, seconds=270, editorial=None, approve=Fals
         if image_provider != 'manual':
             sb, _ = generate_images_for_draft(out, sb, image_provider=image_provider, visual_style=profile.get('visual_style', 'Photorealism'), platform='youtube_long')
         save_storyboard(out, sb)
-        from pilot_render_settings import pilot_render_settings
+        from studio.pilot_render_settings import pilot_render_settings
         settings = pilot_render_settings(config, profile, out)
         video = assemble_video(
             sb, out, image_provider='manual' if image_provider == 'manual' else 'auto',

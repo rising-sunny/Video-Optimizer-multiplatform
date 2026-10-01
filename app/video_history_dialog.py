@@ -91,7 +91,7 @@ class VideoHistoryDialog(QDialog):
         
         # Cargar registro
         try:
-            from video_registry import VideoRegistry
+            from app.video_registry import VideoRegistry
             self.registry = VideoRegistry()
         except ImportError:
             QMessageBox.critical(self, "Error", "No se pudo cargar el sistema de registro de videos.")

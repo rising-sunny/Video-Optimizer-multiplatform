@@ -47,7 +47,7 @@ except ImportError:
     PYDUB_AVAILABLE = False
     print("âš ï¸ pydub no disponible. La visualizaciÃ³n de forma de onda y recorte de audio no funcionarÃ¡.")
 
-from waveform_widget import WaveformWidget
+from studio.waveform_widget import WaveformWidget
 
 
 class TimelineWidget(QWidget):
@@ -1754,7 +1754,7 @@ class MusicBrowserDialog(QDialog):
         if not hasattr(self, 'crop_summary_label'):
             return
         try:
-            from waveform_geometry import describe_selection
+            from studio.waveform_geometry import describe_selection
             inicio = self.music_crop_start.value()
             fin = self.music_crop_end.value()
             if fin <= inicio:

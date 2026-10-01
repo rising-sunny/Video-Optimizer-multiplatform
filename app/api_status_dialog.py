@@ -12,7 +12,7 @@ from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QColor, QFont
 
 try:
-    from api_status_checker import APIStatusChecker
+    from app.api_status_checker import APIStatusChecker
     API_STATUS_CHECKER_AVAILABLE = True
 except ImportError:
     APIStatusChecker = None

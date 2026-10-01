@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
-from pilot_render_settings import pilot_render_settings
+from studio.pilot_render_settings import pilot_render_settings
 
 
 class PilotRenderSettingsTests(unittest.TestCase):

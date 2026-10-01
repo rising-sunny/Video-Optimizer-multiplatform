@@ -63,7 +63,7 @@ except ImportError:
 
 # Importar workers desde timeline_workers
 try:
-    from timeline_workers import WikimediaVideoSearchWorker, VideoFrameExtractorWorker
+    from studio.timeline_workers import WikimediaVideoSearchWorker, VideoFrameExtractorWorker
 except ImportError:
     WikimediaVideoSearchWorker = None
     VideoFrameExtractorWorker = None
@@ -79,7 +79,7 @@ except ImportError:
 
 # Importar VideoTimelineWidget
 try:
-    from timeline_video_widget import VideoTimelineWidget
+    from studio.timeline_video_widget import VideoTimelineWidget
 except ImportError:
     VideoTimelineWidget = None
     print("âš ï¸ timeline_video_widget.py no encontrado. VideoTimelineWidget no estarÃ¡ disponible.")

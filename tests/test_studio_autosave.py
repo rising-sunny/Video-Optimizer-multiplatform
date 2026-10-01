@@ -11,17 +11,17 @@ from unittest.mock import Mock, patch
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 from PyQt6.QtWidgets import QApplication, QLineEdit, QCheckBox, QRadioButton, QComboBox
 from PyQt6.QtTest import QTest
-from studio_project_manager import StudioProjectManager
-from project_manager_v2 import ProjectManagerV2
+from studio.studio_project_manager import StudioProjectManager
+from app.project_manager_v2 import ProjectManagerV2
 from channel.channel_profiles import select_channel, active_channel, DEFAULT_CHANNEL
-from studio_channel_controls import PilotDialog, open_pilot
+from studio.studio_channel_controls import PilotDialog, open_pilot
 from tests.test_studio_channel_controls import StudioStub
 from tests.test_micro_documentary import package
-from studio_categories import MYSTERY_CATEGORY
+from studio.studio_categories import MYSTERY_CATEGORY
 
 
 def studio_method(name):
-    tree = ast.parse(Path('auto_video_integration_pyqt6.py').read_text(encoding='utf-8'))
+    tree = ast.parse(Path('studio/auto_video_integration_pyqt6.py').read_text(encoding='utf-8'))
     cls = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == 'AutoVideoStudioTab')
     method = next(node for node in cls.body if isinstance(node, ast.FunctionDef) and node.name == name)
     namespace = {}
@@ -115,7 +115,7 @@ class AutosaveTests(unittest.TestCase):
                     manager = StudioProjectManager(tab)
                     manager._storyboard_is_unusable = lambda value: False
                     manager._sync_thumbnail_state = Mock()
-                    with patch('studio_project_manager.QMessageBox.critical') as critical, patch('studio_project_manager.QMessageBox.warning') as warning:
+                    with patch('studio.studio_project_manager.QMessageBox.critical') as critical, patch('studio.studio_project_manager.QMessageBox.warning') as warning:
                         manager.load_project_from_path(str(path))
                     critical.assert_not_called()
                     warning.assert_not_called()
@@ -164,7 +164,7 @@ class AutosaveTests(unittest.TestCase):
             path.write_text('{}')
             tab.current_project_path = str(path)
             tab.auto_save_project = Mock(return_value=True)
-            with patch('studio_channel_controls.QFileDialog.getExistingDirectory') as chooser, patch('studio_channel_controls.PilotDialog') as dialog:
+            with patch('studio.studio_channel_controls.QFileDialog.getExistingDirectory') as chooser, patch('studio.studio_channel_controls.PilotDialog') as dialog:
                 def create(*args):
                     tab.auto_save_project.assert_called_once_with('antes de continuar el piloto')
                     self.assertEqual(args[1], Path(tmp).resolve())
@@ -185,7 +185,7 @@ class AutosaveTests(unittest.TestCase):
                 tab.current_project_path = str(path)
                 return True
             tab.auto_save_project = autosave
-            with patch('studio_channel_controls.QFileDialog.getExistingDirectory') as chooser, patch('studio_channel_controls.PilotDialog') as factory:
+            with patch('studio.studio_channel_controls.QFileDialog.getExistingDirectory') as chooser, patch('studio.studio_channel_controls.PilotDialog') as factory:
                 factory.return_value.exec.side_effect = self.app.processEvents
                 open_pilot(tab, generate=True)
                 chooser.assert_not_called()

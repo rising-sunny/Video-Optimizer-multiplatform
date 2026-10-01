@@ -20,7 +20,7 @@ import traceback
 import time
 from pathlib import Path
 
-from auto_video_generator_pyqt6_adapter import AutoVideoGeneratorPyQt6, VideoGenerationWorker
+from studio.auto_video_generator_pyqt6_adapter import AutoVideoGeneratorPyQt6, VideoGenerationWorker
 from channel.cost_calculator import CostCalculator
 
 # La subida/publicación directa a YouTube fue removida de la GUI.
@@ -33,12 +33,12 @@ except ImportError:
     print("âš ï¸ pydub no disponible. La visualizaciÃ³n de forma de onda y recorte de audio no funcionarÃ¡.")
 
 # Importar widgets extraÃ­dos
-from timeline_editor_window import TimelineEditorWindow
-from music_browser_dialog import MusicBrowserDialog
-from studio_project_manager import StudioProjectManager
-from studio_storyboard_handlers import StudioStoryboardHandlers
-from studio_image_handlers import StudioImageHandlers
-from studio_video_assembly_handlers import StudioVideoAssemblyHandlers
+from studio.timeline_editor_window import TimelineEditorWindow
+from studio.music_browser_dialog import MusicBrowserDialog
+from studio.studio_project_manager import StudioProjectManager
+from studio.studio_storyboard_handlers import StudioStoryboardHandlers
+from studio.studio_image_handlers import StudioImageHandlers
+from studio.studio_video_assembly_handlers import StudioVideoAssemblyHandlers
 from ai.recraft_style_catalog import RECRAFT_STYLE_OPTIONS
 from pipeline.thumbnail_pipeline import ThumbnailPipeline
 from ai.groq_client import GroqAiClient
@@ -406,7 +406,7 @@ class AutoVideoStudioTab(QWidget):
                 pass
 
         candidate_bases.append(Path.cwd())
-        candidate_bases.append(Path(__file__).resolve().parent)
+        candidate_bases.append(Path(__file__).resolve().parent.parent)
 
         seen = set()
         for base in candidate_bases:
@@ -799,7 +799,7 @@ class AutoVideoStudioTab(QWidget):
             self.images_per_segment_spin.setValue(1)
 
     def _default_transition_sfx_path(self) -> str | None:
-        root = Path(__file__).resolve().parent
+        root = Path(__file__).resolve().parent.parent
         for candidate in (
             root / "transition_overlays" / "swoosh.wav",
             root / "swoosh.wav",
@@ -822,7 +822,7 @@ class AutoVideoStudioTab(QWidget):
         combo.blockSignals(True)
         combo.clear()
         seen = set()
-        root = Path(__file__).resolve().parent
+        root = Path(__file__).resolve().parent.parent
         search_dirs = [root / "transition_overlays", root]
         for folder in search_dirs:
             if not folder.is_dir():
@@ -855,9 +855,9 @@ class AutoVideoStudioTab(QWidget):
             self.btn_pick_transition_sfx.setEnabled(bool(enabled))
 
     def _on_pick_transition_sfx(self):
-        start_dir = str(Path(__file__).resolve().parent / "transition_overlays")
+        start_dir = str(Path(__file__).resolve().parent.parent / "transition_overlays")
         if not os.path.isdir(start_dir):
-            start_dir = str(Path(__file__).resolve().parent)
+            start_dir = str(Path(__file__).resolve().parent.parent)
         path, _ = QFileDialog.getOpenFileName(
             self,
             "Elegir sonido de transicion",
@@ -1477,7 +1477,7 @@ class AutoVideoStudioTab(QWidget):
         format_val = getattr(self, 'get_selected_video_format', lambda: '')()
         is_long = format_val == '16:9' or platform_key in ('youtube', '16:9') or (hasattr(self, 'duration_slider') and self.duration_slider.value() > 60)
 
-        from studio_channel_controls import project_channel_config
+        from studio.studio_channel_controls import project_channel_config
         from channel.channel_profiles import CHANNELS
         upload_channel = project_channel_config(self)['upload_channel']
         upload_channel_name = CHANNELS[upload_channel]['name']
@@ -1632,7 +1632,7 @@ Respond ONLY with valid JSON."""
 
         # Capturar variables para el closure
         _video_path = video_path
-        from studio_channel_controls import project_channel_config
+        from studio.studio_channel_controls import project_channel_config
         from publish.upload_metadata import metadata_for_channel
         youtube_meta = metadata_for_channel(youtube_meta, upload_channel)
         # Contexto para investigar tags contra el guion real (youtube_tags.research_tags).
@@ -2079,7 +2079,7 @@ Respond ONLY with valid JSON."""
     def show_video_recommendations(self):
         """Muestra el diÃ¡logo de recomendaciones de videos"""
         try:
-            from video_recommendations_dialog import VideoRecommendationsDialog
+            from app.video_recommendations_dialog import VideoRecommendationsDialog
         except ImportError:
             QMessageBox.warning(
                 self,
@@ -2113,7 +2113,7 @@ Respond ONLY with valid JSON."""
     def show_video_history(self):
         """Muestra el diÃ¡logo de historial de videos"""
         try:
-            from video_history_dialog import VideoHistoryDialog
+            from app.video_history_dialog import VideoHistoryDialog
         except ImportError:
             QMessageBox.warning(
                 self,
@@ -2140,7 +2140,7 @@ Respond ONLY with valid JSON."""
     def show_api_status(self):
         """Muestra el diÃ¡logo con el estado de todas las APIs"""
         try:
-            from api_status_dialog import APIStatusDialog
+            from app.api_status_dialog import APIStatusDialog
             dialog = APIStatusDialog(self)
             dialog.exec()
         except ImportError as e:
@@ -2165,7 +2165,7 @@ Respond ONLY with valid JSON."""
         # Layout principal con scroll
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
-        from studio_channel_controls import install_controls
+        from studio.studio_channel_controls import install_controls
         install_controls(self, main_layout)
 
         # Scroll area con scroll vertical y horizontal mejorado
@@ -2334,7 +2334,7 @@ Respond ONLY with valid JSON."""
         # Las categorias son las del perfil del canal activo (su Bible), no una
         # lista fija: hasta 2026-09-21 arrancaba con esta lista en espanol y
         # solo cambiaba al restaurar un proyecto.
-        from studio_categories import get_studio_category_names, MYSTERY_CATEGORY, MYSTERY_DESCRIPTION
+        from studio.studio_categories import get_studio_category_names, MYSTERY_CATEGORY, MYSTERY_DESCRIPTION
         self.category_combo.addItems(get_studio_category_names())
         self.category_combo.setItemData(self.category_combo.findText(MYSTERY_CATEGORY),
                                         MYSTERY_DESCRIPTION, Qt.ItemDataRole.ToolTipRole)
@@ -2420,7 +2420,7 @@ Respond ONLY with valid JSON."""
 
         # Entrada cinematografica: la animacion se dibuja en vivo (tipo GIF)
         # y el ID elegido viaja hasta el storyboard y el ensamblado final.
-        from opening_style_preview import OpeningStylePreview
+        from studio.opening_style_preview import OpeningStylePreview
         from pipeline.video_opening import OPENING_STYLE_CHOICES, OPENING_STYLE_SPECS
 
         opening_layout = QHBoxLayout()
@@ -3464,7 +3464,7 @@ Respond ONLY with valid JSON."""
         self._show_progress_indicator()
 
         # Lanzar worker
-        from auto_video_generator_pyqt6_adapter import VideoGenerationWorker
+        from studio.auto_video_generator_pyqt6_adapter import VideoGenerationWorker
         self.current_worker = VideoGenerationWorker(self.generator, "manual_json")
         voice_rate = self.get_selected_voice_rate()
         # Calcular max_duration según plataforma: 180s solo para short-form vertical.
@@ -3805,7 +3805,7 @@ Respond ONLY with valid JSON."""
         _arche = _sb.get('format_archetype') or ''
         if not _arche:
             try:
-                from studio_channel_controls import project_channel_config
+                from studio.studio_channel_controls import project_channel_config
                 _cfg_arche = project_channel_config(self).get('format_archetype')
                 _arche = _cfg_arche if _cfg_arche and _cfg_arche != 'auto' else ''
             except Exception:
@@ -4632,7 +4632,7 @@ Respond ONLY with valid JSON."""
                 if not (hasattr(self, 'current_project_path') and self.current_project_path):
                     return
                 try:
-                    from project_manager_v2 import ProjectManagerV2
+                    from app.project_manager_v2 import ProjectManagerV2
                     project_data = ProjectManagerV2.load_project(self.current_project_path)
                 except Exception:
                     return
@@ -5080,7 +5080,7 @@ Respond ONLY with valid JSON."""
     def show_subtitle_style_preview(self, _index=None):
         """Abre la ventana con las animaciones de ejemplo de cada estilo."""
         try:
-            from subtitle_style_preview_dialog import SubtitleStylePreviewDialog
+            from studio.subtitle_style_preview_dialog import SubtitleStylePreviewDialog
 
             etiquetas = [self.subtitle_style_combo.itemText(i)
                          for i in range(self.subtitle_style_combo.count())]
@@ -5246,7 +5246,7 @@ Respond ONLY with valid JSON."""
             self.log("\nGenerando teaser corto...")
 
             # Crear worker para generar teaser
-            from auto_video_generator_pyqt6_adapter import VideoGenerationWorker
+            from studio.auto_video_generator_pyqt6_adapter import VideoGenerationWorker
             self.current_worker = VideoGenerationWorker(self.generator, "generate_teaser")
             self.current_worker.set_params(
                 long_video_storyboard=storyboard,

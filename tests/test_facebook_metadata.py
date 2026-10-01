@@ -418,23 +418,23 @@ class Cableado(unittest.TestCase):
             return fh.read()
 
     def test_el_studio_reusa_la_investigacion_de_youtube_y_reporta_al_panel(self):
-        s = self._src("auto_video_integration_pyqt6.py")
+        s = self._src("studio/auto_video_integration_pyqt6.py")
         self.assertIn("research_from_youtube(results.get('youtube'))", s)
         self.assertIn("_facebook_meta['research'] = _fb_research", s)
         self.assertIn("on_status=lambda msg: notify(f\"   Facebook: {msg}\")", s)
         self.assertIn("_facebook_meta['title_mode'] = fb_title_mode", s)
 
     def test_el_vps_recibe_los_modulos_que_importa_el_uploader(self):
-        s = self._src("auto_video_integration_pyqt6.py")
+        s = self._src("studio/auto_video_integration_pyqt6.py")
         # Los paquetes completos viajan al VPS (con __init__.py) para que los
         # imports `from publish.facebook_uploader import ...` resuelvan del otro lado.
         self.assertIn("for pkg_name in ('infra', 'ai', 'media', 'channel', 'publish'):", s)
 
     def test_los_respaldos_de_facebook_no_usan_mystery_ni_marca_fija(self):
-        for name in ("auto_video_integration_pyqt6.py", "platform_metadata_tab.py", "pipeline/daily_short_pipeline.py"):
+        for name in ("studio/auto_video_integration_pyqt6.py", "studio/platform_metadata_tab.py", "pipeline/daily_short_pipeline.py"):
             s = self._src(name)
             self.assertNotIn("#History #Mystery #StunningRevelations", s, name)
-        self.assertNotIn("preview[:260]", self._src("auto_video_integration_pyqt6.py"))
+        self.assertNotIn("preview[:260]", self._src("studio/auto_video_integration_pyqt6.py"))
 
 
 if __name__ == "__main__":

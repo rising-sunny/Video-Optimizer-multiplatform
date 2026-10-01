@@ -1389,7 +1389,7 @@ class TimelineSegment(QFrame):
             )
             return
         try:
-            from video_preview_dialog import LocalVideoPreviewDialog
+            from app.video_preview_dialog import LocalVideoPreviewDialog
             dialog = LocalVideoPreviewDialog(self, resolved)
             dialog.exec()
         except Exception as exc:

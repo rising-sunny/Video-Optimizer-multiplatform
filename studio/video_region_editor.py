@@ -3,7 +3,7 @@ from PyQt6.QtCore import Qt, QRectF, pyqtSignal, QProcess, QTimer
 from PyQt6.QtGui import QPixmap, QPainter, QPen
 from PyQt6.QtWidgets import (QWidget, QDialog, QVBoxLayout, QHBoxLayout, QLabel,
                             QPushButton, QComboBox, QMessageBox, QProgressDialog)
-from video_region_effects import preview_frame, export_command
+from studio.video_region_effects import preview_frame, export_command
 
 
 class RegionCanvas(QWidget):

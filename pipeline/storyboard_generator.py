@@ -51,7 +51,7 @@ if not RESEARCH_SEARCH_AVAILABLE:
         GOOGLE_SEARCH_AVAILABLE = False
 
 from infra.video_config import VideoConfig
-from studio_categories import is_mystery_inquiry, mystery_editorial_instructions
+from studio.studio_categories import is_mystery_inquiry, mystery_editorial_instructions
 
 
 def get_channel_name(default: str = "this channel") -> str:

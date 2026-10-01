@@ -13,8 +13,8 @@ from PyQt6.QtGui import QPixmap, QColor
 from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QApplication, QProgressDialog, QPushButton, QListWidgetItem
 from infra.video_config import VideoConfig
-from video_region_effects import effect_graph, export_command, preview_frame, video_size
-from video_region_editor import RegionCanvas, VideoRegionEditor, export_region_copy
+from studio.video_region_effects import effect_graph, export_command, preview_frame, video_size
+from studio.video_region_editor import RegionCanvas, VideoRegionEditor, export_region_copy
 
 
 class VideoRegionTests(unittest.TestCase):
@@ -96,7 +96,7 @@ class VideoRegionTests(unittest.TestCase):
             for widget in self.app.topLevelWidgets():
                 if isinstance(widget, QProgressDialog) and widget.isVisible():
                     widget.findChild(QPushButton).click()
-        with patch('video_region_editor.export_command', return_value=(args, output)):
+        with patch('studio.video_region_editor.export_command', return_value=(args, output)):
             QTimer.singleShot(150, cancel)
             with self.assertRaisesRegex(RuntimeError, 'cancelada'):
                 export_region_copy(self.source, edit)

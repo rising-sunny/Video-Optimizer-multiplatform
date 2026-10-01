@@ -27,14 +27,14 @@ except ImportError:
 
 # Importar VideoTimelineWidget
 try:
-    from timeline_video_widget import VideoTimelineWidget
+    from studio.timeline_video_widget import VideoTimelineWidget
 except ImportError:
     VideoTimelineWidget = None
     print("️ timeline_video_widget.py no encontrado. VideoTimelineWidget no estará disponible.")
 
 # Importar workers
 try:
-    from timeline_workers import InternetArchiveVideoSearchWorker, VideoFrameExtractorWorker
+    from studio.timeline_workers import InternetArchiveVideoSearchWorker, VideoFrameExtractorWorker
 except ImportError:
     InternetArchiveVideoSearchWorker = None
     VideoFrameExtractorWorker = None

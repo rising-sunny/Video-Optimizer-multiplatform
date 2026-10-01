@@ -16,7 +16,7 @@ import shutil
 import tempfile
 import unittest
 
-import subtitle_style_preview as sp
+from studio import subtitle_style_preview as sp
 
 FFMPEG = shutil.which("ffmpeg") or r"C:\ffmpeg-7.1.1-full_build\bin\ffmpeg.exe"
 FFMPEG_OK = bool(FFMPEG and os.path.exists(FFMPEG))
@@ -113,7 +113,7 @@ class ElMotorEsElMismoQueElDelVideo(unittest.TestCase):
     def test_usa_dynamic_subtitle_engine(self):
         import io
 
-        fuente = io.open("subtitle_style_preview.py", encoding="utf-8").read()
+        fuente = io.open("studio/subtitle_style_preview.py", encoding="utf-8").read()
         self.assertIn("from pipeline.dynamic_subtitles_generator import DynamicSubtitleEngine",
                       fuente)
         self.assertIn("generate_from_segments", fuente)

@@ -93,7 +93,7 @@ tests/        → los 76 test_*.py
 > Asignación indicativa; la decisión final de ~10 módulos "ambiguos" se toma al migrar. Los
 > módulos de test no se listan: van todos a `tests/`.
 
-### `app/` — shell GUI + diálogos genéricos
+### `app/` — shell GUI + diálogos genéricos ✅ (Fase 9)
 
 | Módulo actual | Nota |
 |---|---|
@@ -104,7 +104,7 @@ tests/        → los 76 test_*.py
 | `video_edit_dialog`, `video_preview_dialog`, `video_history_dialog` | |
 | `video_recommendations_dialog`, `video_recommender`, `video_registry` | |
 
-### `studio/` — Auto Video Studio + timeline + handlers
+### `studio/` — Auto Video Studio + timeline + handlers ✅ (Fase 9)
 
 | Módulo actual | Nota |
 |---|---|
@@ -290,17 +290,22 @@ El script se puede re-ejecutar por fase y se revierte con git.
 
 ## 10. Definition of Done
 
-- [ ] Repo limpio con la suite completa en verde tras la Fase 0.
-- [ ] 0 archivos `.py` de producción en la raíz (solo shims de CLI).
+- [x] Repo limpio con la suite completa en verde tras la Fase 0.
+- [x] 0 archivos `.py` de producción en la raíz (solo shims de CLI).
 - [x] 76 tests en `tests/`, corriendo con `unittest discover -s tests -t .`.
-- [ ] `RUN.bat`, `GENERATE_SHORT.bat` y los comandos CLI del playbook funcionan sin cambios.
-- [ ] `python -m compileall` sin errores.
-- [ ] Ningún módulo de producción importa `test_*`.
+- [x] `RUN.bat`, `GENERATE_SHORT.bat` y los comandos CLI del playbook funcionan sin cambios (vía shims).
+- [x] `python -m compileall` sin errores.
+- [x] Ningún módulo de producción importa `test_*`.
 
 ---
 
 ## Changelog
 
+- **2026-10-01 (Fase 9, final)** — `app/` (13) + `studio/` (24) movidos; 122 imports + 52
+  strings reescritos. `__file__`→raíz en `project_manager_v2`, `auto_video_integration_pyqt6`
+  y `studio_video_assembly_handlers`; `safe_import_module` → `studio.timeline_editor_widget`;
+  shim raíz para `video_optimizer_pyqt6` (RUN.bat). **Raíz reducida a 20 shims CLI.** Suite
+  verde: 1205 tests.
 - **2026-10-01 (Fase 8)** — `catharsis/` con 7 módulos (formato Catarsis; 20 imports
   reescritos). `__file__`→raíz en `catharsis_editor` (transition_overlays) y `catharsis_tab`
   (ROOT); shim raíz para el CLI `catharsis_editor`. Suite verde: 1205 tests.

@@ -56,7 +56,7 @@ class MezclaEnElProyecto(unittest.TestCase):
 class ElProjectManagerLoEscribe(unittest.TestCase):
 
     def test_registra_en_memoria_y_en_disco(self):
-        from studio_project_manager import StudioProjectManager
+        from studio.studio_project_manager import StudioProjectManager
 
         with tempfile.TemporaryDirectory(suffix=".json") as tmp:
             path = os.path.join(tmp, "project.json")
@@ -73,7 +73,7 @@ class ElProjectManagerLoEscribe(unittest.TestCase):
             self.assertEqual(saved["config"]["topic"], "Halifax", "no pisa el resto del proyecto")
 
     def test_sin_proyecto_en_disco_queda_solo_en_memoria(self):
-        from studio_project_manager import StudioProjectManager
+        from studio.studio_project_manager import StudioProjectManager
 
         tab = SimpleNamespace(current_project_path=None)
         pm = StudioProjectManager.__new__(StudioProjectManager)
@@ -83,13 +83,13 @@ class ElProjectManagerLoEscribe(unittest.TestCase):
 
     def test_la_gui_llama_al_registro_al_terminar(self):
         import io
-        fuente = io.open("auto_video_integration_pyqt6.py", encoding="utf-8", errors="replace").read()
+        fuente = io.open("studio/auto_video_integration_pyqt6.py", encoding="utf-8", errors="replace").read()
         bloque = fuente[fuente.index("def _on_publish_done("):][:900]
         self.assertIn("record_publish_results(results)", bloque)
 
     def test_el_guardado_normal_conserva_publish_results(self):
         import io
-        fuente = io.open("studio_project_manager.py", encoding="utf-8", errors="replace").read()
+        fuente = io.open("studio/studio_project_manager.py", encoding="utf-8", errors="replace").read()
         self.assertGreaterEqual(fuente.count("project_data['publish_results'] = dict(self.studio_tab.publish_results)"), 2)
         self.assertIn("self.studio_tab.publish_results = dict(project_data.get('publish_results') or {})", fuente)
 

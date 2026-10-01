@@ -249,7 +249,7 @@ class ElCableado(unittest.TestCase):
         self.assertIn("description=description,", body)
 
     def test_studio_checks_music_and_passes_the_credit(self):
-        src = self._src("auto_video_integration_pyqt6.py")
+        src = self._src("studio/auto_video_integration_pyqt6.py")
         body = src[src.index("    def publish_video_to_platforms("):]
         self.assertIn("self._music_license_gate(storyboard)", body)
         self.assertIn("_meta['music_attribution'] = _music_attribution", body)
@@ -266,7 +266,7 @@ class ElCableado(unittest.TestCase):
         self.assertIn('instagram_metadata["music_attribution"] = music_attribution', src)
 
     def test_dialog_no_longer_offers_nc_nd(self):
-        src = self._src("music_browser_dialog.py")
+        src = self._src("studio/music_browser_dialog.py")
         self.assertNotIn("Check NC/ND restrictions before publishing", src)
         self.assertIn("record_claim(track", src)
 

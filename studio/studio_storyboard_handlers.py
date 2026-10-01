@@ -6,7 +6,7 @@ Handlers para la generaciÃ³n y manejo de storyboards en AutoVideoStudioTab
 from PyQt6.QtCore import QThread
 from PyQt6.QtWidgets import QMessageBox
 
-from auto_video_generator_pyqt6_adapter import VideoGenerationWorker
+from studio.auto_video_generator_pyqt6_adapter import VideoGenerationWorker
 
 
 class StudioStoryboardHandlers:
@@ -129,7 +129,7 @@ class StudioStoryboardHandlers:
     def generate_storyboard(self):
         """Genera el storyboard (Paso 1)"""
         if hasattr(self.studio_tab, 'format_strategy_combo') and self.studio_tab.format_strategy_combo.currentData() == 'micro_documentary':
-            from studio_channel_controls import open_pilot
+            from studio.studio_channel_controls import open_pilot
             open_pilot(self.studio_tab, generate=True)
             return
         # Modo normal: generar con Gemini
@@ -144,14 +144,14 @@ class StudioStoryboardHandlers:
         if hasattr(self.studio_tab, "project_manager"):
             isolated = bool(self.studio_tab.project_manager.prepare_isolated_project_for_topic(topic))
         try:
-            from studio_channel_controls import sync_editorial_before_writing
+            from studio.studio_channel_controls import sync_editorial_before_writing
             sync_editorial_before_writing(self.studio_tab, isolated=isolated)
         except Exception as exc:
             self.studio_tab.log(f" No se pudo sincronizar el perfil editorial: {exc}")
 
         category = self.studio_tab.parent_gui.category_combo.currentText()
         try:
-            from studio_channel_controls import resolve_archetype_for_topic
+            from studio.studio_channel_controls import resolve_archetype_for_topic
             format_archetype = resolve_archetype_for_topic(self.studio_tab, topic, category)
         except Exception as exc:
             self.studio_tab.log(f" Sin ángulo narrativo ({exc}); sigue el Bible general.")
@@ -299,7 +299,7 @@ class StudioStoryboardHandlers:
                     f" [WARN] No se pudo preparar la direccion cinematografica: {direction_error}"
                 )
         self.studio_tab.last_storyboard_data = result
-        from studio_channel_controls import project_channel_config
+        from studio.studio_channel_controls import project_channel_config
         result.setdefault('channel_profile', project_channel_config(self.studio_tab)['channel_profile'])
 
         # GUARDADO INMEDIATO para prevenir pÃ©rdida de datos en caso de crash

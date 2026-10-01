@@ -134,7 +134,7 @@ except ImportError:
 
 # Importar worker desde timeline_workers
 try:
-    from timeline_workers import WikimediaSearchWorker
+    from studio.timeline_workers import WikimediaSearchWorker
 except ImportError:
     WikimediaSearchWorker = None
     if WIKIMEDIA_AVAILABLE:

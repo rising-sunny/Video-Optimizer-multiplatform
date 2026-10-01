@@ -279,17 +279,17 @@ class Cableado(unittest.TestCase):
             return fh.read()
 
     def test_el_studio_encadena_la_investigacion_hacia_instagram(self):
-        s = self._src("auto_video_integration_pyqt6.py")
+        s = self._src("studio/auto_video_integration_pyqt6.py")
         self.assertIn("research_for_next_platform(results.get('youtube'), results.get('facebook'))", s)
         self.assertIn("_instagram_meta['research'] = _ig_research", s)
         self.assertIn('ig_title_mode = "suggest"', s)
 
     def test_los_respaldos_de_instagram_no_usan_marca_ajena_ni_cebo(self):
-        for name in ("auto_video_integration_pyqt6.py", "platform_metadata_tab.py", "pipeline/daily_short_pipeline.py"):
+        for name in ("studio/auto_video_integration_pyqt6.py", "studio/platform_metadata_tab.py", "pipeline/daily_short_pipeline.py"):
             s = self._src(name)
             self.assertNotIn("#stunningrevelations #history #mystery #reels #facts", s, name)
             self.assertNotIn("#history #reels #facts", s, name)
-        self.assertNotIn("preview[:320]", self._src("auto_video_integration_pyqt6.py"))
+        self.assertNotIn("preview[:320]", self._src("studio/auto_video_integration_pyqt6.py"))
 
 
 if __name__ == "__main__":

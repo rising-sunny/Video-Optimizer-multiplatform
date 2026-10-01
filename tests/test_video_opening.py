@@ -275,7 +275,7 @@ class ElTimeline(unittest.TestCase):
         cls.app = QApplication.instance() or QApplication([])
 
     def test_la_escena_1_muestra_y_guarda_el_gancho(self):
-        from timeline_segment_editor import SegmentEditor
+        from studio.timeline_segment_editor import SegmentEditor
         ed = SegmentEditor()
         guardados = []
         ed.saved.connect(guardados.append)
@@ -291,7 +291,7 @@ class ElTimeline(unittest.TestCase):
         self.assertEqual((h["text"], h["duration"], h["enabled"], h["source"]), ("30,000 OXEN", 2.2, True, "cifra"))
 
     def test_otras_escenas_no_lo_muestran(self):
-        from timeline_segment_editor import SegmentEditor
+        from studio.timeline_segment_editor import SegmentEditor
         ed = SegmentEditor()
         ed.load_segment(_segs()[1])
         self.assertTrue(ed.hook_group.isHidden())
@@ -339,16 +339,16 @@ class Cableado(unittest.TestCase):
         self.assertIn("if clip_data.get('opening_push_in'):", s)
 
     def test_la_gui_guarda_y_envia_la_entrada_elegida(self):
-        ui = self._src("auto_video_integration_pyqt6.py")
-        projects = self._src("studio_project_manager.py")
-        handler = self._src("studio_storyboard_handlers.py")
+        ui = self._src("studio/auto_video_integration_pyqt6.py")
+        projects = self._src("studio/studio_project_manager.py")
+        handler = self._src("studio/studio_storyboard_handlers.py")
         self.assertIn("self.opening_style_combo = QComboBox()", ui)
         self.assertIn("OpeningStylePreview", ui)
         self.assertIn("'opening_style': self.studio_tab.get_selected_opening_style()", projects)
         self.assertIn("opening_style=opening_style", handler)
 
     def test_timeline_y_checklist(self):
-        self.assertIn("self.hook_label", self._src("timeline_segment_widget.py"))
+        self.assertIn("self.hook_label", self._src("studio/timeline_segment_widget.py"))
         self.assertIn('"opening_hook_present"', self._src("publish/production_checklist.py"))
 
 

@@ -20,7 +20,7 @@ from PyQt6.QtWidgets import QWidget
 from PyQt6.QtCore import Qt, pyqtSignal, QRectF
 from PyQt6.QtGui import QPainter, QColor, QPen, QBrush, QFont
 
-from waveform_geometry import (
+from studio.waveform_geometry import (
     GRAB_TOLERANCE_PX,
     MIN_SELECTION_S,
     clamp_range,

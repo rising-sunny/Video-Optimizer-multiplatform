@@ -137,7 +137,7 @@ class ElDialogoCargaElTema(unittest.TestCase):
     def test_usar_tema_llena_tema_categoria_y_angulo(self):
         from PyQt6.QtWidgets import QWidget, QComboBox, QLineEdit
         from tests.test_studio_channel_controls import StudioStub
-        from studio_channel_controls import TrendsDialog
+        from studio.studio_channel_controls import TrendsDialog
         tab = StudioStub()
         parent = QWidget(); parent.category_combo = QComboBox(); parent.category_combo.addItems(["Ancient Civilizations & Empires", "War & Military History"])
         tab.parent_gui = parent
@@ -154,7 +154,7 @@ class ElDialogoCargaElTema(unittest.TestCase):
         dlg.close(); parent.close(); tab.close()
 
     def test_el_boton_existe(self):
-        fuente = io.open("studio_channel_controls.py", encoding="utf-8", errors="replace").read()
+        fuente = io.open("studio/studio_channel_controls.py", encoding="utf-8", errors="replace").read()
         self.assertIn("tab.btn_trends = QPushButton('Tendencias')", fuente)
 
 

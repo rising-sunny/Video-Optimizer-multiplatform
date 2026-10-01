@@ -110,7 +110,7 @@ class TimelineDirectionEditor(unittest.TestCase):
         cls.app = QApplication.instance() or QApplication([])
 
     def test_manual_direction_is_saved_and_locked(self):
-        from timeline_segment_editor import SegmentEditor
+        from studio.timeline_segment_editor import SegmentEditor
         editor = SegmentEditor()
         saved = []
         editor.saved.connect(saved.append)

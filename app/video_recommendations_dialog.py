@@ -29,7 +29,7 @@ class VideoRecommendationsWorker(QThread):
     def run(self):
         """Ejecuta la generación de recomendaciones"""
         try:
-            from video_recommender import VideoRecommender
+            from app.video_recommender import VideoRecommender
             
             self.progress.emit(" Analizando tendencias de Google...")
             

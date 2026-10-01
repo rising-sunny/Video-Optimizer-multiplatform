@@ -604,7 +604,7 @@ class DesdeCarpeta(ConTokenTemporal):
 class EnElStudio(unittest.TestCase):
 
     def setUp(self):
-        with io.open("auto_video_integration_pyqt6.py", encoding="utf-8", errors="replace") as fh:
+        with io.open("studio/auto_video_integration_pyqt6.py", encoding="utf-8", errors="replace") as fh:
             self.fuente = fh.read()
 
     def test_casilla_y_subida(self):

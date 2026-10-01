@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QComboBox, QSlider, QRadioButton, QPushButton
 from channel.channel_profiles import active_channel, DEFAULT_CHANNEL, select_channel
-from studio_channel_controls import (install_controls, restore_channel_config, project_channel_config,
+from studio.studio_channel_controls import (install_controls, restore_channel_config, project_channel_config,
                                      PilotDialog, sync_editorial_before_writing)
 
 
@@ -115,7 +115,7 @@ class ChannelGuiTests(unittest.TestCase):
     def test_publishing_cannot_change_destination(self):
         tab = StudioStub()
         tab.btn_publish = QPushButton('Publicando...')
-        with patch('studio_channel_controls.QMessageBox.information'):
+        with patch('studio.studio_channel_controls.QMessageBox.information'):
             tab.channel_combo.setCurrentIndex(1)
         self.assertEqual(tab.channel_combo.currentData(), DEFAULT_CHANNEL)
         tab.close()

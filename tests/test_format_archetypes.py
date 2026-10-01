@@ -123,7 +123,7 @@ class ElStudioLoEligeYLoGuarda(unittest.TestCase):
 
     def test_combo_config_y_restauracion(self):
         from tests.test_studio_channel_controls import StudioStub
-        from studio_channel_controls import project_channel_config, restore_channel_config, resolve_archetype_for_topic
+        from studio.studio_channel_controls import project_channel_config, restore_channel_config, resolve_archetype_for_topic
         tab = StudioStub()
         datos = [tab.archetype_combo.itemData(i) for i in range(tab.archetype_combo.count())]
         self.assertEqual(datos, ["auto", "mechanism", "discovery", "human_story", "scale_event"])
@@ -137,7 +137,7 @@ class ElStudioLoEligeYLoGuarda(unittest.TestCase):
 
     def test_auto_resuelve_por_tema(self):
         from tests.test_studio_channel_controls import StudioStub
-        from studio_channel_controls import resolve_archetype_for_topic
+        from studio.studio_channel_controls import resolve_archetype_for_topic
         tab = StudioStub()
         tab.archetype_combo.setCurrentIndex(0)
         self.assertEqual(resolve_archetype_for_topic(tab, "How did the Romans build the Cloaca Maxima"), "mechanism")
@@ -145,7 +145,7 @@ class ElStudioLoEligeYLoGuarda(unittest.TestCase):
 
     def test_el_perfil_viejo_solo_ofrece_auto(self):
         from tests.test_studio_channel_controls import StudioStub
-        from studio_channel_controls import set_editorial_channel
+        from studio.studio_channel_controls import set_editorial_channel
         tab = StudioStub()
         set_editorial_channel(tab, "stunning-revelations")
         self.assertEqual(tab.archetype_combo.count(), 1)
@@ -155,7 +155,7 @@ class ElStudioLoEligeYLoGuarda(unittest.TestCase):
 class LlegaAlGenerador(unittest.TestCase):
 
     def test_el_adaptador_deja_pasar_el_parametro(self):
-        from auto_video_generator_pyqt6_adapter import AutoVideoGeneratorPyQt6
+        from studio.auto_video_generator_pyqt6_adapter import AutoVideoGeneratorPyQt6
 
         class Fake:
             def generate_storyboard_data(self, **kw):
@@ -190,7 +190,7 @@ class LlegaAlGenerador(unittest.TestCase):
         self.assertEqual(out["opening_style"], "artifact_reveal_v1")
 
     def test_el_handler_lo_pasa_y_el_generador_lo_estampa(self):
-        fuente = io.open("studio_storyboard_handlers.py", encoding="utf-8", errors="replace").read()
+        fuente = io.open("studio/studio_storyboard_handlers.py", encoding="utf-8", errors="replace").read()
         self.assertIn("format_archetype=format_archetype", fuente)
         gen = io.open("pipeline/storyboard_generator.py", encoding="utf-8", errors="replace").read()
         self.assertIn('format_archetype: str = ""', gen)

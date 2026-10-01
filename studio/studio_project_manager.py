@@ -14,7 +14,7 @@ import traceback
 import copy
 from pathlib import Path
 from datetime import datetime, timedelta
-from studio_channel_controls import project_channel_config, restore_channel_config
+from studio.studio_channel_controls import project_channel_config, restore_channel_config
 
 # Utilidades para manejar errores de Google Drive
 try:
@@ -306,7 +306,7 @@ class StudioProjectManager:
         if not project_path or not project_data:
             return project_data
 
-        from project_manager_v2 import ProjectManagerV2
+        from app.project_manager_v2 import ProjectManagerV2
 
         project_folder = Path(project_path).parent
         selected_thumbnail_path, thumbnail_payload = self._get_thumbnail_snapshot()
@@ -386,7 +386,7 @@ class StudioProjectManager:
             return
 
         if project_data is None:
-            from project_manager_v2 import ProjectManagerV2
+            from app.project_manager_v2 import ProjectManagerV2
             project_data = ProjectManagerV2.load_project(project_path)
 
         if not project_data:
@@ -428,7 +428,7 @@ class StudioProjectManager:
             self._sync_timeline_editor_to_storyboard()
 
             # Usar el nuevo sistema de gestión de proyectos v2.0
-            from project_manager_v2 import ProjectManagerV2
+            from app.project_manager_v2 import ProjectManagerV2
 
 
             # Recopilar configuraciones actuales
@@ -645,7 +645,7 @@ class StudioProjectManager:
                                     project_data['storyboard'] = storyboard_data_to_save
                             
                             # Procesar y copiar archivos multimedia nuevos al proyecto existente
-                            from project_manager_v2 import ProjectManagerV2
+                            from app.project_manager_v2 import ProjectManagerV2
                             updated_project_data = ProjectManagerV2._process_project_media(project_data, project_folder)
                             
                             # Leer el proyecto existente para mantener su estructura
@@ -910,7 +910,7 @@ class StudioProjectManager:
                     )
                 return
 
-            from project_manager_v2 import ProjectManagerV2
+            from app.project_manager_v2 import ProjectManagerV2
 
 
             # Si ya hay un proyecto cargado, guardar en la misma ruta
@@ -1200,7 +1200,7 @@ class StudioProjectManager:
         if not project_path or not project_data:
             return project_data
 
-        from project_manager_v2 import ProjectManagerV2
+        from app.project_manager_v2 import ProjectManagerV2
 
         project_folder = Path(project_path).parent
         config = project_data.get('config', {})
@@ -1267,7 +1267,7 @@ class StudioProjectManager:
             return
 
         if project_data is None:
-            from project_manager_v2 import ProjectManagerV2
+            from app.project_manager_v2 import ProjectManagerV2
             project_data = ProjectManagerV2.load_project(project_path)
 
         if not project_data:
@@ -1308,7 +1308,7 @@ class StudioProjectManager:
                     self.studio_tab.log(" Proyecto actual guardado automáticamente")
 
             # Usar el nuevo sistema de gestión de proyectos v2.0
-            from project_manager_v2 import ProjectManagerV2
+            from app.project_manager_v2 import ProjectManagerV2
 
 
             # Asegurar que el directorio existe antes de usarlo
@@ -1378,7 +1378,7 @@ class StudioProjectManager:
 
         try:
 
-            from project_manager_dialog import ProjectManagerDialog
+            from app.project_manager_dialog import ProjectManagerDialog
 
 
             dialog = ProjectManagerDialog(self.studio_tab)
@@ -1407,7 +1407,7 @@ class StudioProjectManager:
 
         load_token = None
         try:
-            from project_manager_v2 import ProjectManagerV2
+            from app.project_manager_v2 import ProjectManagerV2
 
             # Cargar proyecto con el nuevo sistema
             project_data = ProjectManagerV2.load_project(project_path)
@@ -1852,7 +1852,7 @@ class StudioProjectManager:
                                         teaser_found = False
                                         if self.studio_tab.last_generated_video_data.get('video_id'):
                                             try:
-                                                from video_registry import VideoRegistry
+                                                from app.video_registry import VideoRegistry
                                                 registry = VideoRegistry()
                                                 teasers = registry.get_teasers_for_long_video(self.studio_tab.last_generated_video_data['video_id'])
                                                 if teasers:
@@ -1871,7 +1871,7 @@ class StudioProjectManager:
                                     teaser_found = False
                                     if self.studio_tab.last_generated_video_data.get('video_id'):
                                         try:
-                                            from video_registry import VideoRegistry
+                                            from app.video_registry import VideoRegistry
                                             registry = VideoRegistry()
                                             teasers = registry.get_teasers_for_long_video(self.studio_tab.last_generated_video_data['video_id'])
                                             if teasers:
@@ -1924,7 +1924,7 @@ class StudioProjectManager:
                     # Método 2: Intentar desde VideoRegistry (simplificado)
                     if not video_restored:
                         try:
-                            from video_registry import VideoRegistry
+                            from app.video_registry import VideoRegistry
                             registry = VideoRegistry()
                             topic = storyboard_data.get('topic', '')
                             category = storyboard_data.get('category', '')

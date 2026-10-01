@@ -26,7 +26,7 @@ except ImportError:
 
 # Importar worker desde timeline_workers
 try:
-    from timeline_workers import PexelsVideoSearchWorker
+    from studio.timeline_workers import PexelsVideoSearchWorker
 except ImportError:
     PexelsVideoSearchWorker = None
     if PEXELS_AVAILABLE:

@@ -84,10 +84,10 @@ class ElModoStandalone(unittest.TestCase):
         wrapper = io.open("pipeline/auto_video_generator_v2.py", encoding="utf-8", errors="replace").read()
         self.assertIn("mode='standalone'", wrapper)
         self.assertIn("rate=rate, mode=mode", wrapper)
-        gui = io.open("auto_video_integration_pyqt6.py", encoding="utf-8", errors="replace").read()
+        gui = io.open("studio/auto_video_integration_pyqt6.py", encoding="utf-8", errors="replace").read()
         self.assertIn("Short vertical (autónomo, 60–90 s)", gui)
         self.assertIn("mode='standalone',", gui)
-        handlers = io.open("studio_video_assembly_handlers.py", encoding="utf-8", errors="replace").read()
+        handlers = io.open("studio/studio_video_assembly_handlers.py", encoding="utf-8", errors="replace").read()
         self.assertIn("YouTube no lo distribuye en Shorts", handlers)
 
 

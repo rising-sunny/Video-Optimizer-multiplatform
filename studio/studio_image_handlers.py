@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import QMessageBox
 import os
 from pathlib import Path
 
-from auto_video_generator_pyqt6_adapter import VideoGenerationWorker
+from studio.auto_video_generator_pyqt6_adapter import VideoGenerationWorker
 
 
 # Mapping label de la combo box → provider_key interno. Centralizado aquí para

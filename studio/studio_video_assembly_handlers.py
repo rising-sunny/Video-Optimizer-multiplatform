@@ -12,7 +12,7 @@ import subprocess
 from pathlib import Path
 from datetime import datetime, timezone
 
-from auto_video_generator_pyqt6_adapter import VideoGenerationWorker
+from studio.auto_video_generator_pyqt6_adapter import VideoGenerationWorker
 
 
 class StudioVideoAssemblyHandlers:
@@ -124,7 +124,7 @@ class StudioVideoAssemblyHandlers:
             _append_base(getattr(self.studio_tab, 'current_project_path', None))
 
         _append_base(Path.cwd())
-        _append_base(Path(__file__).resolve().parent)
+        _append_base(Path(__file__).resolve().parent.parent)
 
         seen = set()
         for base in candidate_bases:
@@ -562,7 +562,7 @@ class StudioVideoAssemblyHandlers:
         # lento en aplicaciones grandes (5-30s). findChildren busca solo en el árbol
         # de widgets Qt y es prácticamente instantáneo.
         try:
-            from music_browser_dialog import MusicBrowserDialog
+            from studio.music_browser_dialog import MusicBrowserDialog
             for dialog in self.studio_tab.findChildren(MusicBrowserDialog):
                 try:
                     if hasattr(dialog, '_vlc_player') and dialog._vlc_player:
@@ -584,7 +584,7 @@ class StudioVideoAssemblyHandlers:
     def assemble_video(self):
         """Ensambla el video (Paso 2)"""
         if (self.studio_tab.last_storyboard_data or {}).get('format_strategy') == 'micro_documentary':
-            from studio_channel_controls import open_pilot
+            from studio.studio_channel_controls import open_pilot
             open_pilot(self.studio_tab)
             return
         # Detener reproductores multimedia en segundo plano para evitar
@@ -1305,7 +1305,7 @@ class StudioVideoAssemblyHandlers:
 
         # Registrar video en el sistema de registro
         try:
-            from video_registry import VideoRegistry
+            from app.video_registry import VideoRegistry
             registry = VideoRegistry()
 
             # Obtener información del video

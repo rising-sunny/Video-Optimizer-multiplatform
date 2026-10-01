@@ -16,7 +16,7 @@ from pathlib import Path
 
 # Importar VideoTimelineWidget
 try:
-    from timeline_video_widget import VideoTimelineWidget
+    from studio.timeline_video_widget import VideoTimelineWidget
 except ImportError:
     VideoTimelineWidget = None
     print("️ timeline_video_widget.py no encontrado. VideoTimelineWidget no estará disponible.")

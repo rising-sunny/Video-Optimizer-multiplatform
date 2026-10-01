@@ -335,7 +335,7 @@ class LosBotones(unittest.TestCase):
         cls.app = QApplication.instance() or QApplication([])
 
     def test_segment_has_both_buttons_and_the_video_one_emits_its_index(self):
-        from timeline_segment_widget import TimelineSegment
+        from studio.timeline_segment_widget import TimelineSegment
         w = TimelineSegment(3, {"narration_text": "x", "text": "x", "visual_prompt": "v", "duration": 5.0},
                             defer_media_load=True)
         self.assertEqual(w.btn_copy_recraft_prompts.text(), "Copiar prompt imagen")
@@ -351,14 +351,14 @@ class ElCableado(unittest.TestCase):
         return (ROOT / name).read_text(encoding="utf-8")
 
     def test_video_button_is_wired_for_single_and_grouped_segments(self):
-        src = self._src("timeline_editor_widget.py")
+        src = self._src("studio/timeline_editor_widget.py")
         self.assertIn("widget.video_prompt_copy_requested.connect(self.copy_video_prompt_for_segment)", src)
         self.assertIn("wrapper.grouped_copy_video_prompt_requested.connect(self.copy_video_prompt_for_segment)", src)
         body = src[src.index("    def copy_video_prompt_for_segment("):]
         self.assertLess(body.index("self._ensure_art_view([segment_index])"), body.index("fallback_video_prompt("))
 
     def test_copy_buttons_use_art_direction_first(self):
-        src = self._src("timeline_editor_widget.py")
+        src = self._src("studio/timeline_editor_widget.py")
         one = src[src.index("    def copy_recraft_prompts_for_segment("):]
         self.assertLess(one.index("self._art_directed_prompts([segment_index])"),
                         one.index("self._resolve_recraft_prompt_for_segment(segment_index)"))

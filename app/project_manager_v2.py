@@ -44,7 +44,7 @@ print = _safe_print
 class ProjectManagerV2:
     """Gestiona el guardado y carga de proyectos con aislamiento completo"""
     
-    ROOT_DIR = Path(__file__).resolve().parent
+    ROOT_DIR = Path(__file__).resolve().parent.parent
     PROJECTS_DIR = ROOT_DIR / "projects"
     _dir_ensured = False
     

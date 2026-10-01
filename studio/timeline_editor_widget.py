@@ -111,7 +111,7 @@ except ImportError:
     VideoConfig = None
 
 # Importar Workers desde mÃ³dulo separado
-from timeline_workers import (
+from studio.timeline_workers import (
     VideoFrameExtractorWorker,
     AIImageRegenerationWorker,
     ContextualAIImageRegenerationWorker,
@@ -128,7 +128,7 @@ from timeline_workers import (
 from media.wikimedia_search_dialog import WikimediaSearchDialog
 from media.bing_images_search_dialog import BingImagesSearchDialog
 from media.pexels_video_search_dialog import PexelsVideoSearchDialog
-from video_preview_dialog import VideoPreviewDialog
+from app.video_preview_dialog import VideoPreviewDialog
 from media.wikimedia_video_search_dialog import WikimediaVideoSearchDialog
 from media.internet_archive_search_dialog import InternetArchiveVideoSearchDialog
 from media.youtube_video_search_dialog import YouTubeVideoSearchDialog
@@ -138,9 +138,9 @@ from media.local_video_picker_dialog import LocalVideoPickerDialog
 GoogleImagesSearchDialog = BingImagesSearchDialog
 
 # Importar widgets del timeline desde mÃ³dulos separados
-from timeline_video_widget import VideoTimelineWidget
-from timeline_segment_widget import TimelineSegment, GroupedSegmentsWidget
-from timeline_segment_editor import SegmentEditor
+from studio.timeline_video_widget import VideoTimelineWidget
+from studio.timeline_segment_widget import TimelineSegment, GroupedSegmentsWidget
+from studio.timeline_segment_editor import SegmentEditor
 try:
     from ai.text_correction_engine import TextCorrectionEngine
     TEXT_CORRECTION_AVAILABLE = True
@@ -506,7 +506,7 @@ class TimelineEditorWidget(QWidget):
         FALLBACK_PROVIDER = 'comfy_dev'
         provider_key = FALLBACK_PROVIDER
         try:
-            from studio_image_handlers import resolve_image_provider_key
+            from studio.studio_image_handlers import resolve_image_provider_key
             combo = getattr(self.studio_tab, 'image_provider_combo', None)
             provider_key = resolve_image_provider_key(combo, default=FALLBACK_PROVIDER)
         except Exception as exc:
@@ -4555,7 +4555,7 @@ Next segment:
                 if hasattr(gw, 'set_fal_animate_busy'):
                     gw.set_fal_animate_busy(True)
 
-        from timeline_workers import FalI2VWorker
+        from studio.timeline_workers import FalI2VWorker
         worker = FalI2VWorker(
             segment_index=segment_index,
             image_path=image_path,
@@ -5502,7 +5502,7 @@ Next segment:
         
         # Importar y mostrar diÃ¡logo
         try:
-            from video_edit_dialog import VideoEditDialog
+            from app.video_edit_dialog import VideoEditDialog
             dialog = VideoEditDialog(self, segment, video_path)
             
             if dialog.exec() == QDialog.DialogCode.Accepted:

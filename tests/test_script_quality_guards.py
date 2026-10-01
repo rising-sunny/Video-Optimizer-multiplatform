@@ -75,7 +75,7 @@ class ScriptQualityGuardTests(unittest.TestCase):
         self.assertIn("Stamford Bridge", topic_search_queries("Stamford Bridge - the last Viking battle"))
 
     def test_new_topic_detaches_from_previous_project(self):
-        from studio_project_manager import StudioProjectManager
+        from studio.studio_project_manager import StudioProjectManager
 
         class FakeTab:
             def __init__(self):
