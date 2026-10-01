@@ -1364,7 +1364,7 @@ class AutoVideoStudioTab(QWidget):
         genero un reclamo de Content ID (daily_shorts/music_claims.json). Ver music_license.
         """
         try:
-            import music_license as ml
+            from publish import music_license as ml
         except Exception as exc:
             self.log(f" Verificacion de licencia de musica no disponible: {exc}")
             return True, ""
@@ -1499,7 +1499,7 @@ class AutoVideoStudioTab(QWidget):
                 yt_desc = mt.yt_description.toPlainText().strip()
                 yt_tags_raw = mt.yt_tags.toPlainText().strip()
                 if yt_title or yt_desc:
-                    from youtube_tags import split_tag_field
+                    from publish.youtube_tags import split_tag_field
                     tags = split_tag_field(yt_tags_raw)
                     youtube_meta = {"title": yt_title, "description": yt_desc, "tags": tags}
                     title_mode = "suggest"
@@ -1581,7 +1581,7 @@ Respond ONLY with valid JSON."""
                 self.log(f" Título generado: {youtube_meta.get('title')}")
             except Exception as e:
                 self.log(f" Usando metadatos de respaldo ({e}).")
-            from upload_metadata import channel_brand as _channel_brand
+            from publish.upload_metadata import channel_brand as _channel_brand
             _brand_tag = _channel_brand(upload_channel).replace(' ', '')
             if not youtube_meta or not isinstance(youtube_meta, dict):
                 youtube_meta = {
@@ -1592,7 +1592,7 @@ Respond ONLY with valid JSON."""
                     ),
                     "tags": [topic],  # la investigacion (youtube_tags) completa al subir
                 }
-            from facebook_metadata import trim_at_boundary
+            from publish.facebook_metadata import trim_at_boundary
             if not facebook_meta:
                 _fb_preview = trim_at_boundary(script or preview, 260)
                 fb_description = (
@@ -1633,7 +1633,7 @@ Respond ONLY with valid JSON."""
         # Capturar variables para el closure
         _video_path = video_path
         from studio_channel_controls import project_channel_config
-        from upload_metadata import metadata_for_channel
+        from publish.upload_metadata import metadata_for_channel
         youtube_meta = metadata_for_channel(youtube_meta, upload_channel)
         # Contexto para investigar tags contra el guion real (youtube_tags.research_tags).
         youtube_meta.setdefault('topic', topic)
@@ -1724,7 +1724,7 @@ Respond ONLY with valid JSON."""
                     self.log(" Subiendo a YouTube...")
                     priv = "private" if _publish_at_youtube else "public"
                     try:
-                        from youtube_uploader import upload_from_metadata as _yt_meta
+                        from publish.youtube_uploader import upload_from_metadata as _yt_meta
                         results['youtube'] = _yt_meta(
                             output_dir=str(staging),
                             privacy_status=priv,
@@ -1743,7 +1743,7 @@ Respond ONLY with valid JSON."""
                     self.log(" Subiendo a Facebook...")
                     try:
                         # Mismo titulo y palabra clave que YouTube, sin volver a investigar.
-                        from facebook_metadata import research_from_youtube
+                        from publish.facebook_metadata import research_from_youtube
                         _fb_research = research_from_youtube(results.get('youtube'))
                         if _fb_research:
                             _facebook_meta['research'] = _fb_research
@@ -1762,7 +1762,7 @@ Respond ONLY with valid JSON."""
                     self.log(" Subiendo a Instagram...")
                     try:
                         # La investigacion ya hecha en esta tanda (YouTube o, si no, Facebook).
-                        from facebook_metadata import research_for_next_platform
+                        from publish.facebook_metadata import research_for_next_platform
                         _ig_research = research_for_next_platform(results.get('youtube'), results.get('facebook'))
                         if _ig_research:
                             _instagram_meta['research'] = _ig_research
@@ -1780,7 +1780,7 @@ Respond ONLY with valid JSON."""
                 if do_x:
                     self.log(" Subiendo a X...")
                     try:
-                        from x_video_uploader import upload_from_metadata as _x_meta_up
+                        from publish.x_video_uploader import upload_from_metadata as _x_meta_up
 
                         # Si YouTube ya publico, se cita el short: X premia el
                         # video nativo, pero el enlace suma trafico al canal.
@@ -1806,7 +1806,7 @@ Respond ONLY with valid JSON."""
                 if do_tiktok:
                     self.log(" Enviando a TikTok (borrador a tu bandeja)...")
                     try:
-                        from facebook_metadata import research_for_next_platform
+                        from publish.facebook_metadata import research_for_next_platform
                         _tt_research = research_for_next_platform(results.get('youtube'), results.get('facebook'))
                         if _tt_research:
                             _tiktok_meta['research'] = _tt_research
@@ -1815,8 +1815,8 @@ Respond ONLY with valid JSON."""
                     except Exception as tt_seo_err:
                         self.log(f"   TikTok: no se pudo reusar la investigacion ({tt_seo_err})")
                     try:
-                        from tiktok_uploader import upload_from_metadata as _tt_up
-                        from upload_progress import make_byte_progress_reporter
+                        from publish.tiktok_uploader import upload_from_metadata as _tt_up
+                        from publish.upload_progress import make_byte_progress_reporter
                         _tt_notify = self._publish_log_signal.emit
                         results['tiktok'] = _tt_up(
                             output_dir=str(staging),
@@ -1869,13 +1869,6 @@ Respond ONLY with valid JSON."""
 
         # Scripts to ship alongside the video so the VPS doesn't need a pre-installed deploy
         local_scripts = [
-            os.path.join(os.getcwd(), 'facebook_uploader.py'),
-            os.path.join(os.getcwd(), 'facebook_metadata.py'),
-            os.path.join(os.getcwd(), 'music_license.py'),       # atribucion de la musica
-            os.path.join(os.getcwd(), 'thumbnail_publish.py'),
-            os.path.join(os.getcwd(), 'output_video_locator.py'),
-            os.path.join(os.getcwd(), 'instagram_uploader.py'),
-            os.path.join(os.getcwd(), 'cloudinary_uploader.py'),
             os.path.join(os.getcwd(), '.env.txt'),
         ]
 
@@ -1924,14 +1917,15 @@ Respond ONLY with valid JSON."""
                     ["scp"] + existing_scripts + [f"{ssh_host}:{remote_tmp}/"],
                     capture_output=True, timeout=60
                 )
-            # El paquete infra/ va completo (con __init__.py) para que los imports
-            # `from infra.env_loader import ...` resuelvan en el VPS.
-            infra_dir = os.path.join(os.getcwd(), 'infra')
-            if os.path.isdir(infra_dir):
-                subprocess.run(
-                    ["scp", "-r", infra_dir, f"{ssh_host}:{remote_tmp}/"],
-                    capture_output=True, timeout=120
-                )
+            # Los paquetes van completos (con __init__.py) para que los imports
+            # `from publish.facebook_uploader import ...` resuelvan en el VPS.
+            for pkg_name in ('infra', 'ai', 'media', 'channel', 'publish'):
+                pkg_dir = os.path.join(os.getcwd(), pkg_name)
+                if os.path.isdir(pkg_dir):
+                    subprocess.run(
+                        ["scp", "-r", pkg_dir, f"{ssh_host}:{remote_tmp}/"],
+                        capture_output=True, timeout=180
+                    )
             self.log("   Archivos copiados al VPS.")
 
             # 4. Run the uploader from the temp dir (imports resolve locally)
@@ -1993,8 +1987,8 @@ Respond ONLY with valid JSON."""
             python_args += f", scheduled_publish_time='{publish_at}'"
 
         def _local_fallback():
-            from facebook_uploader import upload_from_metadata
-            from upload_progress import make_byte_progress_reporter
+            from publish.facebook_uploader import upload_from_metadata
+            from publish.upload_progress import make_byte_progress_reporter
             notify = self._publish_log_signal.emit
             return upload_from_metadata(
                 output_dir=str(staging_dir),
@@ -2010,7 +2004,7 @@ Respond ONLY with valid JSON."""
             staging_dir=staging_dir,
             video_path=video_path,
             python_call=(
-                "from facebook_uploader import upload_from_metadata\n"
+                "from publish.facebook_uploader import upload_from_metadata\n"
                 f"result = upload_from_metadata({python_args})"
             ),
             fallback_fn=_local_fallback,
@@ -2018,8 +2012,8 @@ Respond ONLY with valid JSON."""
 
     def _upload_instagram_via_vps(self, staging_dir, video_path: str, instagram_meta: dict) -> dict:
         def _local_fallback():
-            from instagram_uploader import upload_from_metadata
-            from upload_progress import make_byte_progress_reporter
+            from publish.instagram_uploader import upload_from_metadata
+            from publish.upload_progress import make_byte_progress_reporter
             # Sin esto el panel quedaba mudo desde "se sube desde esta PC" hasta el
             # resultado: Cloudinary + Meta procesando (hasta 5 min por intento).
             notify = self._publish_log_signal.emit
@@ -2034,7 +2028,7 @@ Respond ONLY with valid JSON."""
             staging_dir=staging_dir,
             video_path=video_path,
             python_call=(
-                "from instagram_uploader import upload_from_metadata\n"
+                "from publish.instagram_uploader import upload_from_metadata\n"
                 "result = upload_from_metadata(output_dir='.', share_to_feed=True)"
             ),
             fallback_fn=_local_fallback,
@@ -3792,7 +3786,7 @@ Respond ONLY with valid JSON."""
         self.btn_generate_super_prompt.setText("Generando...")
 
         # El formato manda: un Short necesita 9:16 y reglas de encuadre propias.
-        from thumbnail_formats import resolve_format
+        from publish.thumbnail_formats import resolve_format
         fmt = resolve_format(
             video_format=self.get_selected_video_format() if hasattr(self, 'get_selected_video_format') else None,
             platform=self.get_selected_platform_key() if hasattr(self, 'get_selected_platform_key') else None,
@@ -3833,7 +3827,7 @@ Respond ONLY with valid JSON."""
             brief = None
             if os.getenv("THUMBNAIL_RESEARCH", "1").strip().lower() not in ("0", "false", "no", "off"):
                 try:
-                    from thumbnail_research import build_thumbnail_brief
+                    from publish.thumbnail_research import build_thumbnail_brief
                     brief = build_thumbnail_brief(topic, _title_for_brief, _script_full,
                                                   archetype=_arche or "", log=lambda m: None,
                                                   thumbnail_format=fmt)
@@ -4542,7 +4536,7 @@ Respond ONLY with valid JSON."""
         def _run():
             try:
                 from PIL import Image
-                from thumbnail_typography import check_thumbnail_text
+                from publish.thumbnail_typography import check_thumbnail_text
                 with open(thumbnail_path, "rb") as fh:
                     data = fh.read()
                 with Image.open(thumbnail_path) as im:

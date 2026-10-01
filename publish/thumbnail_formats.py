@@ -155,7 +155,7 @@ class ThumbnailFormat:
         ("small and restrained" daba 2.6% de alto de letra): salen del plan de
         `thumbnail_typography`, calibrado con los shorts de historia mas vistos.
         """
-        from thumbnail_typography import generic_directives, plan_typography, typography_directives
+        from publish.thumbnail_typography import generic_directives, plan_typography, typography_directives
         if not hook or hook == "{short_text}":
             return generic_directives(self, hook=hook or "{short_text}")
         return typography_directives(plan_typography(hook, self))

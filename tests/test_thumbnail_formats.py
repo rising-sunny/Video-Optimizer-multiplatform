@@ -17,12 +17,12 @@ import shutil
 import tempfile
 import unittest
 
-import thumbnail_formats as tf
+from publish import thumbnail_formats as tf
 
 try:
     from PIL import Image
     from thumbnail_compositor import ThumbnailCompositor
-    from thumbnail_quality_validator import validate_thumbnail, _analyze_pixels
+    from publish.thumbnail_quality_validator import validate_thumbnail, _analyze_pixels
     PIL_OK = True
 except Exception:
     PIL_OK = False

@@ -54,7 +54,7 @@ class _ProgressReader:
 
 from infra.env_loader import load_project_env
 
-PROJECT_DIR = Path(__file__).resolve().parent
+PROJECT_DIR = Path(__file__).resolve().parent.parent
 load_project_env(PROJECT_DIR)
 FACEBOOK_METADATA_FILES = ("facebook_metadata.json", "metadata.json")
 
@@ -654,7 +654,7 @@ def _notify(on_status, message: str) -> None:
 def _prepare_thumbnail(image_path: str, on_status=None) -> dict:
     """JPEG/PNG reales (WebP y otros se convierten). Sin Pillow (VPS) manda JPG/PNG tal cual."""
     try:
-        from thumbnail_publish import prepare_for_youtube
+        from publish.thumbnail_publish import prepare_for_youtube
     except ImportError:
         ext = Path(image_path).suffix.lower()
         if ext in (".jpg", ".jpeg", ".png"):
@@ -716,7 +716,7 @@ def verify_video_thumbnail(video_id: str, page_access_token: str, local_path: st
     try:
         import io as _io
         from PIL import Image
-        from thumbnail_publish import served_matches_local
+        from publish.thumbnail_publish import served_matches_local
     except ImportError:
         return {"checked": False, "match": None, "reason": "sin Pillow para comparar"}
     if fetch is None:
@@ -1012,7 +1012,7 @@ def upload_video_post(video_path: str, title: str, description: str = "",
 
 def _find_thumbnail(output_dir: Path) -> Optional[Path]:
     try:
-        from thumbnail_publish import find_staged_thumbnail
+        from publish.thumbnail_publish import find_staged_thumbnail
         return find_staged_thumbnail(output_dir)
     except ImportError:                       # VPS sin el modulo: los nombres de siempre
         for name in ("thumbnail.jpg", "thumbnail.jpeg", "thumbnail.png"):
@@ -1039,7 +1039,7 @@ def upload_from_metadata(output_dir: str, video_state: str = "PUBLISHED", on_pro
     output_dir = Path(output_dir)
     metadata = _load_upload_metadata(output_dir)
 
-    from output_video_locator import find_output_video
+    from publish.output_video_locator import find_output_video
     video_path = find_output_video(output_dir)
     if not video_path:
         raise FileNotFoundError(f"No video file found in {output_dir}")
@@ -1055,7 +1055,7 @@ def upload_from_metadata(output_dir: str, video_state: str = "PUBLISHED", on_pro
     seo = None
     if optimize and _seo_enabled():
         try:
-            from facebook_metadata import prepare_facebook_metadata
+            from publish.facebook_metadata import prepare_facebook_metadata
             seo = prepare_facebook_metadata(metadata, brand=page_name, is_long=upload_type == "video",
                                             log=lambda m: _notify(on_status, str(m).strip()))
             title = seo["title"] or title
@@ -1069,7 +1069,7 @@ def upload_from_metadata(output_dir: str, video_state: str = "PUBLISHED", on_pro
     # Atribucion de la musica (CC BY la exige): al final, despues de optimizar, para que no se recorte.
     if metadata.get("music_attribution"):
         try:
-            from music_license import with_attribution, DESCRIPTION_LIMITS
+            from publish.music_license import with_attribution, DESCRIPTION_LIMITS
             description = with_attribution(description, metadata["music_attribution"],
                                            DESCRIPTION_LIMITS["facebook"])
         except ImportError:

@@ -19,7 +19,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-import instagram_uploader as ig
+from publish import instagram_uploader as ig
 
 
 class _Resp:
@@ -210,7 +210,7 @@ class ElFlujoCompleto(unittest.TestCase):
 class LaFuenteNoVuelveAtras(unittest.TestCase):
 
     def test_resumable_es_el_camino_por_defecto(self):
-        fuente = io.open("instagram_uploader.py", encoding="utf-8", errors="replace").read()
+        fuente = io.open("publish/instagram_uploader.py", encoding="utf-8", errors="replace").read()
         self.assertIn('os.getenv("INSTAGRAM_UPLOAD_MODE", "resumable")', fuente)
         self.assertIn("rupload.facebook.com/ig-api-upload", fuente)
 

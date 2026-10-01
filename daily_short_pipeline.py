@@ -1759,7 +1759,7 @@ Respond ONLY with valid JSON, no markdown."""
 def _facebook_metadata_fallback(storyboard: dict, youtube_metadata: dict | None = None) -> dict:
     # Los hashtags investigados y la marca de la pagina los agrega facebook_uploader al
     # publicar (facebook_metadata); aca no va '#Mystery' ni una marca fija.
-    from facebook_metadata import trim_at_boundary
+    from publish.facebook_metadata import trim_at_boundary
     topic = storyboard.get("topic", get_channel_name())
     script = str(storyboard.get("script") or "").strip()
     preview = trim_at_boundary(script, 260)
@@ -1777,7 +1777,7 @@ def _facebook_metadata_fallback(storyboard: dict, youtube_metadata: dict | None 
 def _instagram_metadata_fallback(storyboard: dict, youtube_metadata: dict | None = None,
                                  facebook_metadata: dict | None = None) -> dict:
     # Hashtags investigados y marca de la cuenta: los agrega instagram_uploader al publicar.
-    from facebook_metadata import trim_at_boundary
+    from publish.facebook_metadata import trim_at_boundary
     topic = storyboard.get("topic", get_channel_name())
     script = str(storyboard.get("script") or "").strip()
     preview = trim_at_boundary(script, 320)
@@ -2049,7 +2049,7 @@ def generate_platform_metadata(storyboard: dict, output_dir: Path) -> tuple[dict
     music_attribution = ""
     if storyboard.get("music_data"):
         try:
-            from music_license import attribution_text
+            from publish.music_license import attribution_text
             music_attribution = attribution_text(storyboard["music_data"])
         except Exception as e:
             log(f"Atribucion de musica omitida: {e}", "WARN")
@@ -2240,7 +2240,7 @@ def upload_to_youtube(output_dir: Path, privacy_status: str = "private",
     else:
         log("Subiendo video a YouTube...", "STEP")
     try:
-        from youtube_uploader import upload_from_metadata
+        from publish.youtube_uploader import upload_from_metadata
 
         def _progress(sent, total):
             if total:
@@ -2288,7 +2288,7 @@ def upload_to_facebook(output_dir: Path, video_state: str = "PUBLISHED",
     state_label = "SCHEDULED" if scheduled_publish_time else requested_state
     log(f"Subiendo video a Facebook Page ({state_label})...", "STEP")
     try:
-        from facebook_uploader import upload_from_metadata
+        from publish.facebook_uploader import upload_from_metadata
 
         def _progress(sent, total):
             if total:
@@ -2333,7 +2333,7 @@ def upload_to_instagram(output_dir: Path, publish_at: str = None, share_to_feed:
     if publish_at:
         log("Programando Instagram Reel en cola VPS...", "STEP")
         try:
-            from vps_publish_scheduler import enqueue_job
+            from publish.vps_publish_scheduler import enqueue_job
 
             instagram_metadata = (
                 _safe_read_json(output_dir / INSTAGRAM_METADATA_FILENAME)
@@ -2366,7 +2366,7 @@ def upload_to_instagram(output_dir: Path, publish_at: str = None, share_to_feed:
 
     log("Subiendo video a Instagram Reel...", "STEP")
     try:
-        from instagram_uploader import upload_from_metadata
+        from publish.instagram_uploader import upload_from_metadata
 
         def _progress(sent, total):
             if total:
@@ -2399,7 +2399,7 @@ def upload_to_x_pipeline(output_dir: Path, youtube_url: str = None) -> bool:
     """Sube una publicación a X (Twitter) con el enlace de YouTube y el thumbnail."""
     log("Iniciando upload promocional a X...", "INFO")
     try:
-        from x_uploader import upload_image_to_x, post_tweet
+        from publish.x_uploader import upload_image_to_x, post_tweet
         
         # Cargar metadata
         meta_path = output_dir / "youtube_metadata.json"
@@ -2521,7 +2521,7 @@ def run_pipeline(topic: str = None, voice_id: str = None, upload: bool = False,
 
     # ── Paso 3.5: Pre-generation checklist ────────────────────────────
     try:
-        from production_checklist import run_pre_generation_checklist, format_checklist
+        from publish.production_checklist import run_pre_generation_checklist, format_checklist
         pre_gen = run_pre_generation_checklist(idea, daily_shorts_dir=PROJECT_DIR / "daily_shorts")
         log(format_checklist(pre_gen, "Pre-Generation Checklist"), "INFO")
         if any(not r["passed"] for r in pre_gen):
@@ -2563,7 +2563,7 @@ def run_pipeline(topic: str = None, voice_id: str = None, upload: bool = False,
 
     # ── Paso 7.5: Pre-publish checklist ───────────────────────────────
     try:
-        from production_checklist import run_pre_publish_checklist, format_checklist
+        from publish.production_checklist import run_pre_publish_checklist, format_checklist
         pre_pub = run_pre_publish_checklist(storyboard, video_path=video_path, metadata=metadata)
         log(format_checklist(pre_pub, "Pre-Publish Checklist"), "INFO")
         failed = [r for r in pre_pub if not r["passed"]]
@@ -2774,7 +2774,7 @@ def main():
 
         # For batch scheduling, offset each short by 1 day
         if base_publish_at == "__auto__":
-            from youtube_uploader import get_next_optimal_publish_time
+            from publish.youtube_uploader import get_next_optimal_publish_time
             publish_at = get_next_optimal_publish_time(slot_index=i)
         else:
             publish_at = base_publish_at

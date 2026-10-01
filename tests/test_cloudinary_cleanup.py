@@ -17,8 +17,8 @@ Dos reglas que no se pueden romper:
 import unittest
 from unittest.mock import patch
 
-import cloudinary_uploader as cu
-import instagram_uploader as ig
+from publish import cloudinary_uploader as cu
+from publish import instagram_uploader as ig
 
 
 class RespuestaFalsa:
@@ -86,7 +86,7 @@ class LimpiezaDesdeInstagram(unittest.TestCase):
 
     def test_borra_cuando_hay_public_id(self):
         with patch.object(ig, "_env", lambda n, d=None: d), \
-             patch("cloudinary_uploader.delete_video",
+             patch("publish.cloudinary_uploader.delete_video",
                    return_value={"deleted": True, "public_id": "vo/reel_1"}) as borrar:
             res = ig._cleanup_cloudinary("vo/reel_1")
         borrar.assert_called_once_with("vo/reel_1")
@@ -95,14 +95,14 @@ class LimpiezaDesdeInstagram(unittest.TestCase):
     def test_se_puede_desactivar_por_configuracion(self):
         env = {"CLOUDINARY_DELETE_AFTER_PUBLISH": "0"}
         with patch.object(ig, "_env", lambda n, d=None: env.get(n, d)), \
-             patch("cloudinary_uploader.delete_video") as borrar:
+             patch("publish.cloudinary_uploader.delete_video") as borrar:
             res = ig._cleanup_cloudinary("vo/reel_1")
         borrar.assert_not_called()
         self.assertIn("desactivado", res["skipped"])
 
     def test_sin_public_id_no_intenta_nada(self):
         with patch.object(ig, "_env", lambda n, d=None: d), \
-             patch("cloudinary_uploader.delete_video") as borrar:
+             patch("publish.cloudinary_uploader.delete_video") as borrar:
             res = ig._cleanup_cloudinary(None)
         borrar.assert_not_called()
         self.assertFalse(res["deleted"])
@@ -111,7 +111,7 @@ class LimpiezaDesdeInstagram(unittest.TestCase):
         # El reel ya esta publicado: perder la limpieza cuesta almacenamiento,
         # no la publicacion.
         with patch.object(ig, "_env", lambda n, d=None: d), \
-             patch("cloudinary_uploader.delete_video", side_effect=RuntimeError("boom")):
+             patch("publish.cloudinary_uploader.delete_video", side_effect=RuntimeError("boom")):
             res = ig._cleanup_cloudinary("vo/reel_1")
         self.assertFalse(res["deleted"])
         self.assertIn("boom", res["error"])

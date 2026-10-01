@@ -257,7 +257,7 @@ def pick_hook_text(script: str, llm_text: str = "", archetype: str = "") -> tupl
     esta diciendo en ese momento), despues en el arranque del guion, despues la sugerencia del LLM
     si el guion la respalda. Nunca inventa: todo sale del guion (text_options)."""
     try:
-        from thumbnail_research import text_options
+        from publish.thumbnail_research import text_options
     except Exception:
         text_options = None
     research = {"keyword": "", "suggestions": {}, "corpus": set()}
@@ -479,7 +479,7 @@ def _hook_font():
 
 def hook_plan(hook: dict[str, Any], width: int, height: int,
               palette: Optional[dict[str, Any]] = None) -> dict[str, Any]:
-    from thumbnail_typography import plan_typography
+    from publish.thumbnail_typography import plan_typography
     fmt = _Fmt(width, height)
     kind = "vertical" if fmt.is_vertical else "landscape"
     plan = plan_typography(hook["text"], fmt, palette, usable_width=HOOK_USABLE_WIDTH,

@@ -1,7 +1,7 @@
 import json
 import re
 from typing import Any, Dict, List, Optional
-from thumbnail_formats import LANDSCAPE_16_9, resolve_format
+from publish.thumbnail_formats import LANDSCAPE_16_9, resolve_format
 
 
 DEFAULT_VARIANT_RECIPES = [

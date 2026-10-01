@@ -169,7 +169,7 @@ class ChannelGuiTests(unittest.TestCase):
         tab.close()
 
     def test_upload_destination_overrides_legacy_metadata(self):
-        from youtube_uploader import upload_from_metadata
+        from publish.youtube_uploader import upload_from_metadata
         folder = Path(self.settings_dir.name)
         (folder / 'video.mp4').touch()
         (folder / 'project.json').write_text(json.dumps({'config': {'upload_channel': DEFAULT_CHANNEL}}), encoding='utf-8')
@@ -177,9 +177,9 @@ class ChannelGuiTests(unittest.TestCase):
             metadata = {'channel_profile': 'stunning-revelations', 'is_short': False}
             if explicit:
                 metadata['upload_channel'] = explicit
-            with patch('youtube_uploader._load_upload_metadata', return_value=metadata), \
-                 patch('youtube_uploader._archive_upload_result'), \
-                 patch('youtube_uploader.upload_video', return_value={'video_id': 'test', 'url': 'test', 'status': 'ok'}) as upload:
+            with patch('publish.youtube_uploader._load_upload_metadata', return_value=metadata), \
+                 patch('publish.youtube_uploader._archive_upload_result'), \
+                 patch('publish.youtube_uploader.upload_video', return_value={'video_id': 'test', 'url': 'test', 'status': 'ok'}) as upload:
                 upload_from_metadata(folder)
                 self.assertEqual(upload.call_args.kwargs['channel_profile'], expected)
 

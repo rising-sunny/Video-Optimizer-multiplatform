@@ -17,7 +17,7 @@ from unittest.mock import MagicMock
 
 from PIL import Image, ImageDraw
 
-import thumbnail_publish as tp
+from publish import thumbnail_publish as tp
 
 
 def _img(path, size=(1080, 1920), fmt="PNG", color=(20, 40, 90)):
@@ -157,7 +157,7 @@ class Verificar(unittest.TestCase):
 class LasFuentesUsanElModulo(unittest.TestCase):
 
     def test_uploader_y_studio(self):
-        up = open("youtube_uploader.py", encoding="utf-8").read()
+        up = open("publish/youtube_uploader.py", encoding="utf-8").read()
         self.assertIn("find_staged_thumbnail(output_dir)", up)
         self.assertIn("set_thumbnail_with_retry(", up)
         self.assertIn("NO SE PUSO", up)

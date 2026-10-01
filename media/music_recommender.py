@@ -296,7 +296,7 @@ def extract_cc_license_code(license_url: str) -> str:
 
 def is_youtube_safe_cc_license(license_url: str) -> bool:
     """Apta para un video de YouTube: solo CC0, CC BY y CC BY-SA (ver music_license)."""
-    from music_license import license_code, license_problem
+    from publish.music_license import license_code, license_problem
     return license_problem(license_code(license_url)) is None
 
 
@@ -319,7 +319,7 @@ def search_jamendo_api(tags, client_id, limit=1):
     Content ID (daily_shorts/music_claims.json). Ver music_license.py.
     Cada pista trae `attribution_text` (ingles) para la descripcion.
     """
-    from music_license import JAMENDO_SAFE_PARAMS, filter_tracks
+    from publish.music_license import JAMENDO_SAFE_PARAMS, filter_tracks
 
     if not client_id or "TU_CLIENT_ID" in client_id:
         print("\nERROR: JAMENDO_CLIENT_ID no configurado.")

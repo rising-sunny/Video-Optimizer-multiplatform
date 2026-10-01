@@ -1,6 +1,6 @@
 import unittest
 from channel.channel_profiles import CHANNELS, DEFAULT_CHANNEL
-from upload_metadata import metadata_for_channel
+from publish.upload_metadata import metadata_for_channel
 
 
 class UploadMetadataTests(unittest.TestCase):

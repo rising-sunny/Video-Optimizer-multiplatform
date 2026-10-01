@@ -251,7 +251,7 @@ def normalize_phrase(text: str) -> str:
 def _writing_issues(title: str, keyword: str = "") -> list[str]:
     """Redaccion rota (youtube_titles.readability_issues); sin el modulo (VPS), nada."""
     try:
-        from youtube_titles import readability_issues
+        from publish.youtube_titles import readability_issues
     except Exception:
         return []
     return readability_issues(title, keyword)
@@ -353,8 +353,8 @@ def research_inputs(meta: dict[str, Any], *, brand: str = "", is_long: bool = Fa
     if not topic or not _research_enabled():
         return {"source": "sin investigacion"}
     try:
-        from youtube_tags import gather_research, research_tags
-        from youtube_titles import optimize_title
+        from publish.youtube_tags import gather_research, research_tags
+        from publish.youtube_titles import optimize_title
     except ImportError:
         return {"source": "sin investigacion (modulos no disponibles)"}
     draft = str(meta.get("title") or "").strip()

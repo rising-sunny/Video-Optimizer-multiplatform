@@ -18,7 +18,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-import x_video_uploader as xv
+from publish import x_video_uploader as xv
 
 
 class TextoDelPost(unittest.TestCase):

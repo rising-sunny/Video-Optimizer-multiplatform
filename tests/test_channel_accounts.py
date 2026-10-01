@@ -19,8 +19,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-import facebook_uploader as fb
-import instagram_uploader as ig
+from publish import facebook_uploader as fb
+from publish import instagram_uploader as ig
 
 FOH, REV = "111", "222"
 ENV = {

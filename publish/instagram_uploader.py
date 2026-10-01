@@ -17,11 +17,11 @@ from typing import Optional
 
 import requests
 
-from cloudinary_uploader import check_auth as check_cloudinary_auth
-from cloudinary_uploader import upload_video as upload_video_to_cloudinary
+from publish.cloudinary_uploader import check_auth as check_cloudinary_auth
+from publish.cloudinary_uploader import upload_video as upload_video_to_cloudinary
 from infra.env_loader import load_project_env
 
-PROJECT_DIR = Path(__file__).resolve().parent
+PROJECT_DIR = Path(__file__).resolve().parent.parent
 load_project_env(PROJECT_DIR)
 
 INSTAGRAM_METADATA_FILES = ("instagram_metadata.json", "facebook_metadata.json", "metadata.json")
@@ -577,7 +577,7 @@ def _cleanup_cloudinary(public_id: Optional[str]) -> dict:
         return {"deleted": False, "skipped": "Cloudinary no devolvio public_id"}
 
     try:
-        from cloudinary_uploader import delete_video
+        from publish.cloudinary_uploader import delete_video
 
         resultado = delete_video(str(public_id))
         if resultado.get("deleted"):
@@ -603,9 +603,9 @@ COVER_MAX_BYTES = 8 * 1024 * 1024
 
 def _prepare_cover(cover_path: str, on_status=None) -> dict:
     """JPEG <= 8 MB subido a Cloudinary. Devuelve {url, public_id, local}. Lanza si falla."""
-    from cloudinary_uploader import upload_image
+    from publish.cloudinary_uploader import upload_image
     try:
-        from thumbnail_publish import prepare_for_youtube
+        from publish.thumbnail_publish import prepare_for_youtube
         prepared = prepare_for_youtube(cover_path, max_bytes=COVER_MAX_BYTES, jpeg_only=True,
                                        log=lambda m: _status(on_status, m.strip()))
         local = prepared["path"]
@@ -624,7 +624,7 @@ def _cleanup_cover(public_id: Optional[str]) -> None:
     if not public_id:
         return
     try:
-        from cloudinary_uploader import delete_video
+        from publish.cloudinary_uploader import delete_video
         delete_video(str(public_id), resource_type="image")
     except Exception as exc:
         print(f"   [Cloudinary] No se pudo borrar la portada {public_id}: {exc}")
@@ -642,7 +642,7 @@ def verify_cover(media_id: str, access_token: str, local_path: str, api_version:
     try:
         import io as _io
         from PIL import Image
-        from thumbnail_publish import served_matches_local
+        from publish.thumbnail_publish import served_matches_local
     except ImportError:
         return {"checked": False, "match": None, "reason": "sin Pillow para comparar"}
     info = _request_json("GET", _graph_api_url(media_id, api_version=api_version),
@@ -824,7 +824,7 @@ def _upload_video_once(video_path: str, title: str, description: str, share_to_f
 
 def _find_cover(output_dir: Path) -> Optional[Path]:
     try:
-        from thumbnail_publish import find_staged_thumbnail
+        from publish.thumbnail_publish import find_staged_thumbnail
         return find_staged_thumbnail(output_dir)
     except ImportError:
         for name in ("thumbnail.jpg", "thumbnail.jpeg"):
@@ -848,7 +848,7 @@ def upload_from_metadata(output_dir: str, share_to_feed: Optional[bool] = None, 
     output_dir = Path(output_dir)
     metadata = _load_upload_metadata(output_dir)
 
-    from output_video_locator import find_output_video
+    from publish.output_video_locator import find_output_video
     video_path = find_output_video(output_dir)
     if not video_path:
         raise FileNotFoundError(f"No video file found in {output_dir}")
@@ -863,7 +863,7 @@ def upload_from_metadata(output_dir: str, share_to_feed: Optional[bool] = None, 
     seo = None
     if optimize and _seo_enabled():
         try:
-            from facebook_metadata import prepare_instagram_metadata
+            from publish.facebook_metadata import prepare_instagram_metadata
             seo = prepare_instagram_metadata(metadata, brand=brand, log=lambda m: _status(on_status, str(m).strip()))
             title = seo["title"] or title
             description = seo["description"] or description
@@ -877,7 +877,7 @@ def upload_from_metadata(output_dir: str, share_to_feed: Optional[bool] = None, 
     # es titulo + descripcion con tope 2200, asi que la descripcion deja lugar al titulo.
     if metadata.get("music_attribution"):
         try:
-            from music_license import with_attribution, DESCRIPTION_LIMITS
+            from publish.music_license import with_attribution, DESCRIPTION_LIMITS
             room = DESCRIPTION_LIMITS["instagram"] - len(str(title or "")) - 2
             description = with_attribution(description, metadata["music_attribution"], room)
         except ImportError:

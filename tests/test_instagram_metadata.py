@@ -18,8 +18,8 @@ from unittest.mock import patch
 
 from PIL import Image, ImageDraw
 
-import facebook_metadata as fm
-import instagram_uploader as ig
+from publish import facebook_metadata as fm
+from publish import instagram_uploader as ig
 
 BRAND = "Stunning Facts of History"
 IDENTITY = {"access_token": "token-falso", "ig_user_id": "1784", "instagram_username": "stunning.foh",
@@ -101,7 +101,7 @@ class InvestigacionEncadenada(unittest.TestCase):
         self.assertIsNone(fm.research_for_next_platform(None, None))
 
     def test_facebook_deja_su_investigacion_en_el_resultado(self):
-        import facebook_uploader as fu
+        from publish import facebook_uploader as fu
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "short.mp4").write_bytes(b"v")
@@ -220,7 +220,7 @@ class Portada(unittest.TestCase):
         def fake_upload(path, folder=None, tags=None):
             subidas.append(path)
             return {"secure_url": "https://res.cloudinary.com/c.jpg", "public_id": "vo/c"}
-        with patch("cloudinary_uploader.upload_image", side_effect=fake_upload):
+        with patch("publish.cloudinary_uploader.upload_image", side_effect=fake_upload):
             cover = ig._prepare_cover(str(png))
         self.assertTrue(subidas[0].endswith(".jpg"))
         with Image.open(subidas[0]) as im:

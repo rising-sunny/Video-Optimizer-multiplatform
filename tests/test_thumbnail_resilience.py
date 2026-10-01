@@ -21,7 +21,7 @@ import unittest
 
 from thumbnail_context_enricher import ThumbnailContextEnricher
 from thumbnail_intelligence import ThumbnailIntelligence
-from thumbnail_formats import SHORT_9_16
+from publish.thumbnail_formats import SHORT_9_16
 
 PROYECTO = {
     "config": {"platform_key": "youtube_short", "video_format": "9:16",

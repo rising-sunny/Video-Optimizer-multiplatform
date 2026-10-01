@@ -6,12 +6,12 @@ from typing import Any, Dict, List, Optional, Tuple
 import requests
 
 from thumbnail_compositor import ThumbnailCompositor
-from thumbnail_formats import LANDSCAPE_16_9, resolve_format
+from publish.thumbnail_formats import LANDSCAPE_16_9, resolve_format
 from thumbnail_context_enricher import ThumbnailContextEnricher
 from thumbnail_intelligence import ThumbnailIntelligence
 
 try:
-    from thumbnail_quality_validator import validate_thumbnail as _validate_thumb_quality
+    from publish.thumbnail_quality_validator import validate_thumbnail as _validate_thumb_quality
     _QUALITY_VALIDATOR_AVAILABLE = True
 except Exception:
     _QUALITY_VALIDATOR_AVAILABLE = False

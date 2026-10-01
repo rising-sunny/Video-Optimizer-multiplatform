@@ -18,7 +18,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 from ai.claude_client import ClaudeAiClient
-from thumbnail_formats import LANDSCAPE_16_9, SHORT_9_16
+from publish.thumbnail_formats import LANDSCAPE_16_9, SHORT_9_16
 
 
 def cliente_con(respuesta):

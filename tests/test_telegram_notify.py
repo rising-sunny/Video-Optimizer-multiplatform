@@ -20,7 +20,7 @@ from unittest.mock import patch
 
 import requests
 
-import telegram_notify as tn
+from publish import telegram_notify as tn
 
 TOKEN = "123456:ABCdefSECRETO"
 

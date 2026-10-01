@@ -19,9 +19,9 @@ from unittest.mock import patch
 
 from PIL import Image
 
-import thumbnail_typography as tt
-from thumbnail_formats import LANDSCAPE_16_9, SHORT_9_16
-from thumbnail_research import PALETTES
+from publish import thumbnail_typography as tt
+from publish.thumbnail_formats import LANDSCAPE_16_9, SHORT_9_16
+from publish.thumbnail_research import PALETTES
 
 
 class ElPlan(unittest.TestCase):
@@ -162,7 +162,7 @@ class ElSuperPrompt(unittest.TestCase):
 class ElTextoDeLaMiniatura(unittest.TestCase):
 
     def test_una_cifra_con_ritmo_pega_mas(self):
-        import thumbnail_research as tr
+        from publish import thumbnail_research as tr
         guion = "Mongol riders covered 100 kilometers a day with five horses each."
         ops = [o["text"] for o in tr.text_options("How the Mongol army moved so fast", guion,
                                                   {"keyword": "mongol army", "suggestions": {}, "corpus": set()})]
@@ -170,7 +170,7 @@ class ElTextoDeLaMiniatura(unittest.TestCase):
         self.assertIn("100 KILOMETERS", ops)
 
     def test_no_inventa_un_ritmo(self):
-        import thumbnail_research as tr
+        from publish import thumbnail_research as tr
         ops = [o["text"] for o in tr.text_options("x", "They rode 100 kilometers to the river.",
                                                   {"keyword": "", "suggestions": {}, "corpus": set()})]
         self.assertFalse(any("A DAY" in o for o in ops))
@@ -244,7 +244,7 @@ class LaMedicion(unittest.TestCase):
         self.assertEqual(tt.summarize_text_styles(rows)["n"], 0)
 
     def test_el_brief_mide_la_competencia_y_arma_el_plan(self):
-        import thumbnail_research as tr
+        from publish import thumbnail_research as tr
         buf = io.BytesIO()
         Image.new("RGB", (320, 180), (200, 90, 30)).save(buf, "JPEG")
         comps = [{"video_id": f"v{i}", "title": f"T{i}", "views": 100 - i, "thumbnail": f"u{i}"} for i in range(3)]
@@ -263,7 +263,7 @@ class LaMedicion(unittest.TestCase):
         self.assertNotIn("Typography plan", b["prompt_block"])
 
     def test_el_brief_de_los_tests_no_llama_a_gemini(self):
-        import thumbnail_research as tr
+        from publish import thumbnail_research as tr
         buf = io.BytesIO()
         Image.new("RGB", (320, 180), (200, 90, 30)).save(buf, "JPEG")
         research = {"keyword": "x", "suggestions": {}, "corpus": set(),

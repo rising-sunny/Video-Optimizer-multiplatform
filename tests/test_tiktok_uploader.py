@@ -29,7 +29,7 @@ import urllib.parse
 import urllib.request
 from unittest.mock import patch, Mock
 
-import tiktok_uploader as tu
+from publish import tiktok_uploader as tu
 
 MB = 1024 * 1024
 ENV = {"TIKTOK_CLIENT_KEY": "ck_test", "TIKTOK_CLIENT_SECRET": "cs_test"}
@@ -556,7 +556,7 @@ class DesdeCarpeta(ConTokenTemporal):
 
     def test_manda_el_borrador_y_el_texto_por_telegram(self):
         enviados = []
-        with patch("telegram_notify.send_message", side_effect=lambda texto, **kw: enviados.append(texto)):
+        with patch("publish.telegram_notify.send_message", side_effect=lambda texto, **kw: enviados.append(texto)):
             res = tu.upload_from_metadata(self.tmp, http=TikTokFalso())
         self.assertEqual(res["status"], "draft")
         self.assertTrue(res["telegram_sent"])
@@ -567,7 +567,7 @@ class DesdeCarpeta(ConTokenTemporal):
         self.assertIn("Stunning Facts of History", mensaje)
 
     def test_la_descripcion_lleva_marca_de_la_cuenta_y_atribucion(self):
-        with patch("telegram_notify.send_message"):
+        with patch("publish.telegram_notify.send_message"):
             res = tu.upload_from_metadata(self.tmp, http=TikTokFalso())
         desc = res["description_sent"]
         self.assertIn("#StunningFactsofHistory", desc, "la marca sale de la cuenta real de TikTok")
@@ -576,16 +576,16 @@ class DesdeCarpeta(ConTokenTemporal):
         self.assertLessEqual(len(desc), tu.DESCRIPTION_LIMIT)
 
     def test_sin_telegram_el_borrador_igual_queda(self):
-        from telegram_notify import TelegramError
+        from publish.telegram_notify import TelegramError
         avisos = []
-        with patch("telegram_notify.send_message", side_effect=TelegramError("Falta TELEGRAM_BOT_TOKEN")):
+        with patch("publish.telegram_notify.send_message", side_effect=TelegramError("Falta TELEGRAM_BOT_TOKEN")):
             res = tu.upload_from_metadata(self.tmp, http=TikTokFalso(), on_status=avisos.append)
         self.assertFalse(res["telegram_sent"])
         self.assertIn("TELEGRAM_BOT_TOKEN", res["telegram_error"])
         self.assertTrue(any("Caral" in a for a in avisos), "el texto tiene que quedar al menos en el log")
 
     def test_deja_el_resultado_en_disco(self):
-        with patch("telegram_notify.send_message"):
+        with patch("publish.telegram_notify.send_message"):
             tu.upload_from_metadata(self.tmp, http=TikTokFalso())
         with open(os.path.join(self.tmp, "tiktok_upload_result.json"), encoding="utf-8") as f:
             guardado = json.load(f)
@@ -593,8 +593,8 @@ class DesdeCarpeta(ConTokenTemporal):
         self.assertNotIn("act.VIEJO", json.dumps(guardado), "el token no se escribe en el resultado")
 
     def test_queda_registrado_en_el_proyecto(self):
-        from publish_record import summarize_result
-        with patch("telegram_notify.send_message"):
+        from publish.publish_record import summarize_result
+        with patch("publish.telegram_notify.send_message"):
             res = tu.upload_from_metadata(self.tmp, http=TikTokFalso())
         entrada = summarize_result("tiktok", res)
         self.assertEqual(entrada["id"], "v_inbox_file~v2.123")
@@ -610,7 +610,7 @@ class EnElStudio(unittest.TestCase):
     def test_casilla_y_subida(self):
         self.assertIn('self.chk_publish_tiktok = QCheckBox("TikTok")', self.fuente)
         self.assertIn('("tiktok_metadata.json", _tiktok_meta)', self.fuente)
-        self.assertIn("from tiktok_uploader import upload_from_metadata", self.fuente)
+        self.assertIn("from publish.tiktok_uploader import upload_from_metadata", self.fuente)
         self.assertIn("do_x or do_tiktok", self.fuente, "solo TikTok marcado dice 'sin plataforma'")
 
     def test_el_cierre_no_lo_llama_publicado(self):

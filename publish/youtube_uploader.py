@@ -18,7 +18,7 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from googleapiclient.errors import HttpError
 
-PROJECT_DIR = Path(__file__).resolve().parent
+PROJECT_DIR = Path(__file__).resolve().parent.parent
 CLIENT_SECRETS_FILE = PROJECT_DIR / "client_secrets.json"
 TOKEN_FILE = PROJECT_DIR / "token.json"
 YOUTUBE_METADATA_FILES = ("youtube_metadata.json", "metadata.json")
@@ -222,7 +222,7 @@ def upload_video(
         raise FileNotFoundError(f"Video no encontrado: {video_path}")
 
     from channel.channel_profiles import active_channel, CHANNELS
-    from upload_metadata import metadata_for_channel
+    from publish.upload_metadata import metadata_for_channel
     channel_profile = channel_profile or active_channel()
     adapted = metadata_for_channel({'title': title, 'description': description, 'tags': tags}, channel_profile)
     title, description, tags = adapted['title'], adapted['description'], adapted['tags']
@@ -231,8 +231,8 @@ def upload_video(
     # el #Shorts va en titulo/descripcion) y el recorte era a 500 TAGS (slice de la lista)
     # en vez de 500 caracteres. Ahora: investigacion (autocompletado + competencia, ver
     # youtube_tags.py) y una puerta final que limpia y respeta el presupuesto real.
-    from upload_metadata import channel_brand
-    from youtube_tags import finalize_youtube_tags, counted_length, research_tags
+    from publish.upload_metadata import channel_brand
+    from publish.youtube_tags import finalize_youtube_tags, counted_length, research_tags
 
     def _status(msg):
         print(f"   [Tags] {msg}")
@@ -253,14 +253,14 @@ def upload_video(
     research = None
     if research_on or title_mode in ("optimize", "suggest"):
         try:
-            from youtube_tags import gather_research
+            from publish.youtube_tags import gather_research
             _status("investigando (autocompletado de YouTube + videos que rankean)...")
             research = gather_research(research_topic or title, title, research_script or description, log=_status)
         except Exception as exc:
             _status(f"investigacion no disponible ({exc})")
     if research is not None and title_mode in ("optimize", "suggest"):
         try:
-            from youtube_titles import optimize_title
+            from publish.youtube_titles import optimize_title
             title_report = optimize_title(research_topic or title, research_script or description, title,
                                           research=research, is_short=is_short, archetype=archetype or "",
                                           mode=title_mode, log=lambda m: _status(m.strip()))
@@ -385,7 +385,7 @@ def upload_video(
                 pass
 
     if thumbnail_path and Path(thumbnail_path).exists():
-        from thumbnail_publish import prepare_for_youtube, set_thumbnail_with_retry
+        from publish.thumbnail_publish import prepare_for_youtube, set_thumbnail_with_retry
         try:
             prepared = prepare_for_youtube(thumbnail_path, log=lambda m: _thumb_status(m.strip()))
             for w in prepared["warnings"]:
@@ -475,18 +475,18 @@ def upload_from_metadata(
         project_channel = json.loads((output_dir / 'storyboard.json').read_text(encoding='utf-8')).get('channel_profile')
     project_channel = project_channel or DEFAULT_CHANNEL
 
-    from upload_metadata import metadata_for_channel
+    from publish.upload_metadata import metadata_for_channel
     metadata = metadata_for_channel(metadata, project_channel)
 
     # El render vive en auto_videos/output; la carpeta solo tiene la ruta registrada.
-    from output_video_locator import find_output_video
+    from publish.output_video_locator import find_output_video
     video_path = find_output_video(output_dir)
     if not video_path:
         raise FileNotFoundError(f"No se encontró video en {output_dir}")
     video_path = Path(video_path)
 
     # Miniatura: cualquier formato que acepte el selector (antes .webp quedaba afuera).
-    from thumbnail_publish import find_staged_thumbnail
+    from publish.thumbnail_publish import find_staged_thumbnail
     thumbnail_path = find_staged_thumbnail(output_dir)
 
     # Respect the metadata's is_short flag (set by the pipeline: True for Shorts,
@@ -499,7 +499,7 @@ def upload_from_metadata(
     # Atribucion de la musica (CC BY la exige): va al final de la descripcion, sin recortarse.
     description = metadata.get("description", "")
     if metadata.get("music_attribution"):
-        from music_license import with_attribution, DESCRIPTION_LIMITS
+        from publish.music_license import with_attribution, DESCRIPTION_LIMITS
         description = with_attribution(description, metadata["music_attribution"],
                                        DESCRIPTION_LIMITS["youtube"])
 

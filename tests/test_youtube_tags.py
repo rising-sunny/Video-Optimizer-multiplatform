@@ -14,7 +14,7 @@ import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
 
-import youtube_tags as yt
+from publish import youtube_tags as yt
 
 
 class LaPuertaFinal(unittest.TestCase):
@@ -198,7 +198,7 @@ class ElUploader(unittest.TestCase):
 
     def _run(self, stored_tags=None, env=None, research_side_effect=None):
         from channel.channel_profiles import CHANNELS, DEFAULT_CHANNEL
-        import youtube_uploader as yu
+        from publish import youtube_uploader as yu
         insert_bodies = []
         service = MagicMock()
         service.channels.return_value.list.return_value.execute.return_value = {
@@ -222,10 +222,10 @@ class ElUploader(unittest.TestCase):
             with patch.object(yu, "get_youtube_service", return_value=service), \
                  patch.object(yu, "MediaFileUpload"), \
                  patch.object(yu, "_resumable_upload", return_value={"id": "VID", "status": {"uploadStatus": "uploaded"}}), \
-                 patch("youtube_tags.research_tags", research), \
-                 patch("youtube_tags.gather_research", return_value=FAKE_RESEARCH), \
-                 patch("youtube_titles._default_generate", return_value=[]), \
-                 patch("youtube_titles._default_verify", return_value=""), \
+                 patch("publish.youtube_tags.research_tags", research), \
+                 patch("publish.youtube_tags.gather_research", return_value=FAKE_RESEARCH), \
+                 patch("publish.youtube_titles._default_generate", return_value=[]), \
+                 patch("publish.youtube_titles._default_verify", return_value=""), \
                  patch.dict(os.environ, env or {}):
                 res = yu.upload_video(video, "Hannibal's 30,000 Oxen", "desc", tags=["#shorts", "Hannibal"],
                                       is_short=True, channel_profile=DEFAULT_CHANNEL, research_topic="Hannibal crossing",
@@ -258,7 +258,7 @@ class ElUploader(unittest.TestCase):
         self.assertEqual(res["video_id"], "VID")
 
     def test_la_fuente_ya_no_mete_shorts_ni_corta_500_tags(self):
-        src = open("youtube_uploader.py", encoding="utf-8").read()
+        src = open("publish/youtube_uploader.py", encoding="utf-8").read()
         self.assertNotIn('tags.insert(0, "Shorts")', src)
         self.assertNotIn("tags[:500]", src)
 

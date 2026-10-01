@@ -398,7 +398,7 @@ JSON:
         if self.platform_name == "facebook":
             # Sin '#Mystery' (angulo descartado) ni marca fija: al publicar, facebook_metadata
             # agrega los hashtags investigados y la marca de la pagina real.
-            from facebook_metadata import trim_at_boundary
+            from publish.facebook_metadata import trim_at_boundary
             return {
                 "title": topic,
                 "description": (
@@ -409,7 +409,7 @@ JSON:
         if self.platform_name == "instagram":
             # Igual que Facebook: los hashtags investigados y la marca de la cuenta real los
             # agrega instagram_uploader al publicar.
-            from facebook_metadata import trim_at_boundary
+            from publish.facebook_metadata import trim_at_boundary
             return {
                 "title": topic,
                 "description": (
@@ -456,7 +456,7 @@ class FacebookUploadWorker(QThread):
 
     def run(self):
         try:
-            from facebook_uploader import save_upload_result, upload_video
+            from publish.facebook_uploader import save_upload_result, upload_video
 
             self.progress.emit("Publishing current video to Facebook Page...")
             result = upload_video(
@@ -492,7 +492,7 @@ class InstagramUploadWorker(QThread):
 
     def run(self):
         try:
-            from instagram_uploader import save_upload_result, upload_video
+            from publish.instagram_uploader import save_upload_result, upload_video
 
             self.progress.emit("Publishing current video to Instagram Reels...")
             result = upload_video(
@@ -869,7 +869,7 @@ class PlatformMetadataTab(QWidget):
 
     def _check_facebook_auth(self):
         try:
-            from facebook_uploader import check_auth
+            from publish.facebook_uploader import check_auth
 
             auth = check_auth()
             if auth.get("authenticated"):
@@ -886,7 +886,7 @@ class PlatformMetadataTab(QWidget):
 
     def _check_instagram_auth(self):
         try:
-            from instagram_uploader import check_auth
+            from publish.instagram_uploader import check_auth
 
             auth = check_auth()
             if auth.get("authenticated"):

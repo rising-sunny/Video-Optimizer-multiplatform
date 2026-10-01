@@ -15,7 +15,7 @@ bien" falso ahi se descubre recien cuando falla la publicacion.
 import unittest
 from unittest.mock import patch
 
-import cloudinary_uploader as cu
+from publish import cloudinary_uploader as cu
 
 
 class RespuestaFalsa:

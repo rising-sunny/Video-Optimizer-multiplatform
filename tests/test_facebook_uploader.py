@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-import facebook_uploader
+from publish import facebook_uploader
 
 # upload_from_metadata resuelve la pagina (para la marca de los hashtags): sin esto el
 # test consultaba la Graph API real.

@@ -632,8 +632,8 @@ Return ONLY a JSON array, no markdown, no extra text:
         - `thumbnail_format`: estaba clavado en 16:9. Un Short necesita 9:16 y
           reglas de encuadre distintas (ver `thumbnail_formats`).
         """
-        from thumbnail_formats import LANDSCAPE_16_9
-        from thumbnail_art_direction import (
+        from publish.thumbnail_formats import LANDSCAPE_16_9
+        from publish.thumbnail_art_direction import (
             art_direction_brief, compile_title, contextual_composition_rules, parse_art_response,
         )
 

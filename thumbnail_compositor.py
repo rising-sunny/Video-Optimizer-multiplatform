@@ -3,7 +3,7 @@ from typing import Optional, Tuple
 
 from PIL import Image, ImageColor, ImageDraw, ImageEnhance, ImageFilter, ImageFont
 
-from thumbnail_formats import LANDSCAPE_16_9
+from publish.thumbnail_formats import LANDSCAPE_16_9
 
 # La API de datos de YouTube (thumbnails.set) corta en 2 MB EXACTOS y responde
 # "Media larger than: 2097152". Ojo: NO son los 50 MB que admite el uploader web

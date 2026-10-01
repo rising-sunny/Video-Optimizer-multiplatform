@@ -349,7 +349,7 @@ class Cableado(unittest.TestCase):
 
     def test_timeline_y_checklist(self):
         self.assertIn("self.hook_label", self._src("timeline_segment_widget.py"))
-        self.assertIn('"opening_hook_present"', self._src("production_checklist.py"))
+        self.assertIn('"opening_hook_present"', self._src("publish/production_checklist.py"))
 
 
 class LosProyectosViejos(unittest.TestCase):

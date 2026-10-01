@@ -440,7 +440,7 @@ def collect_youtube(days: int = 30) -> tuple[list[dict[str, Any]], dict[str, Any
     """Analytics API (por video) + Data API (titulo, duracion, orientacion)."""
     from googleapiclient.discovery import build
     from channel import youtube_analytics_client as ya
-    from youtube_uploader import _get_credentials
+    from publish.youtube_uploader import _get_credentials
 
     creds = _get_credentials(interactive=False)
     data_api = build("youtube", "v3", credentials=creds)

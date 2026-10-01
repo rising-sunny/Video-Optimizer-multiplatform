@@ -167,7 +167,7 @@ tests/        → los 76 test_*.py
 | `local_video_picker_dialog`, `video_source_alternatives`, `mixed_media_acquisition` | |
 | `music_recommender` | Jamendo (búsqueda + descarga) |
 
-### `publish/` — distribución + SEO + miniaturas
+### `publish/` — distribución + SEO + miniaturas ✅ (Fase 6, + `check_instagram_ingest`, `check_facebook_access`)
 
 | Módulo actual | Nota |
 |---|---|
@@ -301,6 +301,10 @@ El script se puede re-ejecutar por fase y se revierte con git.
 
 ## Changelog
 
+- **2026-10-01 (Fase 6)** — `publish/` con 26 módulos (uploaders, SEO, miniaturas, música;
+  171 imports + 42 strings reescritos). `__file__`→raíz en 10 módulos; `music_license` extrajo
+  su `main()`; `_upload_via_vps` ahora envía todos los paquetes con `scp -r` (los uploaders
+  viajan a `publish/`); 10 shims CLI raíz. Suite verde: 1205 tests.
 - **2026-10-01 (Fase 5)** — `channel/` con 9 módulos (estrategia, analytics, tendencias,
   feedback; 107 imports + 8 strings reescritos). `__file__`→raíz en 5 módulos; shims raíz para
   los CLI `trend_report`, `performance_feedback` y `youtube_analytics_client`. Suite: 1205 tests.

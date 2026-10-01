@@ -14,7 +14,7 @@ import io
 import unittest
 from unittest.mock import patch
 
-import instagram_uploader as ig
+from publish import instagram_uploader as ig
 
 
 TRANSITORIO = "Instagram container failed: Error: Media upload has failed with error code 2207076"

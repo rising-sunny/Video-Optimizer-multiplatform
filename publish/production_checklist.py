@@ -23,7 +23,7 @@ def _load_strategy():
 
 def _load_recent_titles(daily_shorts_dir: str | Path | None = None) -> set[str]:
     titles: set[str] = set()
-    base = Path(daily_shorts_dir) if daily_shorts_dir else Path(__file__).resolve().parent / "daily_shorts"
+    base = Path(daily_shorts_dir) if daily_shorts_dir else Path(__file__).resolve().parent.parent / "daily_shorts"
     if not base.exists():
         return titles
     for folder in base.iterdir():

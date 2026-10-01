@@ -10,7 +10,7 @@ import json
 import re
 import unicodedata
 
-from thumbnail_typography import contrast_ratio, plan_typography
+from publish.thumbnail_typography import contrast_ratio, plan_typography
 
 
 # Anchos aproximados para ajustar renglones, no medidas de una fuente instalada.
@@ -42,7 +42,7 @@ def contextual_composition_rules(fmt, render_text=True):
         rule = rule.replace("warm key light", "context-appropriate key light")
         rules.append(rule)
     if render_text and fmt.is_vertical:
-        from thumbnail_typography import adapt_composition_rules
+        from publish.thumbnail_typography import adapt_composition_rules
         rules = adapt_composition_rules(rules, plan_typography("X", fmt, zone=(0.13, 0.34)))
     return rules
 
@@ -229,7 +229,7 @@ def compile_title(hook, fmt, direction):
     plan = plan_typography(hook, fmt, zone=zone, glyph_width=glyph_width,
                            number_hero=direction["number_layout"] == "hero")
     lines = plan["lines"]
-    from thumbnail_typography import MIN_CAP_PCT
+    from publish.thumbnail_typography import MIN_CAP_PCT
     if any(ln["cap_pct"] < MIN_CAP_PCT[plan["kind"]] for ln in lines):
         raise ValueError("titular demasiado largo para letras legibles: elegir una frase mas corta")
     # La altura de las letras, no la del bloque, define el borde superior seguro.

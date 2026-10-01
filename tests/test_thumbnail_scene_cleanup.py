@@ -10,8 +10,8 @@ de la miniatura lo agrega la app una vez (compile_title), en el mismo super prom
 import unittest
 from unittest import mock
 
-from thumbnail_art_direction import compile_title, parse_art_response, strip_scene_typography
-from thumbnail_formats import SHORT_9_16
+from publish.thumbnail_art_direction import compile_title, parse_art_response, strip_scene_typography
+from publish.thumbnail_formats import SHORT_9_16
 from tests.test_thumbnail_superprompt import art_response
 
 SCENE = ("muddy battlefield at Agincourt under an overcast November sky, rows of sharpened wooden stakes in the "

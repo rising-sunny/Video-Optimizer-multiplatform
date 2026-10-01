@@ -3126,7 +3126,7 @@ Reglas:
         _music_attribution = None
         if _music_used and str(_music_used.get('source') or '').lower() != 'local':
             try:
-                from music_license import attribution_text as _music_attr_text
+                from publish.music_license import attribution_text as _music_attr_text
                 _music_attribution = _music_attr_text(_music_used)
             except Exception:
                 _music_attribution = None

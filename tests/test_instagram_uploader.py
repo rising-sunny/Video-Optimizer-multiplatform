@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-import instagram_uploader
+from publish import instagram_uploader
 
 # upload_from_metadata resuelve la cuenta (marca de los hashtags): sin esto el test
 # consultaba la Graph API real y corria la investigacion de titulos.

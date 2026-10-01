@@ -470,7 +470,7 @@ class ElCableado(unittest.TestCase):
         self.assertLess(body.index("upload_gate(storyboard"), body.index("upload_result = upload_to_youtube("))
 
     def test_checklist_reports_facts(self):
-        from production_checklist import run_pre_publish_checklist
+        from publish.production_checklist import run_pre_publish_checklist
         sb = storyboard()
         sb["fact_check"] = {"status": "corrected", "signature": sfc.script_signature(sfc.storyboard_texts(sb)),
                             "corrections": [{}], "judge": "fake"}

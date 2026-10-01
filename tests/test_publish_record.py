@@ -15,7 +15,7 @@ import tempfile
 import unittest
 from types import SimpleNamespace
 
-from publish_record import merge_publish_results, summarize_result
+from publish.publish_record import merge_publish_results, summarize_result
 
 
 class ResumenPorRed(unittest.TestCase):

@@ -5,8 +5,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-import instagram_uploader
-import vps_publish_scheduler
+from publish import instagram_uploader
+from publish import vps_publish_scheduler
 
 
 class VpsPublishSchedulerTests(unittest.TestCase):

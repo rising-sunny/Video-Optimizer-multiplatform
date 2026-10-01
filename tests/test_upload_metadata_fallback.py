@@ -3,7 +3,7 @@
 
 BUG (2026-09-09): Facebook e Instagram fallaron con
 
-    File "facebook_uploader.py", line 848, in upload_from_metadata
+    File "publish/facebook_uploader.py", line 848, in upload_from_metadata
       title = metadata.get("title") or output_dir.name
     AttributeError: 'NoneType' object has no attribute 'get'
 
@@ -24,8 +24,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-import facebook_uploader as fb
-import instagram_uploader as ig
+from publish import facebook_uploader as fb
+from publish import instagram_uploader as ig
 
 
 class MetadataInvalidaNoRompe(unittest.TestCase):

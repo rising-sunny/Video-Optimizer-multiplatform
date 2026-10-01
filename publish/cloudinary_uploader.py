@@ -23,7 +23,7 @@ except ImportError:
 
 from infra.env_loader import load_project_env
 
-PROJECT_DIR = Path(__file__).resolve().parent
+PROJECT_DIR = Path(__file__).resolve().parent.parent
 load_project_env(PROJECT_DIR)
 
 REQUEST_TIMEOUT = 120

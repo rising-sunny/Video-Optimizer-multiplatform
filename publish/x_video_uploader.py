@@ -112,7 +112,7 @@ def _load_metadata(output_dir: Path) -> Dict[str, Any]:
 # --------------------------------------------------------------- API de X
 
 def _oauth():
-    from x_uploader import get_oauth_session
+    from publish.x_uploader import get_oauth_session
 
     sesion = get_oauth_session()
     if not sesion:
@@ -266,7 +266,7 @@ def upload_from_metadata(output_dir: str, on_progress=None,
                          video_url: str = "") -> Dict[str, Any]:
     """Misma forma que los uploaders de YouTube y Facebook: carpeta + metadata."""
     carpeta = Path(output_dir)
-    from output_video_locator import find_output_video
+    from publish.output_video_locator import find_output_video
     video = find_output_video(carpeta)
     if not video:
         raise FileNotFoundError(f"No se encontro video en {output_dir}")

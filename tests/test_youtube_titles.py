@@ -15,7 +15,7 @@ import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
 
-import youtube_titles as yt
+from publish import youtube_titles as yt
 
 SCRIPT = ("How did Hannibal sustain 50,000 troops and war elephants across the frozen Alps? He relied on 30,000 "
           "oxen, each carrying 250 kilograms. General Hasdrubal ordered a stockpile at Aosta.")
@@ -212,7 +212,7 @@ class LaEleccion(unittest.TestCase):
         self.assertEqual(yt.parse_factcheck("nada"), {})
 
     def test_con_generador_inyectado_y_sin_verificador_no_llama_al_llm(self):
-        with patch("youtube_titles._default_verify", side_effect=AssertionError("no deberia verificar")):
+        with patch("publish.youtube_titles._default_verify", side_effect=AssertionError("no deberia verificar")):
             self._opt(titles=["Hannibal crossing the Alps: 50,000 troops and elephants"])
 
     def test_el_prompt_lleva_la_investigacion(self):
@@ -240,7 +240,7 @@ class ElUploaderYElStudio(unittest.TestCase):
 
     def _upload(self, title_mode, titles):
         from channel.channel_profiles import CHANNELS, DEFAULT_CHANNEL
-        import youtube_uploader as yu
+        from publish import youtube_uploader as yu
         bodies = []
         service = MagicMock()
         service.channels.return_value.list.return_value.execute.return_value = {
@@ -255,9 +255,9 @@ class ElUploaderYElStudio(unittest.TestCase):
             with patch.object(yu, "get_youtube_service", return_value=service), \
                  patch.object(yu, "MediaFileUpload"), \
                  patch.object(yu, "_resumable_upload", return_value={"id": "VID", "status": {"uploadStatus": "uploaded"}}), \
-                 patch("youtube_tags.gather_research", return_value=RESEARCH), \
-                 patch("youtube_titles._default_generate", return_value=titles), \
-                 patch("youtube_titles._default_verify", return_value=""), \
+                 patch("publish.youtube_tags.gather_research", return_value=RESEARCH), \
+                 patch("publish.youtube_titles._default_generate", return_value=titles), \
+                 patch("publish.youtube_titles._default_verify", return_value=""), \
                  patch.dict(os.environ, {"YOUTUBE_TAG_RESEARCH": "0"}):
                 res = yu.upload_video(video, "Hannibal's 30,000 Oxen: 250kg Rations Across the Alps", "desc",
                                       tags=["hannibal"], is_short=True, channel_profile=DEFAULT_CHANNEL,

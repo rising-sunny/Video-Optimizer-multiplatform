@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-import youtube_uploader
+from publish import youtube_uploader
 
 
 class YouTubeUploaderMetadataTests(unittest.TestCase):

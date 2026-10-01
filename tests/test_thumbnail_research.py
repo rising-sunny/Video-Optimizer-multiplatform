@@ -16,7 +16,7 @@ from unittest.mock import patch
 
 from PIL import Image, ImageDraw
 
-import thumbnail_research as tr
+from publish import thumbnail_research as tr
 
 
 def _solid(color, size=(320, 180), busy=False):
@@ -150,7 +150,7 @@ class ElBriefYElPrompt(unittest.TestCase):
 
     def test_el_super_prompt_usa_la_paleta_y_la_luminancia_del_brief(self):
         from ai.claude_client import ClaudeAiClient
-        from thumbnail_formats import SHORT_9_16
+        from publish.thumbnail_formats import SHORT_9_16
         b = self._brief()
         cc = ClaudeAiClient.__new__(ClaudeAiClient)
         capturado = {}

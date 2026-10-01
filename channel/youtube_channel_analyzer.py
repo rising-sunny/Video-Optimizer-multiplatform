@@ -43,7 +43,7 @@ class YouTubeChannelAnalyzer:
         try:
             from googleapiclient.discovery import build
             try:
-                from youtube_uploader import _get_credentials
+                from publish.youtube_uploader import _get_credentials
                 creds = _get_credentials(interactive=False)
                 if creds:
                     self.youtube_service = build('youtube', 'v3', credentials=creds)

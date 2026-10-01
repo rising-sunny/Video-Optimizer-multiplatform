@@ -183,7 +183,7 @@ class MicroTests(unittest.TestCase):
         self.assertIsNone(comparison['pilots'][1]['impression_change_since_previous_snapshot'])
 
     def test_wrong_youtube_identity_blocks_insert(self):
-        import youtube_uploader
+        from publish import youtube_uploader
         youtube = MagicMock()
         youtube.channels.return_value.list.return_value.execute.return_value = {'items': [{'id': 'wrong-channel'}]}
         with tempfile.TemporaryDirectory() as tmp, patch.object(youtube_uploader, 'get_youtube_service', return_value=youtube):

@@ -26,7 +26,7 @@ import io
 import re
 from typing import Any, Callable, Iterable, Optional
 
-from youtube_tags import content_tokens, normalize_tag
+from publish.youtube_tags import content_tokens, normalize_tag
 
 # Paletas por familia de acento (hex para el generador de imagenes).
 PALETTES = {
@@ -295,7 +295,7 @@ def build_thumbnail_brief(topic: str, title: str, script: str, *, research: Opti
     text_vision_fn(prompt, images): mide el texto de la competencia; por defecto Gemini, pero solo
     si `fetch` no se inyecto (en los tests no se llama a ninguna API real)."""
     if research is None:
-        from youtube_tags import gather_research
+        from publish.youtube_tags import gather_research
         research = gather_research(topic, title, script, log=log)
     raws: list = []
     metrics = fetch_competitor_metrics(research.get("competitors") or [], fetch=fetch, log=log, raw_out=raws)
@@ -326,7 +326,7 @@ def build_thumbnail_brief(topic: str, title: str, script: str, *, research: Opti
     vision = text_vision_fn if text_vision_fn is not None else (_default_text_vision() if fetch is None else None)
     if vision and raws:
         try:
-            from thumbnail_typography import analyze_text_styles, summarize_text_styles
+            from publish.thumbnail_typography import analyze_text_styles, summarize_text_styles
             competitor_text = summarize_text_styles(analyze_text_styles(raws, vision, log=log))
             ct = competitor_text
             top_fill = next(iter(ct.get("fill") or {}), "?")
@@ -338,8 +338,8 @@ def build_thumbnail_brief(topic: str, title: str, script: str, *, research: Opti
             log(f"   [Miniatura] no se pudo medir el texto de la competencia ({exc})")
     typography = None
     if text:
-        from thumbnail_formats import SHORT_9_16
-        from thumbnail_typography import plan_typography
+        from publish.thumbnail_formats import SHORT_9_16
+        from publish.thumbnail_typography import plan_typography
         typography = plan_typography(text, thumbnail_format or SHORT_9_16, palette, competitor_text)
     return {
         "keyword": research.get("keyword"), "text": text, "text_options": options,

@@ -57,7 +57,7 @@ class StudioProjectManager:
         staging desde el que se publica se borra al terminar, y hasta 2026-09-21
         el id de YouTube/Facebook no quedaba en ningun lado.
         """
-        from publish_record import merge_publish_results
+        from publish.publish_record import merge_publish_results
 
         tab = self.studio_tab
         current = {"publish_results": dict(getattr(tab, "publish_results", None) or {})}

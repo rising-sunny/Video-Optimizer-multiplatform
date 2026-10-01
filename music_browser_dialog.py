@@ -656,12 +656,12 @@ class MusicBrowserDialog(QDialog):
 
     def _is_youtube_safe_license(self, license_url):
         """Solo CC0 / CC BY / CC BY-SA: NC no se monetiza y ND no se puede poner en un video."""
-        from music_license import license_code, license_problem
+        from publish.music_license import license_code, license_problem
         return license_problem(license_code(license_url)) is None
 
     def _build_youtube_attribution_text(self, track):
         """Credito en ingles para la descripcion (el mismo que agregan los uploaders)."""
-        from music_license import attribution_text
+        from publish.music_license import attribution_text
         return attribution_text(track)
 
     def _build_license_restriction_note(self, license_code):
@@ -735,7 +735,7 @@ class MusicBrowserDialog(QDialog):
         if menu.exec(self.music_results_list.mapToGlobal(pos)) is not action:
             return
         try:
-            from music_license import record_claim
+            from publish.music_license import record_claim
             record_claim(track, claimants="reclamo de Content ID (marcado a mano)")
         except Exception as e:
             QMessageBox.warning(self, "Error", f"No se pudo guardar el bloqueo: {e}")

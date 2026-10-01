@@ -33,7 +33,7 @@ ANALYTICS_SCOPE = "https://www.googleapis.com/auth/yt-analytics.readonly"
 def _build_service():
     """Cliente de la Analytics API usando las credenciales del uploader."""
     from googleapiclient.discovery import build
-    from youtube_uploader import _get_credentials
+    from publish.youtube_uploader import _get_credentials
 
     creds = _get_credentials(interactive=True)
     otorgados = set(getattr(creds, "scopes", None) or [])

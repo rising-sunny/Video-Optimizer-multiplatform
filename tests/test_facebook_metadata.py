@@ -17,8 +17,8 @@ from unittest.mock import patch
 
 from PIL import Image, ImageDraw
 
-import facebook_metadata as fm
-import facebook_uploader as fu
+from publish import facebook_metadata as fm
+from publish import facebook_uploader as fu
 
 BRAND = "Stunning Facts of History"
 FAKE_PAGE = ("token-falso", "987654321", {"id": "987654321", "name": BRAND})
@@ -195,7 +195,7 @@ class Investigacion(unittest.TestCase):
 
     def test_con_investigacion_de_youtube_no_vuelve_a_la_red(self):
         meta = {"title": "Hannibal", "description": HANNIBAL_DESC, "research": HANNIBAL_RESEARCH}
-        with patch("youtube_tags.gather_research", side_effect=AssertionError("no deberia investigar")):
+        with patch("publish.youtube_tags.gather_research", side_effect=AssertionError("no deberia investigar")):
             r = fm.prepare_facebook_metadata(meta, brand=BRAND, log=lambda m: None)
         self.assertEqual(r["title"], HANNIBAL_RESEARCH["title"])
         self.assertIn("YouTube", r["source"])
@@ -426,8 +426,9 @@ class Cableado(unittest.TestCase):
 
     def test_el_vps_recibe_los_modulos_que_importa_el_uploader(self):
         s = self._src("auto_video_integration_pyqt6.py")
-        for mod in ("facebook_metadata.py", "thumbnail_publish.py", "output_video_locator.py"):
-            self.assertIn(f"os.path.join(os.getcwd(), '{mod}')", s)
+        # Los paquetes completos viajan al VPS (con __init__.py) para que los
+        # imports `from publish.facebook_uploader import ...` resuelvan del otro lado.
+        self.assertIn("for pkg_name in ('infra', 'ai', 'media', 'channel', 'publish'):", s)
 
     def test_los_respaldos_de_facebook_no_usan_mystery_ni_marca_fija(self):
         for name in ("auto_video_integration_pyqt6.py", "platform_metadata_tab.py", "daily_short_pipeline.py"):

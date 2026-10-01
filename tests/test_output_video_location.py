@@ -18,7 +18,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from output_video_locator import find_output_video, newest_video_in, recorded_video_path
+from publish.output_video_locator import find_output_video, newest_video_in, recorded_video_path
 
 
 def _touch(path: Path, mtime=None):
@@ -128,7 +128,7 @@ class LasFuentesNoVuelvenAtras(unittest.TestCase):
         self.assertNotIn("_DOCUMENTARY.mp4", self._src("long_form_builder.py"))
 
     def test_los_cuatro_uploaders_usan_el_localizador(self):
-        for name in ("youtube_uploader.py", "facebook_uploader.py", "instagram_uploader.py", "x_video_uploader.py"):
+        for name in ("publish/youtube_uploader.py", "publish/facebook_uploader.py", "publish/instagram_uploader.py", "publish/x_video_uploader.py"):
             fuente = self._src(name)
             self.assertIn("find_output_video", fuente, name)
             self.assertNotIn("videos[0]", fuente, name + " volvio a adivinar el primer mp4 de la carpeta")

@@ -13,7 +13,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-import music_license as ml
+from publish import music_license as ml
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -238,12 +238,12 @@ class ElCableado(unittest.TestCase):
         return (ROOT / name).read_text(encoding="utf-8")
 
     def test_each_uploader_appends_the_credit_after_optimizing(self):
-        for name, seo in (("facebook_uploader.py", "prepare_facebook_metadata"),
-                          ("instagram_uploader.py", "prepare_instagram_metadata")):
+        for name, seo in (("publish/facebook_uploader.py", "prepare_facebook_metadata"),
+                          ("publish/instagram_uploader.py", "prepare_instagram_metadata")):
             src = self._src(name)
             body = src[src.index("def upload_from_metadata("):]
             self.assertLess(body.index(seo), body.index("with_attribution(description"), name)
-        yt = self._src("youtube_uploader.py")
+        yt = self._src("publish/youtube_uploader.py")
         body = yt[yt.index("def upload_from_metadata("):]
         self.assertLess(body.index("with_attribution(description"), body.index("result = upload_video("))
         self.assertIn("description=description,", body)
@@ -253,7 +253,7 @@ class ElCableado(unittest.TestCase):
         body = src[src.index("    def publish_video_to_platforms("):]
         self.assertIn("self._music_license_gate(storyboard)", body)
         self.assertIn("_meta['music_attribution'] = _music_attribution", body)
-        self.assertIn("'music_license.py'", src)      # viaja al VPS con los uploaders
+        self.assertIn("for pkg_name in ('infra', 'ai', 'media', 'channel', 'publish'):", src)  # music_license viaja en publish/
 
     def test_assembler_records_the_music_it_mixed(self):
         src = self._src("auto_video_generator_v2.py")

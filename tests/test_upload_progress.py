@@ -13,8 +13,8 @@ import io
 import unittest
 from unittest.mock import patch
 
-import instagram_uploader as ig
-from upload_progress import make_byte_progress_reporter
+from publish import instagram_uploader as ig
+from publish.upload_progress import make_byte_progress_reporter
 
 
 class BytesAPorcentaje(unittest.TestCase):
