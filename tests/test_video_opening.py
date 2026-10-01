@@ -300,7 +300,7 @@ class ElTimeline(unittest.TestCase):
 class LaMedicion(unittest.TestCase):
 
     def test_el_informe_compara_los_arranques(self):
-        import performance_feedback as pf
+        from channel import performance_feedback as pf
         by = {"cover_card": {"n": 20, "median_engaged_pct": 55.0, "takeoff_rate": 0.3},
               "hook_overlay_v1": {"n": 9, "median_engaged_pct": 62.0, "takeoff_rate": 0.44}}
         txt = pf.compare_openings(by)
@@ -310,7 +310,7 @@ class LaMedicion(unittest.TestCase):
         self.assertIsNone(pf.compare_openings({"cover_card": by["cover_card"]}))
 
     def test_cada_video_lleva_su_arranque(self):
-        import performance_feedback as pf
+        from channel import performance_feedback as pf
         rows = pf.enrich_rows([{"video_id": "v1", "title": "Hannibal", "views": 400, "engaged_views": 250}],
                               [{"folder": "p", "topic": "Hannibal", "youtube_video_id": "v1",
                                 "opening": vo.OPENING_STYLE, "format_archetype": "", "category": ""}], "youtube")
@@ -366,7 +366,7 @@ class LosProyectosViejos(unittest.TestCase):
             Image.new("RGB", (400, 700), (120, 40, 30)).save(os.path.join(proj, "project_media", "seg1.png"))
             out = os.path.join(tmp, "out")
             os.makedirs(out)
-            with patch("channel_strategy.get_cover_frame_config", return_value={"enabled": False}):
+            with patch("channel.channel_strategy.get_cover_frame_config", return_value={"enabled": False}):
                 res = cfg_gen.generate_cover_frame(
                     topic="x", category="", storyboard={"segments": [{"image_path": "project_media/seg1.png"}]},
                     output_dir=out, cover_text_override="TEST", log_callback=lambda m: None, media_base_dir=proj)

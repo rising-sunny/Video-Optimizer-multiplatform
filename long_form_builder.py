@@ -37,7 +37,7 @@ load_project_env()
 
 PROJECT_DIR = Path(__file__).resolve().parent
 
-from channel_strategy import (  # noqa: E402
+from channel.channel_strategy import (  # noqa: E402
     get_channel_strategy,
     get_narration_tone,
     build_hook_prompt_instructions,
@@ -126,7 +126,7 @@ def _plan_dimensions(minutes: int) -> tuple[int, int, int]:
 
 
 def _generate_chapter_outline(client, topic: str, category: str, n_chapters: int) -> list[dict]:
-    from channel_strategy import get_channel_name, get_channel_audience_line
+    from channel.channel_strategy import get_channel_name, get_channel_audience_line
     prompt = f"""You are a documentary story editor for the YouTube channel "{get_channel_name()}"
 (niche: {get_channel_audience_line()}).
 
@@ -175,7 +175,7 @@ def _generate_chapter_script(client, topic, chap_title, chap_brief,
             "\nThis is the COLD OPEN. Apply these hook rules to the very first paragraph:\n"
             f"{hook_instr}\n"
         )
-    from channel_strategy import get_channel_name
+    from channel.channel_strategy import get_channel_name
     script_prompt = f"""You write documentary narration for YouTube long-form (English, "{get_channel_name()}").
 
 Topic: {topic}
@@ -360,7 +360,7 @@ def build_long_form(
     est_min = (all_segments[-1]["end_time"] if all_segments else 0) / 60.0
     _log(f"\nSegments: {len(all_segments)} | words: {len(full_script.split())} | est. ~{est_min:.1f} min")
 
-    from channel_profiles import active_channel
+    from channel.channel_profiles import active_channel
     storyboard = {
         "channel_profile": active_channel(),
         "topic": topic,
@@ -507,7 +507,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("topic", help="Documentary topic, e.g. 'The Antikythera Mechanism'")
     ap.add_argument("--minutes", type=float, default=None, help="Target minutes (traditional: 10; microdoc: 4.5)")
     ap.add_argument("--format", choices=["traditional", "micro_documentary"], default="traditional")
-    from channel_profiles import CHANNELS, DEFAULT_CHANNEL, select_channel
+    from channel.channel_profiles import CHANNELS, DEFAULT_CHANNEL, select_channel
     ap.add_argument("--channel", choices=list(CHANNELS), default=DEFAULT_CHANNEL)
     ap.add_argument("--editorial-json", help="Manual topic provenance, historical sources and uncertainty notes")
     ap.add_argument("--approve-preflight", action="store_true", help="Approve an EXISTING reviewed experiment.json and generate the script")

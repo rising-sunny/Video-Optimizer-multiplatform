@@ -1283,7 +1283,7 @@ Reglas:
         if not text.strip():
             return []
         try:
-            from channel_strategy import hook_report, first_sentence
+            from channel.channel_strategy import hook_report, first_sentence
             ok, verdicts = hook_report(text)
             sentence = first_sentence(text)
         except Exception as exc:

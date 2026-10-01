@@ -21,7 +21,7 @@ import time
 from pathlib import Path
 
 from auto_video_generator_pyqt6_adapter import AutoVideoGeneratorPyQt6, VideoGenerationWorker
-from cost_calculator import CostCalculator
+from channel.cost_calculator import CostCalculator
 
 # La subida/publicación directa a YouTube fue removida de la GUI.
 
@@ -50,7 +50,7 @@ def get_channel_name(default: str = "this channel") -> str:
     Import perezoso: este modulo se carga antes que el perfil en algunos flujos.
     """
     try:
-        from channel_strategy import get_channel_name as _real
+        from channel.channel_strategy import get_channel_name as _real
         return _real(default)
     except Exception:
         return default
@@ -1478,7 +1478,7 @@ class AutoVideoStudioTab(QWidget):
         is_long = format_val == '16:9' or platform_key in ('youtube', '16:9') or (hasattr(self, 'duration_slider') and self.duration_slider.value() > 60)
 
         from studio_channel_controls import project_channel_config
-        from channel_profiles import CHANNELS
+        from channel.channel_profiles import CHANNELS
         upload_channel = project_channel_config(self)['upload_channel']
         upload_channel_name = CHANNELS[upload_channel]['name']
 

@@ -13,8 +13,8 @@ casi siempre con la fecha.
 import io
 import unittest
 
-import channel_strategy as cs
-from channel_profiles import DEFAULT_CHANNEL, select_channel
+from channel import channel_strategy as cs
+from channel.channel_profiles import DEFAULT_CHANNEL, select_channel
 
 
 class PrimeraFrase(unittest.TestCase):

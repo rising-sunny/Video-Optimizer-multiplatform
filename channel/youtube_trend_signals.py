@@ -18,7 +18,7 @@ from collections import defaultdict
 from pathlib import Path
 
 UTC = dt.timezone.utc
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parent.parent
 CACHE_PATH = ROOT / "daily_shorts" / "youtube_trend_cache.json"
 METHOD = (
     "Prioridad 0–100: velocidad relativa a la muestra (35), presencia en canales distintos (25), "
@@ -93,7 +93,7 @@ def discovery_queries(category="", language="en"):
 
 def configured_categories():
     try:
-        from channel_strategy import get_categories_by_priority
+        from channel.channel_strategy import get_categories_by_priority
         from studio_categories import MYSTERY_CATEGORY
         return list(dict.fromkeys([c['name'] for c in get_categories_by_priority() if c.get('name')] + [MYSTERY_CATEGORY]))
     except Exception:
@@ -141,7 +141,7 @@ def service_candidates(log=print):
     if key:
         candidates.append(build("youtube", "v3", developerKey=key, http=httplib2.Http(timeout=12), cache_discovery=False))
     try:
-        from channel_profiles import token_path
+        from channel.channel_profiles import token_path
         from google.oauth2.credentials import Credentials
         from google_auth_httplib2 import AuthorizedHttp
         p = token_path()
@@ -592,7 +592,7 @@ def group_topics(rows):
 
 
 def rank_opportunities(rows, *, category="", limit=20, window_days=30):
-    from performance_feedback import classify_archetype
+    from channel.performance_feedback import classify_archetype
     if not rows:
         return []
     # Dedup prevents repeated search hits from looking like independent demand.

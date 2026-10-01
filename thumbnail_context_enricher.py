@@ -10,7 +10,7 @@ except Exception:
     search_research_context = None
 
 try:
-    from trend_spotter import get_trending_topics
+    from channel.trend_spotter import get_trending_topics
 except Exception:
     get_trending_topics = None
 

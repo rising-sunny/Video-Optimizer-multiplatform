@@ -13,7 +13,7 @@ import io
 import unittest
 from unittest.mock import patch
 
-from channel_profiles import DEFAULT_CHANNEL, select_channel
+from channel.channel_profiles import DEFAULT_CHANNEL, select_channel
 
 
 class _FakeLLM:

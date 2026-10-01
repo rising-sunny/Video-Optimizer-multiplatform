@@ -1,5 +1,5 @@
 import unittest
-from channel_profiles import CHANNELS, DEFAULT_CHANNEL
+from channel.channel_profiles import CHANNELS, DEFAULT_CHANNEL
 from upload_metadata import metadata_for_channel
 
 

@@ -182,7 +182,7 @@ tests/        → los 76 test_*.py
 | `music_license` | atribución + gate Content ID |
 | `production_checklist` | |
 
-### `channel/` — estrategia + analytics
+### `channel/` — estrategia + analytics ✅ (Fase 5)
 
 `channel_strategy`, `channel_profiles`, `youtube_channel_analyzer`, `youtube_analytics_client`,
 `youtube_trend_signals`, `trend_report`, `trend_spotter`, `performance_feedback`,
@@ -301,6 +301,9 @@ El script se puede re-ejecutar por fase y se revierte con git.
 
 ## Changelog
 
+- **2026-10-01 (Fase 5)** — `channel/` con 9 módulos (estrategia, analytics, tendencias,
+  feedback; 107 imports + 8 strings reescritos). `__file__`→raíz en 5 módulos; shims raíz para
+  los CLI `trend_report`, `performance_feedback` y `youtube_analytics_client`. Suite: 1205 tests.
 - **2026-10-01 (Fase 4)** — `media/` con 17 módulos (búsqueda/descarga de imágenes, videos y
   música; 54 imports + 4 strings reescritos). Ajustes: `__file__`→raíz en `youtube_video_client`
   (token OAuth), `video_source_alternatives` (`local_videos`) y `music_recommender` (dir de

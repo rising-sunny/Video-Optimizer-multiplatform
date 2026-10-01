@@ -14,7 +14,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-import performance_feedback as pf
+from channel import performance_feedback as pf
 
 
 def yt(video_id, title, views, engaged, subs, dur=70, vertical=True, avg_pct=70.0):

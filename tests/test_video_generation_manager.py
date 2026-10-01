@@ -199,7 +199,7 @@ class TestAspectRatio(unittest.TestCase):
 class TestCostCalculator(unittest.TestCase):
 
     def test_fal_cheaper_than_runway(self):
-        from cost_calculator import CostCalculator
+        from channel.cost_calculator import CostCalculator
         calc = CostCalculator()
         fal_cost = calc.calculate_video_cost(120, True, True, 'mixed', 'fal')
         runway_cost = calc.calculate_video_cost(120, True, True, 'mixed', 'runway')
@@ -210,25 +210,25 @@ class TestCostCalculator(unittest.TestCase):
         self.assertLess(fal_total, runway_total)
 
     def test_fal_label_in_note(self):
-        from cost_calculator import CostCalculator
+        from channel.cost_calculator import CostCalculator
         calc = CostCalculator()
         result = calc.calculate_video_cost(60, False, False, 'mixed', 'fal')
         self.assertIn('Fal.ai', result['note'])
 
     def test_runway_label_in_note(self):
-        from cost_calculator import CostCalculator
+        from channel.cost_calculator import CostCalculator
         calc = CostCalculator()
         result = calc.calculate_video_cost(60, False, False, 'mixed', 'runway')
         self.assertIn('Runway', result['note'])
 
     def test_static_mode_unchanged(self):
-        from cost_calculator import CostCalculator
+        from channel.cost_calculator import CostCalculator
         calc = CostCalculator()
         result = calc.calculate_video_cost(60, False, False, 'static')
         self.assertIn('Recraft', result['resources_used']['videos'])
 
     def test_compare_shows_three_modes(self):
-        from cost_calculator import CostCalculator
+        from channel.cost_calculator import CostCalculator
         calc = CostCalculator()
         comparison = calc.compare_configurations(120)
         text = comparison['comparison_text']

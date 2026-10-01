@@ -94,7 +94,7 @@ class VideoRecommendationsDialog(QDialog):
     def get_monetization_info(self) -> Optional[str]:
         """Obtiene información de monetización del canal"""
         try:
-            from youtube_channel_analyzer import YouTubeChannelAnalyzer
+            from channel.youtube_channel_analyzer import YouTubeChannelAnalyzer
             
             channel_id = os.getenv("YOUTUBE_CHANNEL_ID")
             channel_handle = os.getenv("YOUTUBE_CHANNEL_HANDLE")

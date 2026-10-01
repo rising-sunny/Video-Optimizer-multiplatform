@@ -6,8 +6,8 @@ import types
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
-import channel_profiles as channels
-import channel_strategy
+from channel import channel_profiles as channels
+from channel import channel_strategy
 import micro_documentary as micro
 from microdoc_analytics import normalize, diagnose, compare_pilots
 

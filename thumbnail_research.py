@@ -225,7 +225,7 @@ def text_options(title: str, script: str, research: dict[str, Any], archetype: s
 
     # 3) palabras del angulo respaldadas por el guion
     try:
-        from channel_strategy import archetype_cover_words
+        from channel.channel_strategy import archetype_cover_words
         for w in archetype_cover_words(archetype):
             add(w, f"palabra del angulo '{archetype}'")
     except Exception:

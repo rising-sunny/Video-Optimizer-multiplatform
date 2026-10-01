@@ -9,7 +9,7 @@ from types import SimpleNamespace
 from unittest.mock import patch, Mock
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-import youtube_trend_signals as ys
+from channel import youtube_trend_signals as ys
 
 NOW = dt.datetime(2026, 9, 30, 20, tzinfo=dt.timezone.utc)
 
@@ -354,7 +354,7 @@ class SamplingTests(unittest.TestCase):
         service = SimpleNamespace()
         creds = SimpleNamespace(valid=True, scopes=['https://www.googleapis.com/auth/youtube.force-ssl'])
         with patch.dict(os.environ, {}, clear=True), patch('infra.env_loader.load_project_env'), \
-                patch('channel_profiles.token_path', return_value=token), \
+                patch('channel.channel_profiles.token_path', return_value=token), \
                 patch('google.oauth2.credentials.Credentials.from_authorized_user_file', return_value=creds), \
                 patch('google_auth_httplib2.AuthorizedHttp', return_value=object()), \
                 patch('googleapiclient.discovery.build', return_value=service):
@@ -367,7 +367,7 @@ class SamplingTests(unittest.TestCase):
                                 refresh=Mock(side_effect=OSError('DNS failure')))
         service = SimpleNamespace()
         with patch.dict(os.environ, {}, clear=True), patch('infra.env_loader.load_project_env'), \
-                patch('channel_profiles.token_path', return_value=token), \
+                patch('channel.channel_profiles.token_path', return_value=token), \
                 patch('google.oauth2.credentials.Credentials.from_authorized_user_file', return_value=creds), \
                 patch('google_auth_httplib2.AuthorizedHttp', return_value=object()), \
                 patch('googleapiclient.discovery.build', return_value=service):
@@ -403,7 +403,7 @@ class SamplingTests(unittest.TestCase):
 
 class ReportTests(unittest.TestCase):
     def test_recovered_report_preserves_original_timestamp_and_skips_ai_rewrite(self):
-        import trend_report as tr
+        from channel import trend_report as tr
         sample = dict(rows=DemandTests().sample(), errors=['Sin conexión'], sampled_at=NOW.isoformat(), cached=True,
                       refresh_failed=True, cache_age_hours=12, queries=[])
         messages = []
@@ -419,7 +419,7 @@ class ReportTests(unittest.TestCase):
         ai.assert_not_called()
 
     def test_no_youtube_data_keeps_calendar_out_of_recommendations(self):
-        import trend_report as tr
+        from channel import trend_report as tr
         with tempfile.TemporaryDirectory() as tmp, patch.object(tr, "REPORT_PATH", Path(tmp) / "report.json"):
             report = tr.build_report(with_youtube=False, with_llm=False, today=NOW.date(), log=lambda _: None)
         self.assertEqual(report["proposals"], [])
@@ -427,7 +427,7 @@ class ReportTests(unittest.TestCase):
         self.assertEqual(report["youtube"]["sample_size"], 0)
 
     def test_ai_cannot_replace_subject_or_metrics(self):
-        import trend_report as tr
+        from channel import trend_report as tr
         proposals = ys.rank_opportunities(DemandTests().sample())
         original = json.loads(json.dumps(proposals))
         class Client:
@@ -441,7 +441,7 @@ class ReportTests(unittest.TestCase):
         self.assertEqual(proposals[0]["evidence"], original[0]["evidence"])
 
     def test_ai_cannot_invent_a_more_specific_unmeasured_story(self):
-        import trend_report as tr
+        from channel import trend_report as tr
         proposals = ys.rank_opportunities(DemandTests().sample())
         class Client:
             client = object()
@@ -479,7 +479,7 @@ class GuiTests(unittest.TestCase):
             return report
 
         try:
-            with patch('trend_report.build_report', side_effect=build):
+            with patch('channel.trend_report.build_report', side_effect=build):
                 QTest.mouseClick(dlg.btn_refresh, Qt.MouseButton.LeftButton)
                 self.assertFalse(dlg.btn_refresh.isEnabled())
                 self.assertTrue(dlg.progress_bar.isVisible())

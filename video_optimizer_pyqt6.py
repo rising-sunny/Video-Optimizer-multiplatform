@@ -414,7 +414,7 @@ except ImportError as e:
     print(f"[!] Google Search APIs no disponibles: {e}")
 
 try:
-    from trend_spotter import get_trending_topics, analyze_trends_for_video_ideas
+    from channel.trend_spotter import get_trending_topics, analyze_trends_for_video_ideas
     TRENDS_AVAILABLE = True
 except ImportError as e:
     TRENDS_AVAILABLE = False

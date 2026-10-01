@@ -116,7 +116,7 @@ def _infer_is_short(video_path) -> bool:
 def _get_credentials(interactive: bool = True, channel_profile=None) -> Credentials:
     """Load or refresh OAuth2 credentials."""
     creds = None
-    from channel_profiles import token_path
+    from channel.channel_profiles import token_path
     selected_token = token_path(channel_profile)
 
     if selected_token.exists():
@@ -162,7 +162,7 @@ def _get_credentials(interactive: bool = True, channel_profile=None) -> Credenti
 
 def _save_token(creds: Credentials, selected_token=None):
     """Save credentials to token.json."""
-    from channel_profiles import token_path
+    from channel.channel_profiles import token_path
     with open(selected_token or token_path(), "w") as f:
         f.write(creds.to_json())
 
@@ -221,7 +221,7 @@ def upload_video(
     if not video_path.exists():
         raise FileNotFoundError(f"Video no encontrado: {video_path}")
 
-    from channel_profiles import active_channel, CHANNELS
+    from channel.channel_profiles import active_channel, CHANNELS
     from upload_metadata import metadata_for_channel
     channel_profile = channel_profile or active_channel()
     adapted = metadata_for_channel({'title': title, 'description': description, 'tags': tags}, channel_profile)
@@ -464,7 +464,7 @@ def upload_from_metadata(
     output_dir = Path(output_dir)
 
     metadata = _load_upload_metadata(output_dir)
-    from channel_profiles import DEFAULT_CHANNEL
+    from channel.channel_profiles import DEFAULT_CHANNEL
     config = {}
     if (output_dir / 'project.json').exists():
         project_data = json.loads((output_dir / 'project.json').read_text(encoding='utf-8'))

@@ -17,7 +17,7 @@ def get_channel_name(default: str = "this channel") -> str:
     Import perezoso: este modulo se carga antes que el perfil en algunos flujos.
     """
     try:
-        from channel_strategy import get_channel_name as _real
+        from channel.channel_strategy import get_channel_name as _real
         return _real(default)
     except Exception:
         return default
@@ -644,7 +644,7 @@ Return ONLY a JSON array, no markdown, no extra text:
         # hallazgo -> la pieza in situ; historia humana -> el objeto de la persona).
         angle_line = ""
         try:
-            from channel_strategy import archetype_thumbnail_brief, archetype_label, get_active_archetype
+            from channel.channel_strategy import archetype_thumbnail_brief, archetype_label, get_active_archetype
             _arche = format_archetype or get_active_archetype()
             brief = archetype_thumbnail_brief(_arche) if _arche else ""
             if brief:
@@ -975,7 +975,7 @@ State the resolved lens and depth of field. End with: {fmt.prompt_constraint}, p
 
     def _build_short_block(self, category="") -> str:
         try:
-            from channel_strategy import build_hook_prompt_instructions, get_shorts_rules as _get_sr
+            from channel.channel_strategy import build_hook_prompt_instructions, get_shorts_rules as _get_sr
             _sr = _get_sr()
             if is_mystery_inquiry(category):
                 return """

@@ -8,7 +8,7 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QComboBox, QSlider, QRadioButton, QPushButton
-from channel_profiles import active_channel, DEFAULT_CHANNEL, select_channel
+from channel.channel_profiles import active_channel, DEFAULT_CHANNEL, select_channel
 from studio_channel_controls import (install_controls, restore_channel_config, project_channel_config,
                                      PilotDialog, sync_editorial_before_writing)
 

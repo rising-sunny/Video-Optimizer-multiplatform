@@ -71,7 +71,7 @@ class VideoRecommender:
         self.channel_analyzer = None
         if channel_id or channel_handle:
             try:
-                from youtube_channel_analyzer import YouTubeChannelAnalyzer
+                from channel.youtube_channel_analyzer import YouTubeChannelAnalyzer
                 self.channel_analyzer = YouTubeChannelAnalyzer(channel_id, channel_handle)
             except ImportError:
                 print("️ youtube_channel_analyzer no disponible")

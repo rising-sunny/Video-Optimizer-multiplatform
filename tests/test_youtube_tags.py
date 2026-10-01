@@ -197,7 +197,7 @@ class ElUploader(unittest.TestCase):
     """upload_video con el servicio de YouTube simulado: que se manda y que se verifica."""
 
     def _run(self, stored_tags=None, env=None, research_side_effect=None):
-        from channel_profiles import CHANNELS, DEFAULT_CHANNEL
+        from channel.channel_profiles import CHANNELS, DEFAULT_CHANNEL
         import youtube_uploader as yu
         insert_bodies = []
         service = MagicMock()

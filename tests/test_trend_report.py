@@ -11,7 +11,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import unittest
 
-import trend_report as tr
+from channel import trend_report as tr
 
 
 class Efemerides(unittest.TestCase):
@@ -47,7 +47,7 @@ class Efemerides(unittest.TestCase):
     def test_el_archivo_real_carga_y_tiene_angulos_validos(self):
         events = tr.load_anniversaries()
         self.assertGreaterEqual(len(events), 25)
-        from channel_strategy import get_format_archetypes
+        from channel.channel_strategy import get_format_archetypes
         ids = {a["id"] for a in get_format_archetypes()}
         for e in events:
             self.assertIn(e.get("angle"), ids, e["title"])

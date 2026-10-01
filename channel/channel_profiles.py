@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_CHANNEL = "stunning-facts-of-history"
 CHANNELS = {
     DEFAULT_CHANNEL: {"name": "@StunningFactsofHistory", "profile": "daily_shorts/channel_strategy_profile.json", "token": "token.json", "channel_id": "UCXQ1_6A-JkBeQsMkiDcunGA", "format": "traditional"},
@@ -22,7 +22,7 @@ def select_channel(key):
     if key not in CHANNELS:
         raise ValueError(f"Unknown channel: {key}")
     _active = key
-    import channel_strategy
+    from channel import channel_strategy
     channel_strategy._cached_strategy = None
     import sys
     pipeline = sys.modules.get('daily_short_pipeline')

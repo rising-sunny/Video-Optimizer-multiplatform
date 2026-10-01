@@ -81,13 +81,13 @@ SCRIPT = ("The famous bodies of Pompeii are not bodies. In 1863 Giuseppe Fiorell
 class ElTexto(unittest.TestCase):
 
     def test_how_why_no_pasan_con_un_conjunto_de_palabras_vacio(self):
-        with patch("channel_strategy.archetype_cover_words", return_value=["HOW?", "WHY?", "BY HAND"]):
+        with patch("channel.channel_strategy.archetype_cover_words", return_value=["HOW?", "WHY?", "BY HAND"]):
             ops = tr.text_options("Naval cannon", "Sailors loaded the gun by hand.",
                                   {"keyword": "", "suggestions": {}, "corpus": set()}, "mechanism")
         self.assertEqual([o["text"] for o in ops], ["BY HAND"])
 
     def test_sin_detalle_respaldado_no_impone_una_palabra_generica(self):
-        with patch("channel_strategy.archetype_cover_words", return_value=["HOW?", "WHY?", "BY HAND"]):
+        with patch("channel.channel_strategy.archetype_cover_words", return_value=["HOW?", "WHY?", "BY HAND"]):
             ops = tr.text_options("Naval cannon", "The ship sailed.",
                                   {"keyword": "", "suggestions": {}, "corpus": set()}, "mechanism")
         self.assertEqual(ops, [])

@@ -8,8 +8,8 @@ from unittest.mock import Mock, patch
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PyQt6.QtWidgets import QApplication, QComboBox, QWidget
 
-from channel_profiles import DEFAULT_CHANNEL, select_channel
-from channel_strategy import get_channel_strategy, get_all_category_names
+from channel.channel_profiles import DEFAULT_CHANNEL, select_channel
+from channel.channel_strategy import get_channel_strategy, get_all_category_names
 from ai.claude_client import ClaudeAiClient
 from storyboard_generator import StoryboardGenerator
 from studio_categories import MYSTERY_CATEGORY, get_studio_category_names, mystery_editorial_instructions
@@ -35,7 +35,7 @@ class MysteryEditorialTests(unittest.TestCase):
         self.assertEqual(get_tone_profile_for_category(MYSTERY_CATEGORY), "mystery")
 
     def test_option_remains_available_when_channel_loading_fails(self):
-        with patch("channel_strategy.get_all_category_names", side_effect=OSError("missing profile")):
+        with patch("channel.channel_strategy.get_all_category_names", side_effect=OSError("missing profile")):
             self.assertIn(MYSTERY_CATEGORY, get_studio_category_names())
 
     def test_manual_json_prompts_allow_investigation_only_when_selected(self):

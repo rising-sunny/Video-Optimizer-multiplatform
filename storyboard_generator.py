@@ -60,7 +60,7 @@ def get_channel_name(default: str = "this channel") -> str:
     Import perezoso: este modulo se carga antes que el perfil en algunos flujos.
     """
     try:
-        from channel_strategy import get_channel_name as _real
+        from channel.channel_strategy import get_channel_name as _real
         return _real(default)
     except Exception:
         return default
@@ -1224,7 +1224,7 @@ TONO Y ESTILO:
 
         Includes hook patterns, narrative structure, quality rules,
         editorial filter, and credibility guidelines — all sourced
-        from channel_strategy.py when available.
+        from channel.channel_strategy.py when available.
         """
         # The explicitly selected investigation category is a per-video exception
         # to the channel's usual subject exclusions, not a global Bible rewrite.
@@ -1243,7 +1243,7 @@ RITMO PARA SHORTS:
         # ── Channel Bible (hooks, structure, tone) ──
         if is_short:
             try:
-                from channel_strategy import (
+                from channel.channel_strategy import (
                     build_hook_prompt_instructions,
                     get_channel_strategy as _get_cs,
                     get_shorts_rules as _get_sr,
@@ -1991,7 +1991,7 @@ REGLAS CRÍTICAS:
 
         # 5.5 Duration validation via channel_strategy
         try:
-            from channel_strategy import validate_duration as _validate_dur
+            from channel.channel_strategy import validate_duration as _validate_dur
             _measured = self._measure_audio_duration_seconds(str(result.get("audio_path", "")))
             if _measured > 0:
                 _ok, _msg = _validate_dur(_measured)
@@ -2022,7 +2022,7 @@ REGLAS CRÍTICAS:
         try:
             from video_opening import apply_opening
             try:
-                from channel_strategy import get_active_archetype
+                from channel.channel_strategy import get_active_archetype
                 _arche_now = get_active_archetype() or ""
             except Exception:
                 _arche_now = ""
@@ -2131,7 +2131,7 @@ REGLAS CRÍTICAS:
         try:
             from video_opening import apply_opening
             try:
-                from channel_strategy import get_active_archetype
+                from channel.channel_strategy import get_active_archetype
                 _arche_now = get_active_archetype() or ""
             except Exception:
                 _arche_now = ""
@@ -2679,7 +2679,7 @@ Sin explicaciones antes ni después. Solo JSON válido."""
         # El ANGULO (como se cuenta el tema) entra a todos los prompts via
         # build_hook_prompt_instructions y queda estampado en el storyboard.
         try:
-            from channel_strategy import set_active_archetype, archetype_label
+            from channel.channel_strategy import set_active_archetype, archetype_label
             _arche = set_active_archetype(format_archetype)
             if _arche:
                 self.log(f"   Angulo narrativo: {archetype_label(_arche)}")
@@ -2948,7 +2948,7 @@ Sin explicaciones antes ni después. Solo JSON válido."""
         # --- 3.6. Validación de duración con channel strategy ---
         if self._is_short_form_platform(platform):
             try:
-                from channel_strategy import validate_duration as _validate_dur
+                from channel.channel_strategy import validate_duration as _validate_dur
                 _measured = self._measure_audio_duration_seconds(str(audio_path))
                 if _measured > 0:
                     _ok, _msg = _validate_dur(_measured)
@@ -3177,7 +3177,7 @@ Sin explicaciones antes ni después. Solo JSON válido."""
             if not llm_cover_text and hasattr(self, 'gemini_client') and hasattr(self.gemini_client, 'backend'):
                 llm_cover_text = getattr(self.gemini_client.backend, '_last_cover_text', None)
             try:
-                from channel_strategy import get_active_archetype
+                from channel.channel_strategy import get_active_archetype
                 _arche_now = get_active_archetype() or ""
             except Exception:
                 _arche_now = ""
@@ -3284,13 +3284,13 @@ Sin explicaciones antes ni después. Solo JSON válido."""
             # Primero el angulo del 16:9 (el bloque NARRATIVE ANGLE sale de ahi), despues las reglas.
             _arche = long_video_storyboard.get('format_archetype') or ''
             try:
-                from channel_strategy import set_active_archetype as _saa
+                from channel.channel_strategy import set_active_archetype as _saa
                 if _arche:
                     _saa(_arche)
             except Exception:
                 pass
             try:
-                from channel_strategy import build_hook_prompt_instructions as _bhpi, get_shorts_rules as _gsr
+                from channel.channel_strategy import build_hook_prompt_instructions as _bhpi, get_shorts_rules as _gsr
                 _rules = _bhpi()
                 _sr = _gsr()
             except Exception:

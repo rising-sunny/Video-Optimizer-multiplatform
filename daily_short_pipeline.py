@@ -70,7 +70,7 @@ except Exception as e:
 # CONFIGURACIÓN DEL CANAL (cargada desde channel strategy profile)
 # ═══════════════════════════════════════════════════════════════════════════
 
-from channel_strategy import (
+from channel.channel_strategy import (
     get_channel_name,
 
 
@@ -673,7 +673,7 @@ def get_used_titles() -> list:
 
     # ── Fuente  2: videos del canal de YouTube ────────────────────────────
     try:
-        from youtube_channel_analyzer import YouTubeChannelAnalyzer
+        from channel.youtube_channel_analyzer import YouTubeChannelAnalyzer
         analyzer = YouTubeChannelAnalyzer(
             channel_id=CHANNEL_CONFIG.get("channel_id"),
             channel_handle=CHANNEL_CONFIG.get("channel_handle"),
@@ -879,7 +879,7 @@ def get_used_titles() -> list:
                 continue
 
     try:
-        from youtube_channel_analyzer import YouTubeChannelAnalyzer
+        from channel.youtube_channel_analyzer import YouTubeChannelAnalyzer
         analyzer = YouTubeChannelAnalyzer(
             channel_id=CHANNEL_CONFIG.get("channel_id"),
             channel_handle=CHANNEL_CONFIG.get("channel_handle"),
@@ -905,7 +905,7 @@ def detect_trends(ai_client) -> list:
     """Obtiene temas trending de múltiples regiones."""
     log("Detectando tendencias globales...", "STEP")
 
-    from trend_spotter import get_trending_topics
+    from channel.trend_spotter import get_trending_topics
 
     all_trends = []
     for region in CHANNEL_CONFIG["trend_regions"]:
@@ -995,7 +995,7 @@ def generate_video_ideas(trends: list, ai_client, used_titles: list = None) -> l
     """Cruza tendencias con categorías del canal para generar ideas."""
     log("Generando ideas de video con IA...", "STEP")
 
-    from trend_spotter import analyze_trends_for_video_ideas
+    from channel.trend_spotter import analyze_trends_for_video_ideas
 
     ideas_result = analyze_trends_for_video_ideas(
         trends_list=trends,
@@ -2042,7 +2042,7 @@ def generate_platform_metadata(storyboard: dict, output_dir: Path) -> tuple[dict
     output_dir = Path(output_dir)
     used_titles = get_used_titles()
     youtube_metadata = generate_youtube_metadata(storyboard, output_dir, used_titles=used_titles)
-    from channel_profiles import active_channel
+    from channel.channel_profiles import active_channel
     youtube_metadata['channel_profile'] = storyboard.get('channel_profile') or active_channel()
     # Atribucion de la musica automatica de Jamendo (CC BY la exige); cada uploader la
     # pega al final de la descripcion ya optimizada. Ver music_license.
@@ -2721,11 +2721,11 @@ def main():
     parser.add_argument("--list-transitions", action="store_true",
                         help="Listar transiciones disponibles y salir")
 
-    from channel_profiles import CHANNELS, DEFAULT_CHANNEL, select_channel
+    from channel.channel_profiles import CHANNELS, DEFAULT_CHANNEL, select_channel
     parser.add_argument('--channel', choices=list(CHANNELS), default=DEFAULT_CHANNEL)
     args = parser.parse_args()
     select_channel(args.channel)
-    from channel_strategy import get_channel_strategy
+    from channel.channel_strategy import get_channel_strategy
     if get_channel_strategy().get('production_policy', {}).get('shorts_campaign_enabled') is False:
         parser.error('Este canal está en piloto microdocumentary. Usa long_form_builder.py --format micro_documentary --channel ' + args.channel)
 

@@ -1,7 +1,7 @@
 """Adapt our channel branding without regenerating the video's editorial content."""
 import copy
 import re
-from channel_profiles import CHANNELS
+from channel.channel_profiles import CHANNELS
 
 
 def channel_brand(channel):

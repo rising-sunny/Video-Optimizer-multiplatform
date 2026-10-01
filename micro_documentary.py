@@ -12,7 +12,7 @@ import re
 import uuid
 from pathlib import Path
 
-from channel_profiles import active_channel, load_profile
+from channel.channel_profiles import active_channel, load_profile
 
 UNCERTAINTY = {"established_fact", "scholarly_interpretation", "plausible_hypothesis", "disputed_claim", "unknown"}
 
@@ -177,7 +177,7 @@ def prepare(topic, out, *, channel=None, seconds=270, editorial=None, client=Non
     # Angulo narrativo: si viene, manda en el packaging (gancho, titulos, thumbnail).
     angle_block = ""
     try:
-        from channel_strategy import set_active_archetype, build_archetype_prompt_instructions
+        from channel.channel_strategy import set_active_archetype, build_archetype_prompt_instructions
         if format_archetype:
             set_active_archetype(format_archetype)
         angle_block = build_archetype_prompt_instructions()

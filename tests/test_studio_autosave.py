@@ -13,7 +13,7 @@ from PyQt6.QtWidgets import QApplication, QLineEdit, QCheckBox, QRadioButton, QC
 from PyQt6.QtTest import QTest
 from studio_project_manager import StudioProjectManager
 from project_manager_v2 import ProjectManagerV2
-from channel_profiles import select_channel, active_channel, DEFAULT_CHANNEL
+from channel.channel_profiles import select_channel, active_channel, DEFAULT_CHANNEL
 from studio_channel_controls import PilotDialog, open_pilot
 from tests.test_studio_channel_controls import StudioStub
 from tests.test_micro_documentary import package

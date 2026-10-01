@@ -183,7 +183,7 @@ NO_TEXT_HINT = "no text, no writing, no signs, no captions, no watermarks"
 def get_opening_config(bible: Optional[dict[str, Any]] = None) -> dict[str, Any]:
     if bible is None:
         try:
-            from channel_strategy import get_channel_strategy
+            from channel.channel_strategy import get_channel_strategy
             bible = get_channel_strategy()
         except Exception:
             bible = {}
@@ -343,7 +343,7 @@ def apply_opening(segments: list[dict[str, Any]], *, script: str, topic: str = "
 
 def _bible() -> dict[str, Any]:
     try:
-        from channel_strategy import get_channel_strategy
+        from channel.channel_strategy import get_channel_strategy
         return get_channel_strategy() or {}
     except Exception:
         return {}

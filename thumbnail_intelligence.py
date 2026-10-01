@@ -241,7 +241,7 @@ def _audiencia_del_canal() -> str:
     alcance.
     """
     try:
-        from channel_strategy import get_channel_audience_line
+        from channel.channel_strategy import get_channel_audience_line
         return get_channel_audience_line()
     except Exception:
         return "general audience"

@@ -9,7 +9,7 @@ from PyQt6.QtWidgets import (QComboBox, QDialog, QFileDialog, QHBoxLayout, QLabe
                             QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView, QTextBrowser,
                             QSplitter, QProgressBar)
 
-from channel_profiles import CHANNELS, DEFAULT_CHANNEL, active_channel, select_channel
+from channel.channel_profiles import CHANNELS, DEFAULT_CHANNEL, active_channel, select_channel
 
 
 def project_channel_config(tab):
@@ -27,7 +27,7 @@ def populate_archetype_combo(tab):
     combo = getattr(tab, 'archetype_combo', None)
     if combo is None:
         return
-    from channel_strategy import get_format_archetypes
+    from channel.channel_strategy import get_format_archetypes
     current = combo.currentData() or "auto"
     combo.blockSignals(True)
     combo.clear()
@@ -41,7 +41,7 @@ def populate_archetype_combo(tab):
 
 def resolve_archetype_for_topic(tab, topic, category=""):
     """Lo que el guion va a usar: el elegido, o el 'auto' resuelto por datos + tema."""
-    from channel_strategy import pick_archetype_auto, archetype_label
+    from channel.channel_strategy import pick_archetype_auto, archetype_label
     combo = getattr(tab, 'archetype_combo', None)
     chosen = (combo.currentData() if combo else None) or "auto"
     if chosen == "auto":
@@ -129,7 +129,7 @@ def restore_channel_config(tab, config):
     # Al reabrir un proyecto ya escrito, el angulo activo vuelve a ser el suyo
     # (cover frame y thumbnail lo leen aunque no se regenere el guion).
     try:
-        from channel_strategy import set_active_archetype
+        from channel.channel_strategy import set_active_archetype
         saved = config.get('format_archetype')
         set_active_archetype(saved if saved and saved != 'auto' else "")
     except Exception:
@@ -402,7 +402,7 @@ class _PerformanceWorker(QThread):
 
     def run(self):
         try:
-            import performance_feedback as pf
+            from channel import performance_feedback as pf
             snap = pf.run(days=self.days, log=self.line.emit)
             self.done.emit(snap)
         except Exception as exc:
@@ -421,7 +421,7 @@ def refresh_performance(tab, days=30):
         btn.setText('Midiendo…')
 
     def _done(snap):
-        import performance_feedback as pf
+        from channel import performance_feedback as pf
         for ln in pf.format_summary(snap).splitlines():
             tab.log(ln)
         tab.log("Rendimiento: el proximo guion ya lee estas conclusiones (bloque WHAT IS WORKING NOW).")
@@ -456,7 +456,7 @@ class _TrendsWorker(QThread):
 
     def run(self):
         try:
-            import trend_report
+            from channel import trend_report
             self.done.emit(trend_report.build_report(log=self.line.emit, force_refresh=self.force_refresh, **self.options))
         except Exception as exc:
             self.failed.emit(f"{type(exc).__name__}: {exc}")
@@ -496,7 +496,7 @@ def studio_trend_options(tab):
     en = getattr(tab, 'lang_en', None)
     language = 'es' if es is not None and es.isChecked() else 'en'
     if es is None and en is None:
-        from channel_strategy import get_channel_strategy
+        from channel.channel_strategy import get_channel_strategy
         language = get_channel_strategy().get('channel_identity', {}).get('language', 'en')
     platform = getattr(tab, 'platform_combo', None)
     data = platform.currentData() if platform is not None else None
@@ -651,7 +651,7 @@ class TrendsDialog(QDialog):
         c = report.get('context') or {}
         stamp = yt.get('sampled_at') or ''
         if stamp:
-            from youtube_trend_signals import timestamp
+            from channel.youtube_trend_signals import timestamp
             captured = timestamp(stamp)
             if captured:
                 stamp = captured.astimezone().strftime('%d/%m/%Y %H:%M')
@@ -774,7 +774,7 @@ def open_trends(tab, *, options=None, dialog=None, force_refresh=False):
 
     def _done(report):
         _restore()
-        import trend_report
+        from channel import trend_report
         for ln in trend_report.format_report(report).splitlines()[:12]:
             tab.log(ln)
         if dialog is not None:

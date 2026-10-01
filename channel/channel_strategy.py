@@ -12,7 +12,7 @@ import re
 from pathlib import Path
 from typing import Any, Optional
 
-_PROJECT_DIR = Path(__file__).resolve().parent
+_PROJECT_DIR = Path(__file__).resolve().parent.parent
 _PROFILE_PATH = _PROJECT_DIR / "daily_shorts" / "channel_strategy_profile.json"
 
 _cached_strategy: Optional[dict[str, Any]] = None
@@ -23,7 +23,7 @@ def get_channel_strategy(*, reload: bool = False) -> dict[str, Any]:
     if _cached_strategy is not None and not reload:
         return _cached_strategy
 
-    from channel_profiles import active_channel, DEFAULT_CHANNEL, load_profile
+    from channel.channel_profiles import active_channel, DEFAULT_CHANNEL, load_profile
     if active_channel() != DEFAULT_CHANNEL:
         _cached_strategy = load_profile()
     elif _PROFILE_PATH.exists():
@@ -245,7 +245,7 @@ def validate_hook(text: str) -> tuple[bool, str]:
 # ---------------------------------------------------------------------------
 # Rendimiento medido (performance_feedback.py -> daily_shorts/performance_snapshot.json)
 # ---------------------------------------------------------------------------
-_SNAPSHOT_PATH = Path(__file__).resolve().parent / "daily_shorts" / "performance_snapshot.json"
+_SNAPSHOT_PATH = Path(__file__).resolve().parent.parent / "daily_shorts" / "performance_snapshot.json"
 
 
 def get_performance_snapshot() -> dict[str, Any]:

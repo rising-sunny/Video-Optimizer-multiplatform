@@ -53,7 +53,7 @@ class TestUsedTitleCollection(unittest.TestCase):
             )
 
             with patch.object(daily_short_pipeline, "PROJECT_DIR", root):
-                with patch("youtube_channel_analyzer.YouTubeChannelAnalyzer") as analyzer_cls:
+                with patch("channel.youtube_channel_analyzer.YouTubeChannelAnalyzer") as analyzer_cls:
                     analyzer_cls.return_value.get_channel_videos.return_value = []
                     used_titles = daily_short_pipeline.get_used_titles()
 

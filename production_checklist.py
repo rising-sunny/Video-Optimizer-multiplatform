@@ -15,7 +15,7 @@ from typing import Any
 
 def _load_strategy():
     try:
-        from channel_strategy import get_channel_strategy
+        from channel.channel_strategy import get_channel_strategy
         return get_channel_strategy()
     except ImportError:
         return {}
@@ -150,7 +150,7 @@ def run_pre_publish_checklist(
     script = storyboard.get("script", "")
     if script:
         try:
-            from channel_strategy import validate_hook
+            from channel.channel_strategy import validate_hook
             first_sentence = script.split(".")[0].strip() if "." in script else script[:100]
             ok, msg = validate_hook(first_sentence)
             results.append({"check": "hook_valid", "passed": ok, "message": msg})

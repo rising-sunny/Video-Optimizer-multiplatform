@@ -16,8 +16,8 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import unittest
 from unittest.mock import patch
 
-import channel_strategy as cs
-from channel_profiles import DEFAULT_CHANNEL, select_channel
+from channel import channel_strategy as cs
+from channel.channel_profiles import DEFAULT_CHANNEL, select_channel
 
 
 class ElBibleTieneLosCuatroAngulos(unittest.TestCase):

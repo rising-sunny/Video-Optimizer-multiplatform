@@ -22,7 +22,7 @@ def is_mystery_inquiry(category):
 def get_studio_category_names():
     """The extra category is opt-in; automated channel topic lists stay unchanged."""
     try:
-        from channel_strategy import get_all_category_names
+        from channel.channel_strategy import get_all_category_names
         names = list(get_all_category_names())
     except Exception:
         names = []

@@ -239,7 +239,7 @@ class ParseoDelLLM(unittest.TestCase):
 class ElUploaderYElStudio(unittest.TestCase):
 
     def _upload(self, title_mode, titles):
-        from channel_profiles import CHANNELS, DEFAULT_CHANNEL
+        from channel.channel_profiles import CHANNELS, DEFAULT_CHANNEL
         import youtube_uploader as yu
         bodies = []
         service = MagicMock()

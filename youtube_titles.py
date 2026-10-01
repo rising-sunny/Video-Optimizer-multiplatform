@@ -457,7 +457,7 @@ def build_title_prompt(topic: str, script: str, draft: str, research: dict[str, 
     comps = competitor_titles(research)
     templates = list(formula.get("templates") or [])
     try:
-        from channel_strategy import get_archetype
+        from channel.channel_strategy import get_archetype
         templates = list((get_archetype(archetype) or {}).get("title_templates") or []) + templates
     except Exception:
         pass
@@ -631,7 +631,7 @@ def factcheck_candidates(scored: list[dict[str, Any]], script: str, topic: str, 
 
 def _own_winners() -> list[str]:
     try:
-        from channel_strategy import get_performance_snapshot
+        from channel.channel_strategy import get_performance_snapshot
         return [w.get("title") for w in ((get_performance_snapshot().get("youtube") or {}).get("winners") or [])
                 if w.get("title")]
     except Exception:
@@ -654,7 +654,7 @@ def optimize_title(topic: str, script: str, draft_title: str, *, research: Optio
         research = gather_research(topic, draft_title, script, log=log)
     if bible is None:
         try:
-            from channel_strategy import get_channel_strategy
+            from channel.channel_strategy import get_channel_strategy
             bible = get_channel_strategy()
         except Exception:
             bible = {}
