@@ -18,7 +18,7 @@ from studio_channel_controls import project_channel_config, restore_channel_conf
 
 # Utilidades para manejar errores de Google Drive
 try:
-    from gdrive_file_utils import safe_copy2
+    from media.gdrive_file_utils import safe_copy2
 except ImportError:
     safe_copy2 = shutil.copy2  # Fallback si no existe el módulo
 

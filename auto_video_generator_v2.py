@@ -193,7 +193,7 @@ except ImportError:
     print("[!] SDK runwayml no encontrado (opcional, se usan otros proveedores).")
 
 try:
-    from music_recommender import (
+    from media.music_recommender import (
         analyze_narration,
         map_ai_to_jamendo_tags,
         search_jamendo_api,
@@ -245,7 +245,7 @@ except ImportError:
     print("[!] google_images_client.py no encontrado. La busqueda de imagenes en Google Images no funcionara.")
 
 try:
-    from wikimedia_client import WikimediaClient
+    from media.wikimedia_client import WikimediaClient
     WIKIMEDIA_AVAILABLE = True
     print("[OK] Wikimedia client cargado")
 except ImportError:
@@ -446,7 +446,7 @@ except ImportError:
 # ========== IMPORTAR DESCARGADOR DE RECURSOS DESDE MÃ“DULO SEPARADO ==========
 # ResourceDownloader ha sido movido a resource_downloader.py
 try:
-    from resource_downloader import ResourceDownloader
+    from media.resource_downloader import ResourceDownloader
 except ImportError:
     print("âš ï¸ resource_downloader.py no encontrado, ResourceDownloader no disponible")
     ResourceDownloader = None

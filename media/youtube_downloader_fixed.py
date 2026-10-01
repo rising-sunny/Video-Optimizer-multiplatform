@@ -86,7 +86,7 @@ class FixedYouTubeDownloader:
         print("   Looking for alternative video sources...")
 
         try:
-            from video_source_alternatives import get_alternative_videos
+            from media.video_source_alternatives import get_alternative_videos
         except Exception as exc:
             print(f"   Alternatives module not available: {exc}")
             return None

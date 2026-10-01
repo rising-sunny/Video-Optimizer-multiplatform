@@ -48,10 +48,10 @@ class AIFactory:
                 from ai.recraft_client import RecraftClient
                 client = RecraftClient()
             elif name == "bing":
-                from bing_images_client import BingImagesClient
+                from media.bing_images_client import BingImagesClient
                 client = BingImagesClient()
             elif name == "wikimedia":
-                from wikimedia_client import WikimediaClient
+                from media.wikimedia_client import WikimediaClient
                 client = WikimediaClient()
             elif name == "google_ai":
                 from ai.google_ai_image_client import GoogleAiImageClient

@@ -14,7 +14,7 @@ import time
 import unittest
 from pathlib import Path
 
-import music_recommender as mr
+from media import music_recommender as mr
 
 ROOT = Path(__file__).resolve().parent.parent
 URL = "https://prod-1.storage.jamendo.com/?trackid=1509464&format=mp31&from=abc"
@@ -212,7 +212,7 @@ class ElCableado(unittest.TestCase):
 
     def test_no_function_shadows_a_module_import(self):
         # Regresion: "Seleccionar Musica" con recorte -> "cannot access local variable 'shutil'".
-        files = ["music_browser_dialog.py", "music_recommender.py", "music_license.py",
+        files = ["music_browser_dialog.py", "media/music_recommender.py", "music_license.py",
                  "auto_video_integration_pyqt6.py", "timeline_editor_widget.py", "storyboard_generator.py",
                  "daily_short_pipeline.py", "auto_video_generator_v2.py", "ai/script_fact_check.py",
                  "ai/visual_art_direction.py", "facebook_uploader.py", "instagram_uploader.py", "youtube_uploader.py"]
@@ -221,13 +221,13 @@ class ElCableado(unittest.TestCase):
 
     def test_fixed_paths_always_download_fresh(self):
         # temp_bgm.mp3 es una ruta fija: sin esto un video se quedaba con la musica del anterior
-        src = self._src("music_recommender.py")
+        src = self._src("media/music_recommender.py")
         body = src[src.index("def download_track("):]
         self.assertIn("reuse_existing=False", body[:body.index("\ndef ")])
 
     def test_dialog_preview_and_waveform_share_the_robust_download(self):
         src = self._src("music_browser_dialog.py")
-        self.assertEqual(src.count("from music_recommender import download_audio"), 2)
+        self.assertEqual(src.count("from media.music_recommender import download_audio"), 2)
         self.assertNotIn("requests.get(audio_url, timeout=(10, 15), stream=True)", src)
         self.assertIn("WaveformWorker(track, self._preview_cache_path(track))", src)
 

@@ -154,7 +154,7 @@ tests/        → los 76 test_*.py
 | `script_fact_check`, `script_fact_guard`, `text_correction_engine` | verificación de hechos |
 | `prompt_processor`, `visual_art_direction`, `tone_profile` | prompts |
 
-### `media/` — adquisición de stock
+### `media/` — adquisición de stock ✅ (Fase 4)
 
 | Módulo actual | Nota |
 |---|---|
@@ -301,6 +301,10 @@ El script se puede re-ejecutar por fase y se revierte con git.
 
 ## Changelog
 
+- **2026-10-01 (Fase 4)** — `media/` con 17 módulos (búsqueda/descarga de imágenes, videos y
+  música; 54 imports + 4 strings reescritos). Ajustes: `__file__`→raíz en `youtube_video_client`
+  (token OAuth), `video_source_alternatives` (`local_videos`) y `music_recommender` (dir de
+  descarga). Suite verde: 1205 tests.
 - **2026-10-01 (Fase 3)** — `ai/` con 22 módulos (clientes LLM/imagen/búsqueda, fact-check,
   prompts; 127 imports + 17 strings reescritos). Ajustes: `__file__`→raíz en `claude_client`
   (`env_file`) y `comfyui_image_client` (`PROJECT_DIR`); `patch()`/`open()` por string en tests

@@ -58,14 +58,14 @@ warnings.filterwarnings('ignore', category=RuntimeWarning, message='.*fromIccPro
 logging.getLogger('qt.gui.icc').setLevel(logging.ERROR)
 
 try:
-    from wikimedia_client import WikimediaClient
+    from media.wikimedia_client import WikimediaClient
     WIKIMEDIA_AVAILABLE = True
 except ImportError:
     WIKIMEDIA_AVAILABLE = False
     WikimediaClient = None
 
 try:
-    from bing_images_client import BingImagesClient
+    from media.bing_images_client import BingImagesClient
     BING_IMAGES_AVAILABLE = True
 except ImportError:
     BING_IMAGES_AVAILABLE = False
@@ -82,21 +82,21 @@ except ImportError:
     ResourceDownloader = None
 
 try:
-    from wikimedia_client import WikimediaClient
+    from media.wikimedia_client import WikimediaClient
     WIKIMEDIA_VIDEO_AVAILABLE = True
 except ImportError:
     WIKIMEDIA_VIDEO_AVAILABLE = False
     WikimediaClient = None
 
 try:
-    from internet_archive_client import InternetArchiveClient
+    from media.internet_archive_client import InternetArchiveClient
     INTERNET_ARCHIVE_AVAILABLE = True
 except ImportError:
     INTERNET_ARCHIVE_AVAILABLE = False
     InternetArchiveClient = None
 
 try:
-    from youtube_video_client import YouTubeVideoClient, YT_DLP_AVAILABLE
+    from media.youtube_video_client import YouTubeVideoClient, YT_DLP_AVAILABLE
     YOUTUBE_VIDEO_AVAILABLE = True
 except ImportError:
     YOUTUBE_VIDEO_AVAILABLE = False
@@ -125,14 +125,14 @@ from timeline_workers import (
 )
 
 # Importar DiÃ¡logos desde mÃ³dulos separados
-from wikimedia_search_dialog import WikimediaSearchDialog
-from bing_images_search_dialog import BingImagesSearchDialog
-from pexels_video_search_dialog import PexelsVideoSearchDialog
+from media.wikimedia_search_dialog import WikimediaSearchDialog
+from media.bing_images_search_dialog import BingImagesSearchDialog
+from media.pexels_video_search_dialog import PexelsVideoSearchDialog
 from video_preview_dialog import VideoPreviewDialog
-from wikimedia_video_search_dialog import WikimediaVideoSearchDialog
-from internet_archive_search_dialog import InternetArchiveVideoSearchDialog
-from youtube_video_search_dialog import YouTubeVideoSearchDialog
-from local_video_picker_dialog import LocalVideoPickerDialog
+from media.wikimedia_video_search_dialog import WikimediaVideoSearchDialog
+from media.internet_archive_search_dialog import InternetArchiveVideoSearchDialog
+from media.youtube_video_search_dialog import YouTubeVideoSearchDialog
+from media.local_video_picker_dialog import LocalVideoPickerDialog
 
 # Compatibilidad para imports legacy que aún usan el nombre GoogleImagesSearchDialog
 GoogleImagesSearchDialog = BingImagesSearchDialog

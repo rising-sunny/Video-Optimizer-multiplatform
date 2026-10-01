@@ -4,7 +4,7 @@ import subprocess
 from pathlib import Path
 
 # Import the existing YouTube client
-from youtube_video_client import YouTubeVideoClient
+from media.youtube_video_client import YouTubeVideoClient
 
 def acquire_youtube_mixed_media(storyboard: dict, output_dir: Path):
     """

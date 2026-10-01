@@ -761,7 +761,7 @@ class MusicBrowserDialog(QDialog):
     def search_music(self):
         """Busca música en Jamendo con filtros de género y estado de ánimo"""
         try:
-            from music_recommender import search_jamendo_api
+            from media.music_recommender import search_jamendo_api
             from dotenv import load_dotenv
             load_dotenv('.env')
         except Exception as e:
@@ -1043,7 +1043,7 @@ class MusicBrowserDialog(QDialog):
                         return
 
                     try:
-                        from music_recommender import download_audio
+                        from media.music_recommender import download_audio
                         print(f"[Jamendo] Descargando vista previa: {audio_url}")
                         path = download_audio(
                             audio_url, temp_path,
@@ -2188,7 +2188,7 @@ class MusicBrowserDialog(QDialog):
                     should_delete = False
                     if not os.path.exists(temp_path):
                         try:
-                            from music_recommender import download_audio
+                            from media.music_recommender import download_audio
                             download_audio(self.audio_url, temp_path)
                         except Exception as e:
                             self.error_occurred.emit(f"Error descargando: {e}")
@@ -2437,7 +2437,7 @@ class MusicBrowserDialog(QDialog):
                 return
             
             # Para archivos de Jamendo, continuar con la lógica original
-            from music_recommender import download_track
+            from media.music_recommender import download_track
             
             temp_dir = tempfile.gettempdir()
             track_name = self.current_music_track['title'].replace(' ', '_').replace('/', '_')

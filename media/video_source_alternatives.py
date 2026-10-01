@@ -51,7 +51,7 @@ class AlternativeVideoSources:
 
     def _create_local_fallback(self, query: str, max_results: int) -> List[Dict]:
         """Return at least one valid local mp4 if possible."""
-        local_dir = Path(__file__).parent / "local_videos"
+        local_dir = Path(__file__).parent.parent / "local_videos"
         local_dir.mkdir(parents=True, exist_ok=True)
 
         preferred = local_dir / "fallback_black.mp4"

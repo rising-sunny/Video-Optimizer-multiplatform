@@ -142,7 +142,7 @@ class LaBusqueda(unittest.TestCase):
                 "shareurl": f"https://www.jamendo.com/track/{tid}"}
 
     def test_search_asks_jamendo_for_commercial_derivable_licenses_only(self):
-        import music_recommender as mr
+        from media import music_recommender as mr
         calls = []
 
         def fake_get(url, params=None, timeout=None):
@@ -166,7 +166,7 @@ class LaBusqueda(unittest.TestCase):
         self.assertTrue(all(t["source"] == "jamendo" for t in tracks))
 
     def test_auto_music_limit_one_still_finds_after_dropping_claimed(self):
-        import music_recommender as mr
+        from media import music_recommender as mr
 
         def fake_get(url, params=None, timeout=None):
             resp = mock.Mock(status_code=200)
@@ -180,7 +180,7 @@ class LaBusqueda(unittest.TestCase):
         self.assertEqual([t["track_id"] for t in tracks], ["5"])
 
     def test_transient_empty_answer_is_retried(self):
-        import music_recommender as mr
+        from media import music_recommender as mr
         answers = [[], [self._api_track("2", "Good", "by")]]
 
         def fake_get(url, params=None, timeout=None):
@@ -194,7 +194,7 @@ class LaBusqueda(unittest.TestCase):
         self.assertEqual([t["track_id"] for t in tracks], ["2"])
 
     def test_youtube_safe_helper_rejects_nc_nd(self):
-        import music_recommender as mr
+        from media import music_recommender as mr
         self.assertFalse(mr.is_youtube_safe_cc_license("http://creativecommons.org/licenses/by-nc-nd/3.0/"))
         self.assertTrue(mr.is_youtube_safe_cc_license("http://creativecommons.org/licenses/by/3.0/"))
 

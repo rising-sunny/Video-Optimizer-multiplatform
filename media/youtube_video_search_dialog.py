@@ -32,7 +32,7 @@ except ImportError:
 
 # Importar cliente de YouTube
 try:
-    from youtube_video_client import YouTubeVideoClient, YT_DLP_AVAILABLE
+    from media.youtube_video_client import YouTubeVideoClient, YT_DLP_AVAILABLE
     YOUTUBE_VIDEO_AVAILABLE = True
 except ImportError:
     YOUTUBE_VIDEO_AVAILABLE = False
@@ -1286,7 +1286,7 @@ class YouTubeVideoSearchDialog(QDialog):
         self.select_btn.setEnabled(False)
         
         try:
-            from youtube_video_client import YouTubeVideoClient
+            from media.youtube_video_client import YouTubeVideoClient
             from pathlib import Path
             import tempfile
             

@@ -126,7 +126,7 @@ class WikimediaImageDownloadWorker(QThread):
 
 # Importar WikimediaClient y verificar disponibilidad
 try:
-    from wikimedia_client import WikimediaClient
+    from media.wikimedia_client import WikimediaClient
     WIKIMEDIA_AVAILABLE = True
 except ImportError:
     WIKIMEDIA_AVAILABLE = False

@@ -55,7 +55,7 @@ class VideoThumbnailDownloadWorker(QThread):
 
 # Importar WikimediaClient y verificar disponibilidad
 try:
-    from wikimedia_client import WikimediaClient
+    from media.wikimedia_client import WikimediaClient
     WIKIMEDIA_VIDEO_AVAILABLE = True
 except ImportError:
     WIKIMEDIA_VIDEO_AVAILABLE = False
@@ -1624,7 +1624,7 @@ class WikimediaVideoSearchDialog(QDialog):
         self.select_btn.setEnabled(False)
         
         try:
-            from wikimedia_client import WikimediaClient
+            from media.wikimedia_client import WikimediaClient
             from pathlib import Path
             import tempfile
             

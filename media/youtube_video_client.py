@@ -75,7 +75,7 @@ class YouTubeVideoClient:
 
             ruta = self.OAUTH_TOKEN_FILE
             if not os.path.exists(ruta):
-                base = os.path.dirname(os.path.abspath(__file__))
+                base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
                 ruta = os.path.join(base, self.OAUTH_TOKEN_FILE)
             if not os.path.exists(ruta):
                 return None
@@ -389,7 +389,7 @@ class YouTubeVideoClient:
         
         # Importar y usar el descargador mejorado
         try:
-            from youtube_downloader_fixed import FixedYouTubeDownloader
+            from media.youtube_downloader_fixed import FixedYouTubeDownloader
             downloader = FixedYouTubeDownloader()
             return downloader.download_video(video_info, output_path)
         except ImportError:

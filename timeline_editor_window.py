@@ -9,7 +9,7 @@ from PyQt6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QLabel, QFrame
 
 # Utilidades para manejar errores de Google Drive
 try:
-    from gdrive_file_utils import safe_import_module
+    from media.gdrive_file_utils import safe_import_module
 except ImportError:
     safe_import_module = None  # Fallback si no existe el modulo
 

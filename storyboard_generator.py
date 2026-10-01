@@ -25,7 +25,7 @@ except ImportError:
     PYDUB_AVAILABLE = False
 
 try:
-    from music_recommender import (
+    from media.music_recommender import (
         analyze_narration,
         map_ai_to_jamendo_tags,
         search_jamendo_api

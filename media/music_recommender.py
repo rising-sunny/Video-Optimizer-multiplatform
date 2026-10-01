@@ -542,7 +542,7 @@ def get_music_for_video(script_text: str, output_dir: str = None) -> Optional[st
     track = tracks[0]
     
     if output_dir is None:
-        output_dir = os.path.dirname(os.path.abspath(__file__))
+        output_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     
     filename = f"{track['artist']} - {track['title']}.mp3".replace('/', '_').replace('\\', '_')
     save_path = os.path.join(output_dir, filename)

@@ -18,7 +18,7 @@ import warnings
 
 # Importar Internet Archive client
 try:
-    from internet_archive_client import InternetArchiveClient
+    from media.internet_archive_client import InternetArchiveClient
     INTERNET_ARCHIVE_AVAILABLE = True
 except ImportError:
     INTERNET_ARCHIVE_AVAILABLE = False
@@ -1188,7 +1188,7 @@ class InternetArchiveVideoSearchDialog(QDialog):
         self.select_btn.setEnabled(False)
         
         try:
-            from internet_archive_client import InternetArchiveClient
+            from media.internet_archive_client import InternetArchiveClient
             from pathlib import Path
             import tempfile
             

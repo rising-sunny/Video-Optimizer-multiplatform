@@ -23,14 +23,14 @@ import requests
 
 # Importaciones condicionales
 try:
-    from wikimedia_client import WikimediaClient
+    from media.wikimedia_client import WikimediaClient
     WIKIMEDIA_AVAILABLE = True
 except ImportError:
     WIKIMEDIA_AVAILABLE = False
     WikimediaClient = None
 
 try:
-    from bing_images_client import BingImagesClient
+    from media.bing_images_client import BingImagesClient
     BING_IMAGES_AVAILABLE = True
 except ImportError:
     BING_IMAGES_AVAILABLE = False
@@ -48,7 +48,7 @@ except ImportError:
     ResourceDownloader = None
 
 try:
-    from internet_archive_client import InternetArchiveClient
+    from media.internet_archive_client import InternetArchiveClient
     INTERNET_ARCHIVE_AVAILABLE = True
 except ImportError:
     INTERNET_ARCHIVE_AVAILABLE = False
@@ -97,7 +97,7 @@ class RateLimiter:
 rate_limiter = RateLimiter(max_requests_per_minute=300)
 
 try:
-    from youtube_video_client import YouTubeVideoClient, YT_DLP_AVAILABLE
+    from media.youtube_video_client import YouTubeVideoClient, YT_DLP_AVAILABLE
     YOUTUBE_VIDEO_AVAILABLE = True
 except ImportError:
     YOUTUBE_VIDEO_AVAILABLE = False
@@ -165,7 +165,7 @@ class VideoFrameExtractorWorker(QThread):
                 if self.video_source == 'youtube':
                     # Verificar si yt-dlp estÃ¡ disponible
                     try:
-                        from youtube_video_client import YT_DLP_AVAILABLE
+                        from media.youtube_video_client import YT_DLP_AVAILABLE
                     except ImportError:
                         YT_DLP_AVAILABLE = False
                     
@@ -371,7 +371,7 @@ class VideoFrameExtractorWorker(QThread):
     def _try_preview_with_fixed_downloader(self, output_path: str) -> str:
         """Fallback de preview usando el downloader mejorado del proyecto."""
         try:
-            from youtube_downloader_fixed import FixedYouTubeDownloader
+            from media.youtube_downloader_fixed import FixedYouTubeDownloader
         except Exception as e:
             self.progress.emit(f"Fallback no disponible: {e}")
             return ""
@@ -1283,7 +1283,7 @@ class WikimediaVideoSearchWorker(QThread):
     def run(self):
         """Ejecuta la bÃºsqueda"""
         try:
-            from wikimedia_client import WikimediaClient
+            from media.wikimedia_client import WikimediaClient
             client = WikimediaClient()
             
             self.progress.emit(f"Buscando videos histÃ³ricos para: {self.query}...")
@@ -1420,7 +1420,7 @@ class InternetArchiveVideoSearchWorker(QThread):
     def run(self):
         """Ejecuta la bÃºsqueda"""
         try:
-            from internet_archive_client import InternetArchiveClient
+            from media.internet_archive_client import InternetArchiveClient
             client = InternetArchiveClient()
             
             try:
@@ -1488,7 +1488,7 @@ class YouTubeVideoSearchWorker(QThread):
                 self.error.emit("YouTube client no disponible")
                 return
             
-            from youtube_video_client import YouTubeVideoClient
+            from media.youtube_video_client import YouTubeVideoClient
             youtube_client = YouTubeVideoClient()
             
             if youtube_client.is_youtube_url(self.query):

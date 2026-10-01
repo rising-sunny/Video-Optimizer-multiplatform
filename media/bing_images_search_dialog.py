@@ -16,7 +16,7 @@ from PyQt6.QtWidgets import (
 )
 
 try:
-    from bing_images_client import BingImagesClient
+    from media.bing_images_client import BingImagesClient
     BING_IMAGES_AVAILABLE = True
 except ImportError:
     BingImagesClient = None

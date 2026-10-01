@@ -1257,7 +1257,7 @@ def generate_images_for_draft(output_dir: Path, storyboard: dict,
     try:
         # --- MIXED MEDIA INTEGRATION ---
         try:
-            from mixed_media_acquisition import acquire_youtube_mixed_media
+            from media.mixed_media_acquisition import acquire_youtube_mixed_media
             # if we are long form, maybe disable mixed media or adapt it.
             # actually, let's just disable it if it's long form so it doesn't crop vertically
             if platform == "youtube_short":
@@ -1380,7 +1380,7 @@ def assemble_video(storyboard: dict, output_dir: Path,
         try:
             # --- MIXED MEDIA INTEGRATION ---
             try:
-                from mixed_media_acquisition import acquire_youtube_mixed_media
+                from media.mixed_media_acquisition import acquire_youtube_mixed_media
                 storyboard = acquire_youtube_mixed_media(storyboard, output_dir)
             except Exception as e:
                 print(f"Mixed media failed: {e}")

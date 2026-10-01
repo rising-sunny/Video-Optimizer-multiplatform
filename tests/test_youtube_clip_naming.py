@@ -112,7 +112,7 @@ class LaDescargaNoSeToca(unittest.TestCase):
         import io
         import re
 
-        fuente = io.open("youtube_video_search_dialog.py", encoding="utf-8",
+        fuente = io.open("media/youtube_video_search_dialog.py", encoding="utf-8",
                          errors="replace").read()
         temporales = re.findall(r'temp_output_path\s*=\s*\w+\s*\+\s*"([^"]+)"', fuente)
         self.assertTrue(temporales, "no se encontro ningun temporal por concatenacion")
@@ -124,7 +124,7 @@ class LaDescargaNoSeToca(unittest.TestCase):
     def test_el_codigo_ya_no_sobrescribe_la_descarga(self):
         import io
 
-        fuente = io.open("youtube_video_search_dialog.py", encoding="utf-8",
+        fuente = io.open("media/youtube_video_search_dialog.py", encoding="utf-8",
                          errors="replace").read()
         self.assertNotIn("os.replace(temp_output_path, downloaded_path)", fuente,
                          "volvio a aparecer el os.replace que pisaba la descarga")

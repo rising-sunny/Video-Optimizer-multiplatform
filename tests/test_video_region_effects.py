@@ -104,7 +104,7 @@ class VideoRegionTests(unittest.TestCase):
         self.assertTrue(self.source.exists())
 
     def test_switching_youtube_video_clears_effect_and_preview(self):
-        from youtube_video_search_dialog import YouTubeVideoSearchDialog
+        from media.youtube_video_search_dialog import YouTubeVideoSearchDialog
         with patch.object(YouTubeVideoSearchDialog, 'load_previous_results'), \
              patch.object(YouTubeVideoSearchDialog, '_start_frame_extraction'):
             dialog = YouTubeVideoSearchDialog()
