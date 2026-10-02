@@ -261,7 +261,7 @@ class ElCableado(unittest.TestCase):
         self.assertEqual(src.count("'music_used': _music_used,"), 2)
 
     def test_daily_pipeline_passes_the_credit(self):
-        src = self._src("pipeline/daily_short_pipeline.py")
+        src = self._src("pipeline/daily_short_pipeline.py") + self._src("pipeline/daily_short_metadata.py")
         self.assertIn('youtube_metadata["music_attribution"] = music_attribution', src)
         self.assertIn('instagram_metadata["music_attribution"] = music_attribution', src)
 
