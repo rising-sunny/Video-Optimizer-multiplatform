@@ -1341,7 +1341,7 @@ class AutoVideoStudioTab(StudioUiSetupMixin, StudioVoiceMixin, StudioThumbnailIn
 
     # Alias historico: el nombre viejo sugeria que solo servia para
     # watch time, que ya no es el caso.
-    _is_watchtime_thumbnail_target = _supports_custom_thumbnail
+    _is_watchtime_thumbnail_target = StudioThumbnailIntelligenceMixin._supports_custom_thumbnail
 
 
 
