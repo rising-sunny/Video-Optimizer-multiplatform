@@ -256,7 +256,7 @@ class ElCableado(unittest.TestCase):
         self.assertIn("for pkg_name in ('infra', 'ai', 'media', 'channel', 'publish'):", src)  # music_license viaja en publish/
 
     def test_assembler_records_the_music_it_mixed(self):
-        src = self._src("pipeline/auto_video_generator_v2.py")
+        src = self._src("pipeline/auto_video_generator_v2.py") + self._src("pipeline/auto_video_assembly_mixin.py")
         self.assertNotIn("'music_attribution': None,", src)
         self.assertEqual(src.count("'music_used': _music_used,"), 2)
 

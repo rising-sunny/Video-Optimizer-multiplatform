@@ -330,7 +330,7 @@ class Cableado(unittest.TestCase):
         self.assertIn('"opening": opening_data,', s)
 
     def test_el_ensamblado_dibuja_el_gancho_y_arma_el_primer_plano(self):
-        s = self._src("pipeline/auto_video_generator_v2.py")
+        s = self._src("pipeline/auto_video_generator_v2.py") + self._src("pipeline/auto_video_assembly_mixin.py")
         self.assertEqual(s.count("self._add_hook_to_ass(ass_path, storyboard_data, res)"), 2)
         self.assertGreaterEqual(s.count("self._burn_hook_only("), 3)
         self.assertIn("_vo.enforce_min_first_shot(", s)

@@ -115,7 +115,8 @@ class ElPromptYElRender(unittest.TestCase):
         self.assertEqual(logs, [])
 
     def test_el_qa_de_audio_incluye_el_del_gancho(self):
-        fuente = io.open("pipeline/auto_video_generator_v2.py", encoding="utf-8", errors="replace").read()
+        fuente = "\n".join(io.open(r, encoding="utf-8", errors="replace").read() for r in (
+            "pipeline/auto_video_generator_v2.py", "pipeline/auto_video_assembly_mixin.py"))
         self.assertIn("hook_problems = self.log_hook_qa()", fuente)
         self.assertIn("self._current_storyboard_data = storyboard_data", fuente)
 
