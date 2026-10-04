@@ -175,14 +175,22 @@ def _ffmpeg() -> str:
 
 @lru_cache(maxsize=256)
 def media_info(path: str) -> dict:
-    """Duracion, tamano y si tiene audio, leidos de la salida de `ffmpeg -i`."""
+    """Duracion, tamano y si tiene audio, leidos de la salida de `ffmpeg -i`. El ancho es el de
+    pantalla (un noticiero MPEG2 de 720x480 con pixeles 8:9 se ve de 640x480) y `interlaced` marca
+    el video entrelazado (top/bottom first), que se desentrelaza al leerlo."""
     err = subprocess.run([_ffmpeg(), "-hide_banner", "-i", str(path)], capture_output=True,
                          text=True, errors="replace").stderr
     dur = re.search(r"Duration: (\d+):(\d+):([\d.]+)", err)
-    size = re.search(r"Video: .*?(\d{2,5})x(\d{2,5})", err)
+    video = re.search(r"Stream #.*Video:.*", err)
+    line = video[0] if video else ""
+    size = re.search(r"(\d{2,5})x(\d{2,5})", line)
+    width, height = (int(size[1]), int(size[2])) if size else (0, 0)
+    dar = re.search(r"DAR (\d+):(\d+)", line)
+    if dar and height and int(dar[2]):
+        width = int(round(height * int(dar[1]) / int(dar[2]) / 2) * 2)
     return {"duration": (int(dur[1]) * 3600 + int(dur[2]) * 60 + float(dur[3])) if dur else 0.0,
-            "width": int(size[1]) if size else 0, "height": int(size[2]) if size else 0,
-            "audio": bool(re.search(r"Stream #.*Audio:", err))}
+            "width": width, "height": height, "audio": bool(re.search(r"Stream #.*Audio:", err)),
+            "interlaced": bool(re.search(r"top first|bottom first|interlaced", line))}
 
 
 def frame_image(path: Path, focus=(0.5, 0.5), zoom: float = 1.0) -> Image.Image:
@@ -206,7 +214,8 @@ def iter_video_frames(path, start: float, count: int, focus=(0.5, 0.5), zoom: fl
     left = int(min(max(focus[0] * sw - w / 2, 0), sw - w))
     top = int(min(max(focus[1] * sh - h / 2, 0), sh - h))
     cmd = [_ffmpeg(), "-loglevel", "error", "-ss", f"{max(start, 0):.3f}", "-i", str(path),
-           "-frames:v", str(count), "-vf", f"fps={FPS},scale={sw}:{sh},crop={w}:{h}:{left}:{top}",
+           "-frames:v", str(count),
+           "-vf", ("yadif=0:-1:1," if info.get("interlaced") else "") + f"fps={FPS},scale={sw}:{sh},crop={w}:{h}:{left}:{top}",
            "-f", "rawvideo", "-pix_fmt", "rgb24", "-"]
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
     last, frame_bytes, sent = None, w * h * 3, 0

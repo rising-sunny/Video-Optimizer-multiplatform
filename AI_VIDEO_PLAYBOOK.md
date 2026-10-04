@@ -294,6 +294,11 @@ concreta + sujeto nombrado**, duración corta. Ej: "72 Seconds: The Wow! Signal"
 
 ## Changelog
 
+- **2026-10-04** — **Catarsis lee bien los noticieros de archivo** (Universal Newsreel en MPEG2, Internet Archive):
+  vienen a 720x480 con píxeles 8:9 y entrelazados. `media_info` ahora da el ancho de pantalla (640) y
+  `interlaced`, e `iter_video_frames` desentrelaza con `yadif` (solo los cuadros marcados). Antes salían
+  estirados un 12 % y con peine en el movimiento. Probado con un Short de Sputnik (noticieros de 1957-58 y
+  el despegue del Apolo 11 de la NASA). Guardas: `tests/test_catharsis_editor.py` (34).
 - **2026-09-29** — **Catarsis acepta material de archivo `.mpg`, `.mpeg`, `.ogv` y `.wmv`** (Internet Archive y Wikimedia
   lo entregan así; antes se tomaban como imágenes y fallaban, y el diálogo de la pestaña no dejaba elegirlos).
   Probado con un Short del Hindenburg (noticiero de Universal de 1937, dominio público).
