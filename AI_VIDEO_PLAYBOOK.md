@@ -214,6 +214,35 @@ Cinco capas, todas alimentadas por lo medido y no por intuición. Cómo se usan:
 Al publicar desde el Studio, los ids por red quedan en `project.json → publish_results`
 (`publish_record.py`), que es lo que permite cruzar métricas con proyectos.
 
+### 6c. Composición por escena y tomas 3D (2026-10-06)
+
+Antes cada escena era una imagen a pantalla completa con Ken Burns, todas del mismo largo.
+Ahora el Studio tiene **Dinamismo** (Apagado / Moderado / Alto) y **Tomas 3D con Blender**:
+
+- `segment_layouts.plan_layouts()` elige la composición de cada escena por reglas, sin LLM:
+  comparación → **pantalla dividida**; persona nombrada o evidencia → **retrato flotante**
+  (recorte circular + rótulo con el nombre); enumeración → **tríptico**; clímax o plano largo
+  → **punch-in** (2-3 planos de la misma imagen con flash y temblor); giro → **reveal** (la
+  imagen siguiente entra a mitad de escena). La entrada y el cierre van siempre a pantalla
+  completa, nunca dos composiciones iguales seguidas; Moderado ≤40% de las escenas, Alto ≤70%.
+- **Costo de IA cero:** los paneles extra salen de la media extra elegida a mano, de las
+  escenas vecinas (dividida mira atrás, reveal mira adelante) o de un detalle de la misma
+  imagen. El punch-in limita el zoom según la resolución de la foto.
+- **Sin barras negras** (siempre, también en `run_pipeline`): si el aspecto difiere >12%, el
+  medio va sobre un fondo de sí mismo desenfocado; si difiere poco, se recorta.
+- **Timeline:** grupo "Composición de la escena" para fijar el tipo, editar el rótulo y elegir
+  una imagen extra. "Automática" muestra qué eligió el planificador.
+- **Blender** (`blender_shots.py` + `blender_templates/desk_photos.py`): fotos de la escena y
+  sus vecinas sobre una mesa, cámara que baja hasta la protagonista, con luz, sombras y foco.
+  Una toma por short (dos en largos), en el clímax. Corre `blender -b` en segundo plano; el mp4
+  entra como un video más y **queda en caché** (`generated_media/blender_shots/`), así que
+  re-ensamblar no re-renderiza. Si Blender no está o falla, la escena cae a punch-in.
+  En esta PC (UHD 630, sin GPU dedicada) cuestan las **muestras**, no la resolución: Borrador
+  ~1.6 s/cuadro (toma de 4 s ≈ 3.5 min), Normal ~3 s, Alta ~8 s. `BLENDER_PATH` en `.env`
+  si no está en `C:\Program Files\Blender Foundation`.
+- El QA del render suma `Composicion`, `Sin barras negras` y `Tomas 3D`; una composición que
+  falla sale a pantalla completa (no en negro) y figura como `[FAIL]`.
+
 ---
 
 ## 7. El Channel Bible (Stunning Revelations)
@@ -268,6 +297,8 @@ concreta + sujeto nombrado**, duración corta. Ej: "72 Seconds: The Wow! Signal"
 | `thumbnail_publish.py` | Miniatura al subir: formato, reintentos, aviso y verificación de lo que YouTube muestra |
 | `thumbnail_research.py` | Miniaturas de la competencia → acento, brillo y texto del super prompt |
 | `video_opening.py` | Arranque del video: sin placa, voz en 0 s, acercamiento, primer plano ≥1.8 s y texto de gancho (ASS) |
+| `pipeline/segment_layouts.py` | Composición por escena (dividida, retrato, punch-in, reveal, tríptico), sus filtergraphs y el encaje sin barras negras |
+| `pipeline/blender_shots.py` + `pipeline/blender_templates/` | Tomas 3D opcionales con Blender en segundo plano, con caché y caída a FFmpeg |
 | `thumbnail_typography.py` + `gemini_vision.py` | Plan tipográfico medido (tamaño, peso, color, contorno, zona) y revisión con visión de la miniatura elegida |
 | `facebook_metadata.py` | Título, arranque de la descripción y hashtags de Facebook e Instagram con la investigación de YouTube |
 | `tiktok_uploader.py` | Borrador a la bandeja de TikTok (sandbox, `video.upload`); `--setup` guarda credenciales y conecta; `--auth` reutiliza las guardadas; `--check`, `--upload` |
@@ -294,6 +325,34 @@ concreta + sujeto nombrado**, duración corta. Ej: "72 Seconds: The Wow! Signal"
 
 ## Changelog
 
+- **2026-10-06b** — **Composición por escena, sin barras negras y tomas 3D con Blender** (detalle en §6c).
+  - Nuevos: `pipeline/segment_layouts.py` (planificador + filtergraphs + encaje),
+    `pipeline/blender_shots.py`, `pipeline/blender_templates/desk_photos.py`. Studio: fila
+    "Dinamismo" + "Tomas 3D con Blender" + calidad; se guardan en el proyecto (`dynamism`,
+    `blender_shots`, `blender_quality`). Un proyecto viejo sin esas claves sigue sin composiciones.
+  - `assemble_video_from_storyboard(dynamism=, blender_shots=, blender_quality=)`; por defecto
+    `off`/`False`, así que `run_pipeline` no cambia salvo el encaje sin barras negras.
+  - Todas las composiciones salen con los cuadros exactos (verificado en vertical y horizontal);
+    si FFmpeg rechaza una, el clip se re-hace a pantalla completa en vez del clip negro de respaldo.
+  - Blender medido: toma de 2 s en Borrador = 136 s; la segunda vez, del caché al instante.
+  - Guardas: `tests/test_segment_layouts.py` (19) y `tests/test_blender_shots.py` (10; el render
+    real corre con `RUN_BLENDER_TESTS=1`, ~20 s). Verificado que la guarda del respaldo falla si
+    se quita el reintento a pantalla completa.
+- **2026-10-06** — **El Ken Burns daba tirones en todos los videos del Auto Video Studio.** Ningún `zoompan`
+  fijaba `fps`, así que salían a 25 (el default de FFmpeg) y el `fps=30` de atrás repetía un cuadro de cada
+  seis. Medido con `framemd5` a 1080x1920: patrón `.....=` en las 18 ramas de movimiento (~10 cuadros
+  repetidos de 60), y la cámara cortada por `-t` al ~82% del recorrido.
+  - Los cuatro constructores (`cinematic_director`, `CameraMovement`, `push_in_filter`, `opening_motion_filter`)
+    reciben `fps`, y `_build_motion_filter` lo pasa a todas las ramas, incluidos el cover y el fallback.
+  - **Efecto colateral que hubo que cubrir:** con el zoompan ya a 30, el `fps=` de atrás descarta su último
+    cuadro y cada clip quedaba 33 ms corto (se acumula clip a clip). `clip_motion_frames()` pide un cuadro
+    de más y `-t` recorta.
+  - **QA visible:** el bloque `QA DE AUDIO / SINCRONIA` mide el primer clip con cámara (misma cadena, sin
+    codificar, para que un encoder por hardware no disimule los duplicados) y da `[OK]/[FAIL] Camara`.
+    Solo cuenta repetidos **sueltos**: las rachas son cámara quieta a propósito (`crash_zoom` frena a mitad
+    de clip, las entradas frenan al final). Umbral: `cinematic_director.MAX_JUDDER_RATIO` (8%).
+  - Guardas: `test_audio_mix_sync_guards.TestMotionRunsAtVideoFps` (5 tests). Verificado que fallan con el
+    código viejo: todas las ramas sin fps, 10-11 repetidos sueltos de 60, y un clip de 0.7 s con 20 cuadros.
 - **2026-09-29** — **Catarsis acepta material de archivo `.mpg`, `.mpeg`, `.ogv` y `.wmv`** (Internet Archive y Wikimedia
   lo entregan así; antes se tomaban como imágenes y fallaban, y el diálogo de la pestaña no dejaba elegirlos).
   Probado con un Short del Hindenburg (noticiero de Universal de 1937, dominio público).

@@ -26,6 +26,16 @@ from studio.project_media_mixin import ProjectMediaMixin
 
 
 class ProjectSaveMixin:
+    def _layout_settings_snapshot(self):
+        """Dinamismo y tomas 3D del Studio, para guardarlos con el proyecto."""
+        tab = self.studio_tab
+        return {
+            'dynamism': tab.dynamism_combo.currentData() if hasattr(tab, 'dynamism_combo') else 'off',
+            'blender_shots': bool(tab.blender_check.isChecked()) if hasattr(tab, 'blender_check') else False,
+            'blender_quality': (tab.blender_quality_combo.currentData()
+                                if hasattr(tab, 'blender_quality_combo') else 'normal'),
+        }
+
     def save_project(self):
         """Guarda el estado actual del proyecto con aislamiento completo"""
 
@@ -124,6 +134,7 @@ class ProjectSaveMixin:
                 'cinematic_preset': self.studio_tab.cinematic_preset_combo.currentText() if hasattr(self.studio_tab, 'cinematic_preset_combo') else " Auto-Detect (Inteligente)",
 
                 'cinematic_intensity': self.studio_tab.cinematic_intensity_combo.currentData() if hasattr(self.studio_tab, 'cinematic_intensity_combo') else "auto",
+                **self._layout_settings_snapshot(),
 
                 'transition_type': self.studio_tab.transition_type_combo.currentText() if hasattr(self.studio_tab, 'transition_type_combo') else " Fade Suave",
 
@@ -568,7 +579,9 @@ class ProjectSaveMixin:
 
                         self.studio_tab, 'cinematic_intensity_combo') else "auto"
 
-                    config['transition_type'] = self.studio_tab.transition_type_combo.currentText(
+                    config.update(self._layout_settings_snapshot())
+
+                    config['transition_type'] =self.studio_tab.transition_type_combo.currentText(
 
                     ) if hasattr(self.studio_tab, 'transition_type_combo') else " Fade Suave"
 
@@ -742,6 +755,7 @@ class ProjectSaveMixin:
                 'cinematic_enabled': self.studio_tab.cinematic_check.isChecked() if hasattr(self.studio_tab, 'cinematic_check') else True,
                 'cinematic_preset': self.studio_tab.cinematic_preset_combo.currentText() if hasattr(self.studio_tab, 'cinematic_preset_combo') else " Auto-Detect (Inteligente)",
                 'cinematic_intensity': self.studio_tab.cinematic_intensity_combo.currentData() if hasattr(self.studio_tab, 'cinematic_intensity_combo') else "auto",
+                **self._layout_settings_snapshot(),
                 'transition_type': self.studio_tab.transition_type_combo.currentText() if hasattr(self.studio_tab, 'transition_type_combo') else " Fade Suave",
                 'transition_duration': self.studio_tab.transition_duration_spin.value() if hasattr(self.studio_tab, 'transition_duration_spin') else 0.5,
                 'transition_sfx_enabled': self.studio_tab.is_transition_sfx_enabled() if hasattr(self.studio_tab, 'is_transition_sfx_enabled') else True,

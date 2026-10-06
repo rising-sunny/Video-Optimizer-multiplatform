@@ -4,12 +4,16 @@ Editor detallado para un segmento individual del timeline.
 ExtraÃ­do de timeline_editor_widget.py para mejorar la organizaciÃ³n del cÃ³digo.
 """
 
+import os
+
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTextEdit, QScrollArea, QGroupBox, QMessageBox, QLineEdit, QDoubleSpinBox,
-    QCheckBox, QComboBox
+    QCheckBox, QComboBox, QFileDialog
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer
+
+from pipeline.segment_layouts import LAYOUT_LABELS, LAYOUT_VERSION
 
 
 class SegmentEditor(QWidget):
@@ -46,6 +50,7 @@ class SegmentEditor(QWidget):
             'assigned_filename': self.filename_edit.text().strip(),
             'hook_overlay': self._hook_snapshot(),
             'cinematic_plan': self._cinematic_plan_snapshot(),
+            'layout_plan': self._layout_plan_snapshot(),
         }
 
     def _cinematic_plan_snapshot(self):
@@ -66,6 +71,72 @@ class SegmentEditor(QWidget):
         if locked:
             plan['role'] = plan.get('role') or 'manual'
         return plan
+
+    # --- Composicion de la escena (pipeline/segment_layouts) ------------------------
+    def _layout_plan_snapshot(self):
+        """`layout_plan` segun el formulario. 'Automatica' lo deja en manos del
+        planificador (sin fijar); un tipo concreto lo fija para esta escena."""
+        current = (self.current_segment or {}).get('layout_plan') or None
+        choice = self.layout_combo.currentData()
+        extra = list(self._layout_extra_media)
+        if choice == 'auto':
+            if current is None and not extra:
+                return None
+            plan = dict(current or {})
+            if plan.get('locked'):
+                plan['locked'] = False
+        else:
+            plan = dict(current or {})
+            plan.update({
+                'version': plan.get('version') or LAYOUT_VERSION,
+                'layout': choice,
+                'reason': 'manual',
+                'tag': self.layout_tag_edit.text().strip().upper(),
+                'locked': True,
+            })
+        if extra or 'extra_media' in plan:
+            plan['extra_media'] = extra
+        return plan
+
+    def _layout_choice_changed(self, *_args):
+        fixed = self.layout_combo.currentData() != 'auto'
+        self.layout_tag_edit.setEnabled(fixed)
+        self._trigger_auto_save()
+
+    def _refresh_layout_extra_label(self):
+        if self._layout_extra_media:
+            names = ", ".join(os.path.basename(p) for p in self._layout_extra_media)
+            self.layout_extra_label.setText(f"Media extra: {names}")
+        else:
+            self.layout_extra_label.setText("Media extra: escenas vecinas o detalle")
+        self.btn_layout_extra_clear.setEnabled(bool(self._layout_extra_media))
+
+    def _choose_layout_extra_media(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Imagen extra para la composicion", "",
+            "Imagenes (*.png *.jpg *.jpeg *.webp *.bmp)")
+        if path:
+            self._layout_extra_media = [os.path.abspath(path)]
+            self._refresh_layout_extra_label()
+            self._trigger_auto_save()
+
+    def _clear_layout_extra_media(self):
+        self._layout_extra_media = []
+        self._refresh_layout_extra_label()
+        self._trigger_auto_save()
+
+    def _load_layout_plan(self, segment_data):
+        plan = segment_data.get('layout_plan') or {}
+        auto_label = "Automatica (segun el guion)"
+        if plan and not plan.get('locked'):
+            auto_label = f"Automatica (ahora: {LAYOUT_LABELS.get(plan.get('layout'), 'pantalla completa')})"
+        self.layout_combo.setItemText(0, auto_label)
+        index = self.layout_combo.findData(plan.get('layout')) if plan.get('locked') else 0
+        self.layout_combo.setCurrentIndex(index if index >= 0 else 0)
+        self.layout_tag_edit.setText(str(plan.get('tag') or ''))
+        self.layout_tag_edit.setEnabled(bool(plan.get('locked')))
+        self._layout_extra_media = [str(p) for p in (plan.get('extra_media') or []) if p]
+        self._refresh_layout_extra_label()
 
     def _cinematic_control_changed(self, *_args):
         if self.current_segment and not self.cinematic_lock_check.isChecked():
@@ -128,6 +199,8 @@ class SegmentEditor(QWidget):
         if str(self.current_segment.get('assigned_filename', '') or '') != snap['assigned_filename']:
             return True
         if (self.current_segment.get('cinematic_plan') or None) != snap['cinematic_plan']:
+            return True
+        if (self.current_segment.get('layout_plan') or None) != snap['layout_plan']:
             return True
         if self._hook_changed(snap['hook_overlay']):
             return True
@@ -335,6 +408,54 @@ class SegmentEditor(QWidget):
         self.cinematic_lock_check.stateChanged.connect(self._trigger_auto_save)
         content_layout.addWidget(cinematic_group)
 
+        # Composicion de la escena (pipeline/segment_layouts).
+        layout_group = QGroupBox("Composicion de la escena")
+        layout_box = QVBoxLayout(layout_group)
+        layout_row = QHBoxLayout()
+        self.layout_combo = QComboBox()
+        self.layout_combo.addItem("Automatica (segun el guion)", "auto")
+        for value, label in LAYOUT_LABELS.items():
+            self.layout_combo.addItem(label, value)
+        layout_row.addWidget(QLabel("Tipo:"))
+        layout_row.addWidget(self.layout_combo, 1)
+        layout_box.addLayout(layout_row)
+
+        tag_row = QHBoxLayout()
+        self.layout_tag_edit = QLineEdit()
+        self.layout_tag_edit.setMaxLength(32)
+        self.layout_tag_edit.setPlaceholderText("Rotulo del retrato flotante (opcional)")
+        tag_row.addWidget(QLabel("Rotulo:"))
+        tag_row.addWidget(self.layout_tag_edit, 1)
+        layout_box.addLayout(tag_row)
+
+        extra_row = QHBoxLayout()
+        self._layout_extra_media = []
+        self.layout_extra_label = QLabel()
+        self.layout_extra_label.setStyleSheet("color: #334155; font-size: 9pt;")
+        self.btn_layout_extra = QPushButton("Imagen extra...")
+        self.btn_layout_extra.setToolTip(
+            "Imagen para el segundo panel (dividida, reveal, retrato, triptico).\n"
+            "Sin imagen extra se usan las escenas vecinas o un detalle de esta misma."
+        )
+        self.btn_layout_extra_clear = QPushButton("Quitar")
+        extra_row.addWidget(self.layout_extra_label, 1)
+        extra_row.addWidget(self.btn_layout_extra)
+        extra_row.addWidget(self.btn_layout_extra_clear)
+        layout_box.addLayout(extra_row)
+
+        layout_info = QLabel("Automatica: la elige el guion segun el Dinamismo del Studio. "
+                             "Si elegis un tipo, queda fijo para esta escena.")
+        layout_info.setWordWrap(True)
+        layout_info.setStyleSheet("color: #6f7c89; font-size: 8pt;")
+        layout_box.addWidget(layout_info)
+
+        self.layout_combo.currentIndexChanged.connect(self._layout_choice_changed)
+        self.layout_tag_edit.textChanged.connect(self._trigger_auto_save)
+        self.btn_layout_extra.clicked.connect(self._choose_layout_extra_media)
+        self.btn_layout_extra_clear.clicked.connect(self._clear_layout_extra_media)
+        self._refresh_layout_extra_label()
+        content_layout.addWidget(layout_group)
+
         # SFX
         sfx_group = QGroupBox("Efecto de sonido")
         sfx_layout = QVBoxLayout(sfx_group)
@@ -472,10 +593,12 @@ class SegmentEditor(QWidget):
             self.cinematic_camera_combo, self.cinematic_atmosphere_combo,
             self.cinematic_lighting_combo, self.cinematic_lens_combo,
             self.cinematic_intensity_spin, self.cinematic_lock_check,
+            self.layout_combo, self.layout_tag_edit,
         )
         for widget in cinematic_widgets:
             widget.blockSignals(True)
 
+        self._load_layout_plan(segment_data)
         self.start_spin.setValue(segment_data.get('start', 0))
         self.end_spin.setValue(segment_data.get('end', 0))
         self.text_edit.setPlainText(segment_data.get('text', ''))
@@ -573,6 +696,8 @@ class SegmentEditor(QWidget):
             self.current_segment['assigned_filename'] = snap['assigned_filename']
             if snap['cinematic_plan'] is not None:
                 self.current_segment['cinematic_plan'] = snap['cinematic_plan']
+            if snap['layout_plan'] is not None:
+                self.current_segment['layout_plan'] = snap['layout_plan']
             if snap['hook_overlay'] is not None:
                 previo = self.current_segment.get('hook_overlay') or {}
                 self.current_segment['hook_overlay'] = dict(previo, **snap['hook_overlay'],
@@ -613,6 +738,11 @@ class SegmentEditor(QWidget):
         self.overlay_edit.clear()
         self.filename_edit.clear()
         self.hook_group.setVisible(False)
+        self.layout_combo.blockSignals(True)
+        self.layout_tag_edit.blockSignals(True)
+        self._load_layout_plan({})
+        self.layout_combo.blockSignals(False)
+        self.layout_tag_edit.blockSignals(False)
 
         # Desbloquear señales
         self.start_spin.blockSignals(False)

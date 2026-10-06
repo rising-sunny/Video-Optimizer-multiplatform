@@ -957,6 +957,19 @@ class StudioVideoAssemblyHandlers:
                 self.studio_tab.cinematic_intensity_combo.currentData()
                 if hasattr(self.studio_tab, 'cinematic_intensity_combo') else 'auto'
             ),
+            dynamism=(
+                self.studio_tab.dynamism_combo.currentData()
+                if hasattr(self.studio_tab, 'dynamism_combo') else 'off'
+            ),
+            blender_shots=bool(
+                hasattr(self.studio_tab, 'blender_check')
+                and self.studio_tab.blender_check.isEnabled()
+                and self.studio_tab.blender_check.isChecked()
+            ),
+            blender_quality=(
+                self.studio_tab.blender_quality_combo.currentData()
+                if hasattr(self.studio_tab, 'blender_quality_combo') else 'normal'
+            ),
             transition_type=self.studio_tab.transition_type_combo.currentText(),
             transition_duration=self.studio_tab.transition_duration_spin.value(),
             enable_transition_sfx=self.studio_tab.is_transition_sfx_enabled() if hasattr(self.studio_tab, "is_transition_sfx_enabled") else True,

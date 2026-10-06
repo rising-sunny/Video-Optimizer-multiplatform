@@ -38,6 +38,7 @@ print = _safe_print
 
 from typing import List, Dict, Optional, Tuple
 from pipeline import audio_mix_utils
+from pipeline import segment_layouts
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageEnhance
 import base64
@@ -813,6 +814,49 @@ class AutoVideoAssemblyMixin:
                 problems.append(f"solo {ratio:.0%} de las palabras quedaron ancladas a Whisper")
                 lines.append(f"  [WARN] Subtitulos: modo {mode}, solo {ratio:.0%} ancladas -> riesgo de desfase")
 
+        # 6. Camara: un zoompan a otro fps que el video repite cuadros (tiron).
+        checked = int(qa.get('motion_frames_checked') or 0)
+        if checked:
+            from pipeline.cinematic_director import MAX_JUDDER_RATIO
+            judder = int(qa.get('motion_judder_frames') or 0)
+            if judder / float(checked) <= MAX_JUDDER_RATIO:
+                lines.append(f"  [OK] Camara fluida: {judder}/{checked} cuadros repetidos sueltos en el primer movimiento")
+            else:
+                problems.append(f"la camara da tirones: {judder}/{checked} cuadros repetidos sueltos")
+                lines.append(f"  [FAIL] Camara con tirones: {judder}/{checked} cuadros repetidos sueltos "
+                             f"(zoompan a otro fps que el video?)")
+        elif qa.get('motion_judder_error'):
+            lines.append(f"  [WARN] Camara: no se pudo medir -> {qa['motion_judder_error']}")
+
+        # 7. Composicion por escena. Una composicion que falla sale a pantalla
+        # completa (el video no se rompe), pero es un error nuestro: se avisa.
+        rendered = dict(qa.get('layouts_rendered') or {})
+        if rendered:
+            detalle = ", ".join(f"{segment_layouts.LAYOUT_LABELS.get(k, k).lower()} {v}"
+                                for k, v in sorted(rendered.items()))
+            lines.append(f"  [OK] Composicion: {sum(rendered.values())} escena(s) ({detalle})")
+        failed_layouts = list(qa.get('layouts_failed') or [])
+        if failed_layouts:
+            problems.append(f"{len(failed_layouts)} composicion(es) fallaron y salieron a pantalla completa")
+            lines.append(f"  [FAIL] Composicion: fallaron {', '.join(failed_layouts)} (escena:tipo) "
+                         f"-> salieron a pantalla completa")
+        if qa.get('blur_fill_count'):
+            lines.append(f"  [OK] Sin barras negras: {qa['blur_fill_count']} escena(s) con fondo desenfocado")
+
+        # 8. Tomas 3D (Blender).
+        if 'blender_shots_ok' in qa:
+            hechas = int(qa.get('blender_shots_ok') or 0)
+            if hechas:
+                extra = []
+                if qa.get('blender_shots_cached'):
+                    extra.append(f"{qa['blender_shots_cached']} del cache")
+                if qa.get('blender_seconds'):
+                    extra.append(f"{float(qa['blender_seconds']) / 60:.1f} min de render")
+                lines.append(f"  [OK] Tomas 3D (Blender): {hechas}" + (f" ({', '.join(extra)})" if extra else ""))
+            for err in qa.get('blender_shots_failed') or []:
+                problems.append(f"una toma 3D salio como punch-in: {err}")
+                lines.append(f"  [WARN] Toma 3D -> punch-in: {err}")
+
         lines.append("-" * 60)
         if problems:
             lines.append(f"  => {len(problems)} PROBLEMA(S): " + "; ".join(problems))
@@ -930,7 +974,7 @@ class AutoVideoAssemblyMixin:
 
 
     def _build_motion_filter(self, clip_data, frames, duration, size,
-                             apply_cinematic, index):
+                             apply_cinematic, index, fps=30):
         """Filtro de movimiento (Ken Burns) para un clip de imagen.
 
         Con efectos cinematograficos activados usa los MISMOS presets que la
@@ -939,15 +983,20 @@ class AutoVideoAssemblyMixin:
 
         Antes esto era un zoompan fijo con la progresion escrita en funcion de
         `in`, que en una imagen fija no avanza nunca: el movimiento no existia.
+
+        Todos los zoompan salen a `fps` (el del video). Sin eso salen a 25, el
+        `fps=30` posterior repite un cuadro de cada seis y `-t` corta la camara
+        al ~82% del recorrido.
         """
         width, height = int(size[0]), int(size[1])
         n = max(1, int(frames))
+        rate = f"{float(fps):g}"
 
         # El cover frame es una PLACA DE TEXTO de 0.7s. Con zoompan el texto se
         # desplaza y escala en menos de un segundo: se ve como un salto, no como
         # un movimiento. Va quieto.
         if clip_data.get('is_cover'):
-            return f"zoompan=z=1:x=0:y=0:d={n}:s={width}x{height}"
+            return f"zoompan=z=1:x=0:y=0:d={n}:s={width}x{height}:fps={rate}"
 
         # Arranque nuevo (video_opening): cada estilo tiene un movimiento propio
         # y todos empiezan a moverse desde el cuadro 0.
@@ -956,12 +1005,13 @@ class AutoVideoAssemblyMixin:
             return opening_motion_filter(
                 n, width, height, str(clip_data['opening_style']),
                 float(clip_data.get('opening_motion_amount') or 0) or None,
+                fps=fps,
             )
 
         # Compatibilidad con storyboards hook_overlay_v1 anteriores.
         if clip_data.get('opening_push_in'):
             from pipeline.video_opening import push_in_filter
-            return push_in_filter(n, width, height, float(clip_data['opening_push_in']))
+            return push_in_filter(n, width, height, float(clip_data['opening_push_in']), fps=fps)
 
         if apply_cinematic and CINEMATIC_AVAILABLE:
             try:
@@ -972,7 +1022,7 @@ class AutoVideoAssemblyMixin:
                         'cinematic_plan_%d' % index, plan_summary(cinematic_plan)
                     )
                     return build_ffmpeg_motion_filter(
-                        cinematic_plan, n, (width, height)
+                        cinematic_plan, n, (width, height), fps=fps
                     )
                 from pipeline.cinematic_effects import CameraMovement, ContextDetector
                 texto = str(clip_data.get('segment_text') or '')
@@ -984,7 +1034,7 @@ class AutoVideoAssemblyMixin:
                     'motion_%d' % index, getattr(movimiento, 'value', str(movimiento))
                 )
                 return CameraMovement.build_ffmpeg_motion_filter(
-                    posiciones, n, (width, height)
+                    posiciones, n, (width, height), fps=fps
                 )
             except Exception as exc:
                 self.log(f"      [WARN] No se pudo armar el movimiento cinematografico: {exc}")
@@ -995,8 +1045,149 @@ class AutoVideoAssemblyMixin:
         return (
             f"zoompan=z='{z0:.4f}+({z1 - z0:.4f})*{p}'"
             f":x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
-            f":d={n}:s={width}x{height}"
+            f":d={n}:s={width}x{height}:fps={rate}"
         )
+
+
+    @staticmethod
+    def _layout_plan_for_clip(seg, resolve_media):
+        """Copia del `layout_plan` de la escena con la media extra resuelta a rutas que existen."""
+        plan = seg.get('layout_plan')
+        if not isinstance(plan, dict):
+            return None
+        plan = dict(plan)
+        extra = [resolve_media(p) for p in (plan.get('extra_media') or [])]
+        plan['extra_media'] = [p for p in extra if p]
+        return plan
+
+
+    def _render_blender_shots(self, clips, size, blender_exe=None, quality='normal', fps=30):
+        """Renderiza las escenas marcadas `blender_desk` y las cambia por su mp4.
+
+        Si Blender no esta o falla, la escena cae a punch-in (FFmpeg, misma imagen):
+        una toma 3D perdida no puede costar el video ni dejar la escena en negro.
+        """
+        pending = [c for c in clips if (c.get('layout_plan') or {}).get('layout') == 'blender_desk']
+        if not pending:
+            return
+        from pipeline import blender_shots
+        done, cached, failed, seconds = 0, 0, [], 0.0
+        for clip in pending:
+            plan = dict(clip['layout_plan'])
+            images = [clip.get('filename')] + [
+                s['path'] for s in (clip.get('layout_sources') or []) if not s.get('detail')
+            ]
+            if not segment_layouts.is_image_path(clip.get('filename')):
+                outcome = {'ok': False, 'error': 'la escena no es una imagen'}
+            elif not blender_exe:
+                outcome = {'ok': False, 'error': 'tomas 3D desactivadas o Blender no instalado'}
+            else:
+                self.log(f"   [3D] Toma Blender para {os.path.basename(str(clip.get('filename')))} "
+                         f"({float(clip['duration']):.1f}s, {len(images)} fotos)")
+                outcome = blender_shots.render_desk_shot(
+                    images, duration=float(clip['duration']), size=size, fps=fps,
+                    cache_dir=os.path.join(str(self.generated_media_dir), 'blender_shots'),
+                    quality=quality, blender_exe=blender_exe, log=self.log,
+                )
+            if outcome.get('ok'):
+                clip['filename'] = outcome['path']
+                plan['rendered'] = 'blender'
+                done += 1
+                cached += 1 if outcome.get('cached') else 0
+                seconds += float(outcome.get('seconds') or 0)
+                self.log(f"   [OK] Toma 3D lista{' (reusada del cache)' if outcome.get('cached') else ''}: "
+                         f"{os.path.basename(outcome['path'])}")
+            else:
+                plan.update(layout=segment_layouts.BLENDER_FALLBACK_LAYOUT, fallback_from='blender_desk')
+                failed.append(str(outcome.get('error') or 'error desconocido'))
+                self.log(f"   [WARN] Toma 3D no disponible ({failed[-1]}): va como punch-in")
+            clip['layout_plan'] = plan
+        self._record_audio_qa('blender_shots_ok', done)
+        self._record_audio_qa('blender_shots_cached', cached)
+        self._record_audio_qa('blender_shots_failed', failed)
+        self._record_audio_qa('blender_seconds', round(seconds, 1))
+
+
+    @staticmethod
+    def _probe_media_size(path, ffprobe_exe=None, is_video=False):
+        """(ancho, alto) del medio, o None si no se puede medir."""
+        try:
+            if not is_video:
+                with Image.open(path) as im:
+                    return im.size
+            import subprocess as _sp
+            out = _sp.run(
+                [ffprobe_exe or shutil.which("ffprobe") or "ffprobe", '-v', 'error',
+                 '-select_streams', 'v:0', '-show_entries', 'stream=width,height',
+                 '-of', 'csv=p=0:s=x', str(path)],
+                capture_output=True, text=True, timeout=20,
+                creationflags=_sp.CREATE_NO_WINDOW if os.name == 'nt' else 0,
+            )
+            w, h = (int(v) for v in (out.stdout or '').strip().splitlines()[0].split('x')[:2])
+            return (w, h) if w > 0 and h > 0 else None
+        except Exception:
+            return None
+
+
+    def _layout_clip_command(self, ffmpeg_exe, item, img_path, duration, size, fps,
+                             temp_dir, index, post_filters, overlay_path, encoder, clip_out):
+        """Comando de FFmpeg de un clip con composicion (ver `segment_layouts`).
+
+        `post_filters` (look, fundido) van detras de la composicion, igual que en
+        un clip normal; `overlay_path` es el Film Burn si el clip abre escena.
+        """
+        plan = item.get('layout_plan') or {}
+        spec = segment_layouts.build_layout_graph(
+            plan.get('layout'), main=img_path, sources=item.get('layout_sources') or [],
+            duration=float(duration), size=size, fps=fps, temp_dir=temp_dir, index=index,
+            tag=str(plan.get('tag') or '').strip().upper(),
+            main_size=self._probe_media_size(img_path),
+        )
+        width, height = int(size[0]), int(size[1])
+        post = ','.join(f for f in post_filters if f) or 'null'
+        graph = spec['graph']
+        cmd = [ffmpeg_exe, '-y']
+        for path in spec['inputs']:
+            cmd += ['-i', path]
+        if overlay_path:
+            cmd += ['-i', overlay_path]
+            graph += (
+                f";[lay]{post}[pre];"
+                f"[{len(spec['inputs'])}:v]scale={width}:{height}:force_original_aspect_ratio=increase,"
+                f"crop={width}:{height},fps={fps},setpts=PTS-STARTPTS[ovr];"
+                f"[pre][ovr]blend=all_mode=screen:shortest=0:repeatlast=0[v]"
+            )
+        else:
+            graph += f";[lay]{post}[v]"
+        return cmd + [
+            '-t', str(duration), '-filter_complex', graph, '-map', '[v]',
+            '-c:v', encoder, '-preset', 'fast', '-pix_fmt', 'yuv420p',
+            '-r', str(fps), '-g', '30', clip_out,
+        ]
+
+
+    def _measure_motion_judder(self, ffmpeg_exe, img_path, duration, vf, sp):
+        """Cuenta cuadros repetidos de un clip con camara para el QA.
+
+        Corre la MISMA cadena de filtros del clip pero sin codificar: un
+        encoder por hardware podria disimular los duplicados y dar un OK falso.
+        """
+        try:
+            from pipeline.cinematic_director import count_judder_frames
+            proc = sp.run(
+                [ffmpeg_exe, '-v', 'error', '-i', img_path, '-t', str(duration),
+                 '-vf', vf, '-f', 'framemd5', '-'],
+                capture_output=True, text=True, timeout=180,
+                creationflags=sp.CREATE_NO_WINDOW if os.name == 'nt' else 0,
+            )
+            if proc.returncode != 0:
+                self._record_audio_qa('motion_judder_error', (proc.stderr or '')[-160:])
+                return
+            aislados, total = count_judder_frames(proc.stdout)
+            self._record_audio_qa('motion_judder_frames', aislados)
+            self._record_audio_qa('motion_frames_checked', total)
+        except Exception as exc:
+            self._record_audio_qa('motion_judder_error', str(exc))
 
 
     def _assemble_direct_ffmpeg(self, clips_data, audio_file_path, output_path,
@@ -1231,6 +1422,9 @@ class AutoVideoAssemblyMixin:
         # transicion: antes se deducian de los clips 'overlay_transition'
         # insertados, que ya no existen desde que el Film Burn se mezcla.
         escenas_nuevas = []
+        layouts_rendered = {}
+        layouts_failed = []
+        blur_fill_count = 0
         supports_minterpolate = _ffmpeg_supports_filter("minterpolate")
         minterpolate_warning_logged = False
 
@@ -1266,9 +1460,13 @@ class AutoVideoAssemblyMixin:
 
                 is_video = img_path.lower().endswith(('.gif', '.mp4', '.mov', '.avi', '.webm', '.mkv'))
 
-                # Construir filtro de video base - preservar aspect ratio sin crop agresivo
-                vf = (f'scale={width}:{height}:force_original_aspect_ratio=decrease,'
-                      f'pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,fps={fps}')
+                # Filtro base: el medio al cuadro completo. Si su aspecto es muy
+                # distinto (foto horizontal en un short) va sobre un fondo de si
+                # mismo desenfocado, en vez de las barras negras de antes.
+                src_size = self._probe_media_size(img_path, ffprobe_exe, is_video)
+                if segment_layouts.needs_blur_fill(src_size, (width, height)):
+                    blur_fill_count += 1
+                vf = f"{segment_layouts.frame_fit_filter(src_size, (width, height))},fps={fps}"
                 cinematic_look = ''
                 if apply_cinematic and item.get('cinematic_plan'):
                     try:
@@ -1290,6 +1488,18 @@ class AutoVideoAssemblyMixin:
                     fade_suffix = f',fade=t=out:st={fade_start:.2f}:d={fade_duration:.2f}'
                     self.log(f"      ðŸŽ¬ Fade-out de video: {fade_duration:.1f}s al final del Ãºltimo clip")
 
+                # Cadena de movimiento de un clip con camara, para medir el tiron
+                # en el QA (sin look ni Film Burn, que taparian los repetidos).
+                medir_movimiento = None
+                layout_fallback_cmd = None
+                layout = None
+                # El Film Burn va MEZCLADO sobre el arranque del clip cuando
+                # este inicia una escena nueva (ver mas abajo).
+                inicia_escena = (
+                    not is_video and overlay_blend_path is not None and i > 0
+                    and _clip_sources[min(i, len(_clip_sources) - 1)]
+                    != _clip_sources[min(i - 1, len(_clip_sources) - 1)]
+                )
                 if is_video:
                     if cinematic_look:
                         vf += f',{cinematic_look}'
@@ -1337,7 +1547,8 @@ class AutoVideoAssemblyMixin:
                 else:
                     # Ken Burns / efectos cinematograficos resueltos DENTRO de
                     # FFmpeg (C, multihilo) en vez de cuadro a cuadro en Python.
-                    frames = max(1, int(float(duration) * fps))
+                    from pipeline.cinematic_director import clip_motion_frames
+                    frames = clip_motion_frames(duration, fps)
                     motion_vf = self._build_motion_filter(
                         clip_data=item,
                         frames=frames,
@@ -1345,21 +1556,20 @@ class AutoVideoAssemblyMixin:
                         size=(width, height),
                         apply_cinematic=apply_cinematic,
                         index=i,
+                        fps=fps,
                     )
                     kb_vf = f"{vf},{motion_vf},fps={fps}"
+                    if 'on/' in motion_vf:
+                        # Se mide ANTES del look: su grano (`noise allf=t`)
+                        # cambia todos los cuadros y esconderia los repetidos.
+                        medir_movimiento = kb_vf
                     if cinematic_look:
                         kb_vf += f',{cinematic_look}'
                     kb_vf += fade_suffix
 
-                    # El Film Burn va MEZCLADO sobre el arranque del clip cuando
-                    # este inicia una escena nueva. `repeatlast=0` corta el blend
-                    # al terminar el overlay y deja pasar el clip sin tocar; asi
-                    # el efecto no alarga el video ni se queda congelado encima.
-                    inicia_escena = (
-                        overlay_blend_path is not None and i > 0
-                        and _clip_sources[min(i, len(_clip_sources) - 1)]
-                        != _clip_sources[min(i - 1, len(_clip_sources) - 1)]
-                    )
+                    # Film Burn: `repeatlast=0` corta el blend al terminar el
+                    # overlay y deja pasar el clip sin tocar; asi el efecto no
+                    # alarga el video ni se queda congelado encima.
                     if inicia_escena:
                         filtro = (
                             f"[0:v]{kb_vf}[base];"
@@ -1391,12 +1601,40 @@ class AutoVideoAssemblyMixin:
                             clip_out
                         ]
 
+                    # Composicion (pantalla dividida, retrato, punch-in...). El
+                    # Ken Burns de arriba queda de respaldo: si la composicion
+                    # falla, la escena sale a pantalla completa y no en negro.
+                    layout = (item.get('layout_plan') or {}).get('layout')
+                    if layout in segment_layouts.FFMPEG_LAYOUTS and not item.get('is_cover'):
+                        try:
+                            layout_cmd = self._layout_clip_command(
+                                ffmpeg_exe, item, img_path, duration, (width, height), fps,
+                                temp_dir, i, [cinematic_look, fade_suffix.lstrip(',')],
+                                overlay_blend_path if inicia_escena else None,
+                                optimal_encoder, clip_out,
+                            )
+                            layout_fallback_cmd, cmd = cmd, layout_cmd
+                            medir_movimiento = None
+                        except Exception as layout_exc:
+                            self.log(f"      [WARN] Composicion '{layout}' omitida: {layout_exc}")
+                            layouts_failed.append(f"{i + 1}:{layout}")
+
                 tipo = "video" if is_video else "img"
+                if layout_fallback_cmd:
+                    tipo = segment_layouts.LAYOUT_LABELS.get(layout, layout).lower()
                 self.log(f"      [{i+1}/{total_clips}] Codificando seg {i+1} ({tipo}, {duration:.1f}s)...")
                 clip_start = _time.time()
                 try:
                     result = sp.run(cmd, capture_output=True, text=True, timeout=1200,
                                     creationflags=sp.CREATE_NO_WINDOW if os.name == 'nt' else 0)
+                    if layout_fallback_cmd and result.returncode != 0:
+                        self.log(f"      [WARN] Composicion '{layout}' fallo, va a pantalla completa: "
+                                 f"{(result.stderr or '')[-200:]}")
+                        layouts_failed.append(f"{i + 1}:{layout}")
+                        result = sp.run(layout_fallback_cmd, capture_output=True, text=True, timeout=1200,
+                                        creationflags=sp.CREATE_NO_WINDOW if os.name == 'nt' else 0)
+                    elif layout_fallback_cmd:
+                        layouts_rendered[layout] = layouts_rendered.get(layout, 0) + 1
                     clip_elapsed = _time.time() - clip_start
 
                     if result.returncode == 0 and os.path.exists(clip_out) and os.path.getsize(clip_out) > 500:
@@ -1404,6 +1642,8 @@ class AutoVideoAssemblyMixin:
                         actual_clip_duration = _probe_duration_seconds(clip_out, stream_selector='v:0', timeout=10)
                         clip_durations.append(actual_clip_duration if actual_clip_duration > 0 else float(duration))
                         self.log(f"      [{i+1}/{total_clips}] OK ({clip_elapsed:.1f}s)")
+                        if medir_movimiento and 'motion_frames_checked' not in (getattr(self, '_audio_qa', None) or {}):
+                            self._measure_motion_judder(ffmpeg_exe, img_path, duration, medir_movimiento, sp)
                     else:
                         stderr_short = (result.stderr or '')
                         self.log(f"      [{i+1}/{total_clips}] ERROR ({clip_elapsed:.1f}s): {stderr_short}")
@@ -1441,6 +1681,10 @@ class AutoVideoAssemblyMixin:
                     f"      --- [{pct}%] {i+1}/{total_clips} | "
                     f"Transcurrido: {elapsed:.0f}s | Restante estimado: {remaining:.0f}s ---"
                 )
+
+        self._record_audio_qa('layouts_rendered', dict(layouts_rendered))
+        self._record_audio_qa('layouts_failed', list(layouts_failed))
+        self._record_audio_qa('blur_fill_count', blur_fill_count)
 
         if not clips:
             self.log("   âŒ No se pudo crear ningÃºn clip")
@@ -1873,6 +2117,9 @@ class AutoVideoAssemblyMixin:
                                        allow_visual_regeneration=True,
                                        enable_transition_sfx=None,
                                        transition_sfx_path=None,
+                                       dynamism='off',
+                                       blender_shots=False,
+                                       blender_quality='normal',
                                        **_extra_kwargs):
         """
         Ensambla el video desde el storyboard.
@@ -2000,6 +2247,25 @@ class AutoVideoAssemblyMixin:
                 )
             except Exception as director_exc:
                 self.log(f"   [WARN] Director cinematografico omitido: {director_exc}")
+        # Composicion por escena (pantalla dividida, retrato, punch-in, toma 3D...).
+        # Va despues del director: usa su papel narrativo (gancho, giro, climax).
+        _blender_exe = None
+        _blender_max = 0
+        if blender_shots:
+            from pipeline import blender_shots as _bs
+            _blender_exe = _bs.find_blender()
+            _orient = 'vertical' if platform in ['tiktok', 'reels', 'youtube_short', 'youtube_vertical'] else 'horizontal'
+            _blender_max = _bs.MAX_SHOTS[_orient] if _blender_exe else 0
+            if not _blender_exe:
+                self.log("   [WARN] Tomas 3D pedidas pero Blender no esta instalado: se usan composiciones de FFmpeg")
+        try:
+            layout_summary = segment_layouts.plan_layouts(
+                storyboard_data, level=dynamism, blender_shots=_blender_max,
+            )
+            self.log(f"   Composicion ({layout_summary['label']}): "
+                     f"{segment_layouts.plan_summary_text(layout_summary)}")
+        except Exception as layout_exc:
+            self.log(f"   [WARN] Composicion por escena omitida: {layout_exc}")
         # PolÃ­tica YouTube Shorts: evitar pistas Jamendo en shorts >60s para reducir bloqueos/reclamaciones.
         short_duration_hint_sec = 0.0
         try:
@@ -2307,6 +2573,7 @@ class AutoVideoAssemblyMixin:
                     # segun el contexto, igual que hace la ruta MoviePy.
                     'segment_text': (seg.get('narration_text') or seg.get('text') or ''),
                     'cinematic_plan': seg.get('cinematic_plan'),
+                    'layout_plan': self._layout_plan_for_clip(seg, _resolve_existing_media_path),
                 })
             else:
                 self.log(f"      âš ï¸ No se generÃ³ visual para: {fname}")
@@ -2331,6 +2598,7 @@ class AutoVideoAssemblyMixin:
                 last_vn   = _vsplit_n(last_tail)
                 if (last["filename"] == fn
                         and last.get('cinematic_plan') == _clip.get('cinematic_plan')
+                        and last.get('layout_plan') == _clip.get('layout_plan')
                         and last.get('sfx_path') == _clip.get('sfx_path')):
                     # Misma fuente: acumular duración (p.ej. misma imagen en varios segmentos)
                     last["duration"] += _clip["duration"]
@@ -2350,6 +2618,8 @@ class AutoVideoAssemblyMixin:
                 f"({vsplit_chains} cadenas vsplit + misma fuente consecutiva)"
             )
         generated_clips = _merged
+        # De donde salen los paneles extra (vecinas, detalle, media extra).
+        segment_layouts.resolve_layout_sources(generated_clips)
 
         # Arranque (video_opening): el primer plano dura ~1.8 s (mediana de los shorts que ganan)
         # y arranca con acercamiento. Solo en storyboards nuevos: los viejos renderizan igual.
@@ -2415,6 +2685,11 @@ class AutoVideoAssemblyMixin:
         )
         self._reset_audio_qa()
         self._record_audio_qa('cover_offset_expected_s', cover_offset_s)
+
+        # Tomas 3D: se renderizan ANTES del ensamblaje y entran como un video mas.
+        # Va despues de reiniciar el QA para que su resultado llegue al resumen.
+        self._render_blender_shots(generated_clips, res, blender_exe=_blender_exe,
+                                   quality=blender_quality)
 
         # Pista de voz que alimenta la mezcla y (limpia) los subtitulos.
         voice_path = audio_path

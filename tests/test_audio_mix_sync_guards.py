@@ -635,6 +635,148 @@ class TestCoverFrameStaysStill(unittest.TestCase):
         self.assertIn("on/", vf, "un clip normal si debe moverse")
 
 
+class TestMotionRunsAtVideoFps(unittest.TestCase):
+    """BUG (2026-10-06): ningun zoompan fijaba `fps`, asi que salian a 25 (el
+    default de FFmpeg) y el `fps=30` de atras repetia un cuadro de cada seis.
+
+    Medido a 1080x1920: patron `.....=` en TODAS las camaras (~10 de 60
+    cuadros repetidos) y la camara cortada por `-t` al ~82% del recorrido.
+    No fallaba nada: el video salia, solo que con tirones en cada Ken Burns.
+    """
+
+    CAMERAS = ("depth_push", "map_dive", "macro_reveal", "crash_zoom", "pull_back",
+               "slow_drift", "drift_left", "drift_right", "lateral_reveal")
+
+    class _Gen:
+        DEFAULT_MOTION_ZOOM = 1.08
+        _record_audio_qa = staticmethod(lambda *a, **k: None)
+        log = staticmethod(lambda *a, **k: None)
+
+    @classmethod
+    def setUpClass(cls):
+        from pipeline import auto_video_generator_v2 as avg
+        from pipeline import cinematic_director as director
+        from pipeline import video_opening as vo
+        cls.avg, cls.director, cls.vo = avg, director, vo
+        cls.gen = cls._Gen()
+
+    def _motion(self, clip, apply_cinematic, frames, fps, size=(1080, 1920)):
+        return self.avg.AutoVideoGenerator._build_motion_filter(
+            self.gen, clip_data=clip, frames=frames, duration=frames / float(fps),
+            size=size, apply_cinematic=apply_cinematic, index=1, fps=fps)
+
+    def _branches(self):
+        cases = {
+            "cover": ({"is_cover": True}, True),
+            "push_in_legacy": ({"opening_push_in": 0.1}, True),
+            "context_detector": ({"segment_text": "a battle raged"}, True),
+            "sin_efectos": ({"segment_text": "x"}, False),
+        }
+        for style in self.vo.OPENING_STYLE_CHOICES:
+            cases["entrada:" + style] = ({"opening_style": style}, True)
+        for camera in self.CAMERAS:
+            cases["camara:" + camera] = (
+                {"cinematic_plan": {"camera": camera, "intensity": 0.7}}, True)
+        return cases
+
+    def test_every_zoompan_runs_at_the_video_fps(self):
+        # 24 y no 30: si algun constructor ignora el fps y usa su default, se ve.
+        malos = []
+        for name, (clip, cine) in self._branches().items():
+            vf = self._motion(clip, cine, frames=48, fps=24)
+            n = vf.count("zoompan=")
+            if n == 0 or vf.count(":fps=24") < n:
+                malos.append(name)
+        self.assertEqual(malos, [], "zoompan sin el fps del video en: %s" % ", ".join(malos))
+
+    def test_count_judder_frames_only_counts_isolated_repeats(self):
+        def md5(hashes):
+            return "#tb 0: 1/30\n" + "\n".join(
+                "0, %d, %d, 1, 100, %s" % (i, i, h) for i, h in enumerate(hashes))
+        # Patron del bug: uno de cada seis repetido, suelto.
+        tiron = []
+        for i in range(60):
+            tiron.append(tiron[-1] if i % 6 == 5 else "h%d" % i)
+        self.assertEqual(self.director.count_judder_frames(md5(tiron)), (10, 60))
+        # Camara que frena y queda quieta (crash_zoom): racha, no tiron.
+        quieta = ["h%d" % i for i in range(26)] + ["fin"] * 34
+        self.assertEqual(self.director.count_judder_frames(md5(quieta)), (0, 60))
+
+    def test_clip_lasts_its_whole_duration(self):
+        """Con el zoompan a 30 fps, el `fps=30` de atras descarta su ultimo cuadro."""
+        if not FFMPEG_OK:
+            self.skipTest("ffmpeg no disponible")
+        from PIL import Image
+        tmp = tempfile.mkdtemp(prefix="motionfps_")
+        self.addCleanup(shutil.rmtree, tmp, True)
+        src = os.path.join(tmp, "src.png")
+        Image.new("RGB", (216, 384), (90, 60, 40)).save(src)
+        fps = 30
+        for duration in (0.7, 1.8, 2.0, 3.0):
+            frames = self.director.clip_motion_frames(duration, fps)
+            motion = self._motion({"segment_text": "x"}, False, frames, fps, size=(216, 384))
+            out = self._framemd5(src, duration, motion, fps, (216, 384))
+            total = self.director.count_judder_frames(out)[1]
+            self.assertEqual(total, int(round(duration * fps)),
+                             "un clip de %.1fs salio con %d cuadros" % (duration, total))
+
+    def test_ken_burns_has_no_judder_through_the_assembler_chain(self):
+        if not FFMPEG_OK:
+            self.skipTest("ffmpeg no disponible")
+        import numpy as np
+        from PIL import Image
+        tmp = tempfile.mkdtemp(prefix="motionfps_")
+        self.addCleanup(shutil.rmtree, tmp, True)
+        size = (540, 960)
+        src = os.path.join(tmp, "src.png")
+        Image.fromarray(np.random.RandomState(5).randint(
+            0, 255, (size[1], size[0], 3)).astype("uint8")).save(src)
+        fps, duration = 30, 2.0
+        frames = self.director.clip_motion_frames(duration, fps)
+        con_tiron = []
+        for camera in ("depth_push", "drift_right", "pull_back"):
+            motion = self._motion({"cinematic_plan": {"camera": camera, "intensity": 0.7}},
+                                  True, frames, fps, size=size)
+            judder, total = self.director.count_judder_frames(
+                self._framemd5(src, duration, motion, fps, size))
+            if judder > total * self.director.MAX_JUDDER_RATIO:
+                con_tiron.append("%s %d/%d" % (camera, judder, total))
+        self.assertEqual(con_tiron, [], "cuadros repetidos sueltos: %s" % ", ".join(con_tiron))
+
+    @staticmethod
+    def _framemd5(src, duration, motion, fps, size):
+        """Misma cadena que `_assemble_direct_ffmpeg` arma para un clip de imagen."""
+        w, h = size
+        vf = (f"scale={w}:{h}:force_original_aspect_ratio=decrease,"
+              f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2,fps={fps},{motion},fps={fps}")
+        proc = subprocess.run(
+            [FFMPEG, "-v", "error", "-i", src, "-t", str(duration), "-vf", vf,
+             "-f", "framemd5", "-"],
+            capture_output=True, text=True, timeout=120,
+        )
+        assert proc.returncode == 0, proc.stderr[-300:]
+        return proc.stdout
+
+    def test_qa_flags_judder(self):
+        lineas = []
+
+        class _Qa:
+            log = staticmethod(lineas.append)
+            _probe_media_duration = staticmethod(lambda *_: 0.0)
+            _audio_qa = {"sfx_enabled": False, "motion_frames_checked": 60,
+                         "motion_judder_frames": 10}
+
+        problemas = self.avg.AutoVideoGenerator.log_audio_qa(_Qa())
+        self.assertTrue(any("tirones" in p for p in problemas))
+        self.assertTrue(any("[FAIL] Camara" in ln for ln in lineas))
+
+        lineas.clear()
+        _Qa._audio_qa = dict(_Qa._audio_qa, motion_judder_frames=1)
+        problemas = self.avg.AutoVideoGenerator.log_audio_qa(_Qa())
+        self.assertFalse(any("tirones" in p for p in problemas))
+        self.assertTrue(any("[OK] Camara fluida" in ln for ln in lineas))
+
+
 class TestCoverFrameResolvesRelativePaths(unittest.TestCase):
     """Las rutas del storyboard son relativas al proyecto
     ("project_media/segment_001.png"). Sin resolverlas, el cover caia a un

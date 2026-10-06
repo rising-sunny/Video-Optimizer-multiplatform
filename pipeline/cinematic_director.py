@@ -6,6 +6,7 @@ the FFmpeg and MoviePy renderers can interpret without calling an LLM again.
 
 from __future__ import annotations
 
+import math
 import re
 import unicodedata
 from collections.abc import MutableMapping
@@ -276,8 +277,14 @@ def build_ffmpeg_motion_filter(
     video_size: Sequence[int],
     *,
     supersample: int = 2,
+    fps: float = 30,
 ) -> str:
-    """Translate a direction plan to a smooth FFmpeg zoompan filter."""
+    """Translate a direction plan to a smooth FFmpeg zoompan filter.
+
+    `fps` tiene que ser el del video: zoompan sale a 25 por defecto, y al
+    pasarlo a 30 se repite un cuadro de cada seis (tiron) y la camara solo
+    llega al ~82% del recorrido porque `-t` corta antes de que termine.
+    """
     plan = plan or {}
     camera = str(plan.get("camera") or "depth_push")
     raw_strength = plan.get("intensity", 0.65)
@@ -330,8 +337,41 @@ def build_ffmpeg_motion_filter(
     prefix = f"scale={width * ss}:{height * ss}:flags=bicubic," if ss > 1 else ""
     return (
         f"{prefix}zoompan=z='{zoom}':x='{x}':y='{y}'"
-        f":d={frame_count}:s={width}x{height}"
+        f":d={frame_count}:s={width}x{height}:fps={float(fps):g}"
     )
+
+
+def clip_motion_frames(duration: float, fps: float) -> int:
+    """Cuadros que tiene que generar el zoompan de un clip de `duration` s.
+
+    Uno de mas: con el zoompan a `fps`, el `fps=` que va detras descarta su
+    ultimo cuadro y el clip quedaba 33 ms corto (se acumula clip a clip).
+    `-t` recorta el sobrante.
+    """
+    return max(1, int(math.ceil(float(duration) * float(fps) - 1e-6)) + 1)
+
+
+# Tiron = un cuadro repetido AISLADO en medio del movimiento. Un zoompan a 25 fps
+# en un video de 30 repite uno de cada seis (~10 de 60, patron `.....=`). Las
+# rachas de repetidos no cuentan: son la camara quieta a proposito (crash_zoom
+# frena a mitad de clip, las entradas frenan al final). Medido a 1080x1920 con
+# zoompan a 30 fps: 0-2 aislados de 60 en todas las camaras.
+MAX_JUDDER_RATIO = 0.08
+
+
+def count_judder_frames(framemd5_text: str) -> tuple:
+    """(repetidos aislados, total) de una salida `-f framemd5`."""
+    hashes = [
+        line.rsplit(",", 1)[-1].strip()
+        for line in str(framemd5_text or "").splitlines()
+        if line.strip() and not line.startswith("#")
+    ]
+    same = [prev == cur for prev, cur in zip(hashes, hashes[1:])]
+    isolated = sum(
+        1 for k, rep in enumerate(same)
+        if rep and (k == 0 or not same[k - 1]) and (k == len(same) - 1 or not same[k + 1])
+    )
+    return isolated, len(hashes)
 
 
 def build_ffmpeg_look_filter(

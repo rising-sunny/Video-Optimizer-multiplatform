@@ -547,6 +547,16 @@ class AutoVideoStudioTab(StudioUiSetupMixin, StudioVoiceMixin, StudioThumbnailIn
             self.cinematic_intensity_combo.currentIndexChanged.connect(
                 lambda: self._trigger_config_auto_save("cambio de intensidad cinematografica"))
 
+        if hasattr(self, 'dynamism_combo'):
+            self.dynamism_combo.currentIndexChanged.connect(
+                lambda: self._trigger_config_auto_save("cambio de dinamismo"))
+        if hasattr(self, 'blender_check'):
+            self.blender_check.toggled.connect(
+                lambda: self._trigger_config_auto_save("cambio de tomas 3D"))
+        if hasattr(self, 'blender_quality_combo'):
+            self.blender_quality_combo.currentIndexChanged.connect(
+                lambda: self._trigger_config_auto_save("cambio de calidad 3D"))
+
         if hasattr(self, 'transition_type_combo'):
             self.transition_type_combo.currentIndexChanged.connect(
                 lambda: self._trigger_config_auto_save("cambio de tipo de transiciÃ³n"))
@@ -2014,6 +2024,13 @@ class AutoVideoStudioTab(StudioUiSetupMixin, StudioVoiceMixin, StudioThumbnailIn
                 direct_storyboard(result, level=level, preset=preset)
             except Exception as direction_error:
                 self.log(f" [WARN] No se pudo preparar la direccion cinematografica: {direction_error}")
+            # Composicion por escena: el timeline ya muestra que eligio el planificador.
+            try:
+                from pipeline.segment_layouts import plan_layouts
+                plan_layouts(result, level=(
+                    self.dynamism_combo.currentData() if hasattr(self, 'dynamism_combo') else 'off'))
+            except Exception as layout_error:
+                self.log(f" [WARN] No se pudo planificar la composicion: {layout_error}")
         self.last_storyboard_data = result
         segment_count = len((result or {}).get('segments') or [])
         print(f"[Storyboard] Aceptado en memoria: {segment_count} segmento(s)")
@@ -2501,6 +2518,12 @@ class AutoVideoStudioTab(StudioUiSetupMixin, StudioVoiceMixin, StudioThumbnailIn
                 self.cinematic_preset_combo.setCurrentIndex(0)
             if hasattr(self, 'cinematic_intensity_combo'):
                 self.cinematic_intensity_combo.setCurrentIndex(0)
+            if hasattr(self, 'dynamism_combo'):
+                self.dynamism_combo.setCurrentIndex(max(0, self.dynamism_combo.findData('moderate')))
+            if hasattr(self, 'blender_check'):
+                self.blender_check.setChecked(False)
+            if hasattr(self, 'blender_quality_combo'):
+                self.blender_quality_combo.setCurrentIndex(max(0, self.blender_quality_combo.findData('normal')))
             
             # Resetear tipo de transiciÃ³n a "ðŸŒ… Fade Suave" (Ã­ndice 1, que es el segundo item)
             if hasattr(self, 'transition_type_combo'):

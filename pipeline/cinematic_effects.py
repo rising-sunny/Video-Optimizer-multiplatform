@@ -313,7 +313,8 @@ class CameraMovement:
     @staticmethod
     def build_ffmpeg_motion_filter(positions: Dict, frames: int,
                                    video_size: Tuple[int, int],
-                                   supersample: int = FFMPEG_MOTION_SUPERSAMPLE) -> str:
+                                   supersample: int = FFMPEG_MOTION_SUPERSAMPLE,
+                                   fps: float = 30) -> str:
         """Traduce un recorrido de camara a un filtro `zoompan` de FFmpeg.
 
         Misma matematica que `apply_movement` (el punto (x, y) del recorrido
@@ -332,6 +333,9 @@ class CameraMovement:
 
         IMPORTANTE: la progresion usa `on` (cuadro de SALIDA). Con `in` -- que
         es lo que habia -- una imagen fija nunca avanza y el efecto no se ve.
+
+        `fps` tiene que ser el del video: zoompan sale a 25 por defecto y al
+        pasarlo a 30 repite un cuadro de cada seis y corta el recorrido.
         """
         w, h = int(video_size[0]), int(video_size[1])
         ss = max(1, int(supersample))
@@ -358,7 +362,7 @@ class CameraMovement:
             chain += f"scale={w * ss}:{h * ss}:flags=bicubic,"
         chain += (
             f"zoompan=z='{z_expr}':x='{x_expr}':y='{y_expr}'"
-            f":d={n}:s={w}x{h}"
+            f":d={n}:s={w}x{h}:fps={float(fps):g}"
         )
         return chain
 

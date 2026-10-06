@@ -729,6 +729,63 @@ class StudioUiSetupMixin:
         # â† Corregido: aÃ±adir cinematic_layout
         layout.addLayout(cinematic_layout)
 
+        # Composicion por escena (pipeline/segment_layouts) + tomas 3D opcionales.
+        dynamism_layout = QHBoxLayout()
+        dynamism_layout.addWidget(QLabel("Dinamismo:"))
+        self.dynamism_combo = QComboBox()
+        self.dynamism_combo.addItem("Apagado", "off")
+        self.dynamism_combo.addItem("Moderado", "moderate")
+        self.dynamism_combo.addItem("Alto", "high")
+        self.dynamism_combo.setCurrentIndex(1)
+        self.dynamism_combo.setMaximumWidth(150)
+        self.dynamism_combo.setToolTip(
+            "Composicion por escena, elegida segun el guion:\n"
+            "- Pantalla dividida (comparaciones)\n"
+            "- Retrato flotante con rotulo (personas nombradas, evidencia)\n"
+            "- Triptico (enumeraciones)\n"
+            "- Punch-in: 2-3 planos de la misma imagen (climax, planos largos)\n"
+            "- Reveal: la imagen siguiente entra a mitad de escena\n"
+            "Usa las imagenes que ya tenes (vecinas o detalles): no genera imagenes nuevas.\n"
+            "Moderado: hasta 40% de las escenas. Alto: hasta 70%. Se ajusta por escena en el timeline."
+        )
+        dynamism_layout.addWidget(self.dynamism_combo)
+
+        from pipeline.blender_shots import QUALITY_PRESETS, find_blender
+        blender_exe = find_blender()
+        self.blender_check = QCheckBox("Tomas 3D con Blender")
+        self.blender_quality_combo = QComboBox()
+        for key, spec in QUALITY_PRESETS.items():
+            self.blender_quality_combo.addItem(spec["label"], key)
+        self.blender_quality_combo.setCurrentIndex(self.blender_quality_combo.findData("normal"))
+        self.blender_quality_combo.setMaximumWidth(120)
+        if blender_exe:
+            self.blender_check.setToolTip(
+                "Una toma 3D en el momento fuerte del video (dos en documentales largos):\n"
+                "las fotos sobre una mesa, con luz, sombras y foco que baja hasta la protagonista.\n"
+                f"Blender: {blender_exe}\n"
+                "Tarda minutos por toma en esta PC (Borrador ~1.6 s por cuadro, Normal ~3 s);\n"
+                "queda en cache y re-ensamblar no la vuelve a renderizar."
+            )
+        else:
+            self.blender_check.setToolTip(
+                "No se encontro Blender. Instalalo o defini BLENDER_PATH en .env\n"
+                "(ruta completa a blender.exe)."
+            )
+        self.blender_quality_combo.setToolTip("Calidad del render 3D: mas calidad = mas minutos.")
+
+        def _sync_blender_controls(*_args):
+            usable = bool(blender_exe) and self.dynamism_combo.currentData() != "off"
+            self.blender_check.setEnabled(usable)
+            self.blender_quality_combo.setEnabled(usable and self.blender_check.isChecked())
+
+        self.dynamism_combo.currentIndexChanged.connect(_sync_blender_controls)
+        self.blender_check.toggled.connect(_sync_blender_controls)
+        _sync_blender_controls()
+        dynamism_layout.addWidget(self.blender_check)
+        dynamism_layout.addWidget(self.blender_quality_combo)
+        dynamism_layout.addStretch()
+        layout.addLayout(dynamism_layout)
+
         # Nuevo: Transiciones Profesionales (tipo CapCut)
         transitions_layout = QHBoxLayout()
 

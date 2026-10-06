@@ -298,6 +298,15 @@ class StudioStoryboardHandlers:
                 self.studio_tab.log(
                     f" [WARN] No se pudo preparar la direccion cinematografica: {direction_error}"
                 )
+            # Composicion por escena: el timeline ya muestra que eligio el planificador.
+            # Se vuelve a planificar al ensamblar (lo fijado a mano se respeta).
+            try:
+                from pipeline.segment_layouts import plan_layouts
+                plan_layouts(result, level=(
+                    self.studio_tab.dynamism_combo.currentData()
+                    if hasattr(self.studio_tab, 'dynamism_combo') else 'off'))
+            except Exception as layout_error:
+                self.studio_tab.log(f" [WARN] No se pudo planificar la composicion: {layout_error}")
         self.studio_tab.last_storyboard_data = result
         from studio.studio_channel_controls import project_channel_config
         result.setdefault('channel_profile', project_channel_config(self.studio_tab)['channel_profile'])

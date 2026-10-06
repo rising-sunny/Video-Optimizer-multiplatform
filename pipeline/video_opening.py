@@ -401,24 +401,28 @@ def enforce_min_first_shot(clips: list[dict[str, Any]], min_first: float = DEFAU
     return round(give, 3)
 
 
-def push_in_filter(frames: int, width: int, height: int, zoom: float = DEFAULTS["push_in_zoom"]) -> str:
+def push_in_filter(frames: int, width: int, height: int, zoom: float = DEFAULTS["push_in_zoom"],
+                   fps: float = 30) -> str:
     """zoompan con salida rapida: el mayor movimiento en el cuadro 0, frenando hacia el final.
-    (El movimiento por defecto arranca lento y los primeros 0.5 s se ven quietos.)"""
+    (El movimiento por defecto arranca lento y los primeros 0.5 s se ven quietos.)
+    `fps` = el del video; zoompan sale a 25 por defecto y a 30 repite cuadros."""
     n = max(2, int(frames))
     p = f"(on/{n - 1})"
     return (f"zoompan=z='1+{zoom:.4f}*(1-(1-{p})*(1-{p}))'"
-            f":x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d={n}:s={int(width)}x{int(height)}")
+            f":x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d={n}:s={int(width)}x{int(height)}"
+            f":fps={float(fps):g}")
 
 
 def opening_motion_filter(frames: int, width: int, height: int,
-                          style: str = OPENING_STYLE, amount: Optional[float] = None) -> str:
+                          style: str = OPENING_STYLE, amount: Optional[float] = None,
+                          fps: float = 30) -> str:
     """Movimiento FFmpeg distintivo para la primera imagen de cada entrada."""
     selected = normalize_opening_style(style)
     spec = opening_style_spec(selected)
     strength = float(spec["motion_amount"] if amount is None else amount)
     n = max(2, int(frames))
     p = f"(on/{n - 1})"
-    size = f"d={n}:s={int(width)}x{int(height)}"
+    size = f"d={n}:s={int(width)}x{int(height)}:fps={float(fps):g}"
     center = "x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
 
     if selected == MAP_ZOOM_STYLE:
@@ -434,7 +438,7 @@ def opening_motion_filter(frames: int, width: int, height: int,
     if selected == OUTCOME_TEASER_STYLE:
         z = f"1+{strength * 0.45:.4f}+{strength * 0.55:.4f}*(1-(1-{p})*(1-{p}))"
         return f"zoompan=z='{z}':{center}:{size}"
-    return push_in_filter(n, width, height, strength)
+    return push_in_filter(n, width, height, strength, fps=fps)
 
 
 # ----------------------------------------------------------------------------
