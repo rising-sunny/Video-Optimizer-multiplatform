@@ -601,6 +601,38 @@ class DesdeCarpeta(ConTokenTemporal):
         self.assertEqual(entrada["status"], "draft")
 
 
+class FiltroDeNormas(ConTokenTemporal):
+    """2026-10-07: el Short de Operation Northwoods se retiro por 'Normas de la comunidad'."""
+
+    META = {"title": "Operation Northwoods explained",
+            "description": "The 1962 false flag plan: blow up a US ship, a fake Cuban terror campaign in Miami.\n\n"
+                           "#OperationNorthwoods #FalseFlag #Conspiracy",
+            "topic": "Operation Northwoods", "upload_channel": "stunning-revelations"}
+
+    def setUp(self):
+        super().setUp()
+        self.guardar_token()
+        self.video()
+        with open(os.path.join(self.tmp, "tiktok_metadata.json"), "w", encoding="utf-8") as f:
+            json.dump(self.META, f)
+
+    def test_lo_prohibido_no_gasta_un_borrador(self):
+        api = TikTokFalso()
+        with self.assertRaises(tu.TikTokError) as ctx:
+            tu.upload_from_metadata(self.tmp, http=api, notify=False, optimize=False)
+        self.assertIn("Filtro de TikTok", str(ctx.exception))
+        self.assertIn("false flag", str(ctx.exception))
+        self.assertNotIn("/post/publish/inbox/video/init/", api.llamadas, "subio un video que TikTok iba a retirar")
+
+    def test_forzado_sube_y_avisa_por_telegram(self):
+        enviados = []
+        with patch("publish.telegram_notify.send_message", side_effect=lambda texto, **kw: enviados.append(texto)):
+            res = tu.upload_from_metadata(self.tmp, http=TikTokFalso(), optimize=False, filtro="avisar")
+        self.assertEqual(res["status"], "draft")
+        self.assertTrue(any(l.startswith("BLOQUEA") for l in res["tiktok_filter"]))
+        self.assertIn("Filtro de normas de TikTok", enviados[0])
+
+
 class EnElStudio(unittest.TestCase):
 
     def setUp(self):

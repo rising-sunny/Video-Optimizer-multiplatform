@@ -859,14 +859,23 @@ def _save_result(path: Path, result: Dict[str, Any]) -> None:
         pass
 
 
+def _filter_mode(filtro: Optional[str]) -> str:
+    modo = (filtro or _env("TIKTOK_FILTRO", "bloquear")).strip().lower()
+    return modo if modo in ("bloquear", "avisar", "apagado") else "bloquear"
+
+
 def upload_from_metadata(output_dir: str, *, on_progress=None, on_status=None, optimize: bool = True,
                          notify: bool = True, video_path: Optional[str] = None, interactive: bool = True,
-                         http=None) -> Dict[str, Any]:
+                         http=None, filtro: Optional[str] = None) -> Dict[str, Any]:
     """Misma forma que los otros uploaders (carpeta + metadata), pero deja un BORRADOR.
 
     Nada queda publicado: el video llega a la bandeja de TikTok y el titulo y la
     descripcion, por Telegram. Si Telegram falla, el borrador igual queda y el texto va
     al log (`telegram_error` en el resultado).
+
+    Antes de mandarlo, `tiktok_filter` revisa texto, hashtags y narracion contra las Normas de
+    la comunidad. `filtro` (o TIKTOK_FILTRO): "bloquear" (por defecto: lo prohibido no sube),
+    "avisar" (sube y avisa) o "apagado".
     """
     carpeta = Path(output_dir)
     if video_path:
@@ -891,6 +900,21 @@ def upload_from_metadata(output_dir: str, *, on_progress=None, on_status=None, o
     _status(on_status, f"cuenta {nombre or token.get('open_id') or '(sin nombre)'}")
 
     texto = prepare_text(meta, brand=nombre or _fallback_brand(meta), optimize=optimize, on_status=on_status)
+    # 2026-10-07: el Short de Operation Northwoods se retiro por "Normas de la comunidad" (#FalseFlag,
+    # "terror campaign"). Lo prohibido no gasta un borrador ni deja una falta en la cuenta.
+    filtro_lineas: List[str] = []
+    modo = _filter_mode(filtro)
+    if modo != "apagado":
+        from publish.tiktok_filter import blocks, report, review
+        hallazgos = review(title=texto["title"], description=texto["description"], hashtags=texto["hashtags"],
+                           on_screen=meta.get("on_screen_text") or [], narration=meta.get("script_excerpt", ""))
+        filtro_lineas = report(hallazgos)
+        if blocks(hallazgos) and modo == "bloquear":
+            raise TikTokError("Filtro de TikTok: no se mandó el borrador porque el texto choca con las Normas de la "
+                              "comunidad. " + " | ".join(l for l in filtro_lineas if l.startswith("BLOQUEA")) +
+                              " Corrige el texto o súbelo con --forzar (TIKTOK_FILTRO=avisar).")
+        for linea in filtro_lineas:
+            _status(on_status, f"filtro: {linea}")
     enviado = send_video_to_inbox(video, token=token, on_progress=on_progress, on_status=on_status,
                                   http=http, validate=False)
     procesando = str(enviado.get("tiktok_status") or "").upper() not in INBOX_STATES
@@ -909,6 +933,7 @@ def upload_from_metadata(output_dir: str, *, on_progress=None, on_status=None, o
         "description_sent": texto["description"],
         "hashtags_sent": texto["hashtags"],
         "tiktok_seo": texto.get("summary"),
+        "tiktok_filter": filtro_lineas,
         "telegram_sent": False,
         "telegram_error": None,
     }
@@ -916,7 +941,7 @@ def upload_from_metadata(output_dir: str, *, on_progress=None, on_status=None, o
         try:
             from publish.telegram_notify import build_tiktok_draft_message, send_message
             send_message(build_tiktok_draft_message(texto["title"], texto["description"],
-                                                    account=nombre, processing=procesando))
+                                                    account=nombre, processing=procesando, notes=filtro_lineas))
             result["telegram_sent"] = True
             _status(on_status, "título y descripción enviados por Telegram")
         except Exception as exc:
@@ -968,6 +993,8 @@ def main(argv=None) -> int:
     grupo.add_argument("--list", action="store_true", help="videos publicos de la cuenta (JSON)")
     grupo.add_argument("--upload", metavar="CARPETA_O_VIDEO",
                        help="mandar un borrador a la bandeja (carpeta con video+metadata o un .mp4)")
+    ap.add_argument("--forzar", action="store_true",
+                    help="subir aunque el filtro de normas de TikTok marque el texto (solo avisa)")
     args = ap.parse_args(argv)
     try:
         if args.setup:
@@ -992,7 +1019,8 @@ def main(argv=None) -> int:
             carpeta, video = (ruta.parent, ruta) if ruta.is_file() else (ruta, None)
             res = upload_from_metadata(str(carpeta), video_path=str(video) if video else None,
                                        on_status=lambda m: print(m),
-                                       on_progress=make_byte_progress_reporter("subiendo", print))
+                                       on_progress=make_byte_progress_reporter("subiendo", print),
+                                       filtro="avisar" if args.forzar else None)
             print(json.dumps(res, ensure_ascii=False, indent=2))
         return 0
     except (TikTokError, FileNotFoundError) as exc:

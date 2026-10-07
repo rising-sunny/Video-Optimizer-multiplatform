@@ -79,8 +79,9 @@ def _trim_words(text: str, max_chars: int) -> str:
 
 
 def build_tiktok_draft_message(title: str, description: str, *, account: str = "",
-                               processing: bool = False) -> str:
-    """El aviso del borrador: pasos, titulo y descripcion, cada uno copiable con un toque."""
+                               processing: bool = False, notes=()) -> str:
+    """El aviso del borrador: pasos, titulo y descripcion, cada uno copiable con un toque.
+    `notes`: avisos del filtro de normas de TikTok (tiktok_filter), para revisar antes de publicar."""
     titulo = " ".join(str(title or "").split())
     desc = str(description or "").strip()
 
@@ -92,6 +93,9 @@ def build_tiktok_draft_message(title: str, description: str, *, account: str = "
         partes.append("TikTok todavía lo está procesando: la notificación puede tardar unos minutos.")
     partes.append("Abrí la notificación de TikTok → Siguiente → pegá el título y la descripción → "
                   "Más opciones → activá «Contenido generado por IA» → Publicar.")
+    if notes:
+        partes += ["", "⚠️ <b>Filtro de normas de TikTok</b> (revisalo antes de publicar):"]
+        partes += [f"• {_esc(str(n))[:300]}" for n in list(notes)[:4]]
     partes += ["", "<b>Título</b> (tocá para copiar)",
                f"<code>{_esc(titulo)}</code>" if titulo else "<i>(sin título)</i>"]
     if not desc:

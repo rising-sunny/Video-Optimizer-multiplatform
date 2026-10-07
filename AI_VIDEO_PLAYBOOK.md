@@ -146,6 +146,15 @@ obligatorio con número/fecha en el cap. 1) → prompts visuales → TTS → sto
   de TikTok y manda título y descripción por Telegram (`telegram_notify`); el usuario lo termina
   y publica desde la app. Es la única vía oficial sin auditoría (ver Changelog 2026-09-26).
   Videos de hasta 10 min: los documentales largos no entran.
+- **Filtro de normas de TikTok (desde 2026-10-07, SIEMPRE):** TikTok modera con clasificadores
+  que leen título, descripción, hashtags, texto en pantalla y audio. Antes de entregar o subir
+  cualquier texto o tarjeta para TikTok —también si el usuario lo sube a mano— pasalo por
+  `python -m publish.tiktok_filter --texto "..."` (o `--proyecto catarsis.json`, `--metadata`).
+  `BLOQUEA` = lo prohíben las normas: reescribir antes de entregar. `AVISO` = suele salir del
+  feed Para ti: corregir si se puede. El uploader ya lo aplica solo (`TIKTOK_FILTRO=bloquear`
+  por defecto; `--forzar` sube y avisa) y la pestaña Catarsis lo anota en el registro.
+  Nunca "false flag"/#FalseFlag; no juntar #Conspiracy con violencia; no "staged/fake" + acto
+  violento en la misma frase; las citas violentas, atribuidas y dentro del video.
 - Editar metadata de un video ya subido = modificar contenido público → **confirmá primero**.
 - **Dónde está el video (desde 2026-09-15):** cada render existe UNA sola vez, en
   `auto_videos/output/<plataforma>_<fecha>_<tema>.mp4` (Drive). La carpeta del proyecto/draft
@@ -272,6 +281,7 @@ concreta + sujeto nombrado**, duración corta. Ej: "72 Seconds: The Wow! Signal"
 | `facebook_metadata.py` | Título, arranque de la descripción y hashtags de Facebook e Instagram con la investigación de YouTube |
 | `tiktok_uploader.py` | Borrador a la bandeja de TikTok (sandbox, `video.upload`); `--setup` guarda credenciales y conecta; `--auth` reutiliza las guardadas; `--check`, `--upload` |
 | `telegram_notify.py` | Título y descripción del borrador de TikTok al celular, copiables con un toque; `--setup`, `--test` |
+| `tiktok_filter.py` | Filtro de normas de TikTok: `BLOQUEA`/`AVISO` por regla, con la norma y cómo corregir; lo usan el uploader y la pestaña Catarsis |
 | `build_derinkuyu_long.py` | Ejemplo one-off de documental (referencia; hardcodeado) |
 | `catharsis_editor.py` + `catharsis_tab.py` | Formato Catarsis: Short vertical sin voz, tarjetas + imágenes/videos + música con cortes al ritmo, efectos y diseño sonoro; pestaña "Catarsis" de la app |
 
@@ -294,6 +304,17 @@ concreta + sujeto nombrado**, duración corta. Ej: "72 Seconds: The Wow! Signal"
 
 ## Changelog
 
+- **2026-10-07** — **Filtro de normas de TikTok** (`publish/tiktok_filter.py`). TikTok retiró el Short
+  de Operation Northwoods por "Normas de la comunidad" el día que se publicó (texto con #FalseFlag,
+  #Conspiracy, "terror campaign", "staged airliner shootdown"); el carrusel del mismo tema, sin
+  #FalseFlag, siguió arriba. Reglas según las Normas de la comunidad (versión del 24-09-2026):
+  **bloquea** "false flag" (etiqueta de las teorías que niegan hechos violentos), marco conspirativo
+  + violencia, y "staged/fake" + acto violento en la misma frase; **avisa** #Conspiracy solo, lenguaje
+  violento acumulado, crisis en curso (WW3, armas nucleares), nombres extremistas, contenido
+  explícito, suicidio ("he jumped") y drogas (LSD). Una palabra violenta sola no avisa: la historia
+  de guerras es lo normal en #HistoryTok. El uploader no manda el borrador si bloquea
+  (`TIKTOK_FILTRO=avisar` o `--forzar` para subir igual) y suma los avisos al mensaje de Telegram;
+  la pestaña Catarsis revisa las tarjetas al generarlas y antes del render final.
 - **2026-10-07** — **Catarsis acepta escaneos y TIFF que calzan justo en un eje**: `frame_image` fallaba con
   "box offset can't be negative" cuando la imagen llenaba exacto el alto o el ancho (paginas escaneadas de
   documentos desclasificados, TIFF maestros de la Biblioteca del Congreso): el redondeo dejaba el recorte en
