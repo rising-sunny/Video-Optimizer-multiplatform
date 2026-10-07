@@ -294,6 +294,11 @@ concreta + sujeto nombrado**, duración corta. Ej: "72 Seconds: The Wow! Signal"
 
 ## Changelog
 
+- **2026-10-07** — **Catarsis acepta escaneos y TIFF que calzan justo en un eje**: `frame_image` fallaba con
+  "box offset can't be negative" cuando la imagen llenaba exacto el alto o el ancho (paginas escaneadas de
+  documentos desclasificados, TIFF maestros de la Biblioteca del Congreso): el redondeo dejaba el recorte en
+  -1e-13. Ahora el recorte se acota a la imagen. Probado con un Short de Operation Northwoods (memo del Estado
+  Mayor Conjunto de 1962) para Stunning Revelations; 35 tests.
 - **2026-10-04** — **Catarsis lee bien los noticieros de archivo** (Universal Newsreel en MPEG2, Internet Archive):
   vienen a 720x480 con píxeles 8:9 y entrelazados. `media_info` ahora da el ancho de pantalla (640) y
   `interlaced`, e `iter_video_frames` desentrelaza con `yadif` (solo los cuadros marcados). Antes salían
