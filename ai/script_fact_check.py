@@ -555,9 +555,12 @@ def parse_findings(raw: Any, texts: Sequence[str], judge: str = "",
 
 
 # Gemini a probar, en orden. Cada modelo tiene su propia cuota diaria gratuita y la
-# busqueda de Google tiene otra aparte (2026-09-24: la busqueda se agoto y las
-# consultas sin busqueda seguian andando). Configurable: FACT_CHECK_GEMINI_MODELS.
-DEFAULT_GEMINI_MODELS = "gemini-3.5-flash,gemini-2.5-flash,gemini-3.1-flash-lite"
+# busqueda de Google (grounding) tiene otra aparte, POR MODELO (2026-09-24: la
+# busqueda se agoto y las consultas sin busqueda seguian andando; 2026-10: la de
+# gemini-3.5-flash dio 429 mientras la de gemini-2.5-flash seguia 200).
+# gemini-2.5-flash va primero: su grounding suele quedar con mas margen.
+# Configurable: FACT_CHECK_GEMINI_MODELS.
+DEFAULT_GEMINI_MODELS = "gemini-2.5-flash,gemini-3.5-flash,gemini-3.1-flash-lite"
 
 # Juez que respondio 429/503 -> no se lo vuelve a intentar por un rato.
 _UNAVAILABLE: Dict[str, float] = {}
