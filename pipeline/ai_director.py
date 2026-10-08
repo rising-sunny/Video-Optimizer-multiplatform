@@ -57,20 +57,82 @@ def _clean(value: Any) -> str:
     return re.sub(r"\s+", " ", str(value or "")).strip()
 
 
-def _segment_lines(segments: Sequence[Any]) -> str:
+def _segment_lines(segments: Sequence[Any], descriptions: Optional[Dict[int, str]] = None) -> str:
+    descriptions = descriptions or {}
     lines: List[str] = []
     for i, seg in enumerate(segments, start=1):
         if not isinstance(seg, MutableMapping):
             continue
         narration = _clean(seg.get("narration_text") or seg.get("text") or "")[:_MAX_NARRATION]
         visual = _clean(seg.get("visual_prompt") or "")[:_MAX_VISUAL]
+        seen = _clean(descriptions.get(i - 1))[:_MAX_VISUAL]
         kind = "video" if _sl.is_video_path(seg.get("video_path")) else "imagen"
         duration = _sl._segment_duration(seg)
         line = f"#{i} | {duration:.1f}s | {kind} | {narration}"
-        if visual:
+        if seen:
+            line += f" | visto: {seen}"
+        elif visual:
             line += f" | visual: {visual}"
         lines.append(line)
     return "\n".join(lines)
+
+
+_VISION_CHUNK = 10
+_VISION_PROMPT = (
+    "You receive several images, one per video scene, in order. For each, write a SHORT "
+    "visual description (max 10 words, English) of subject, action, framing and mood. "
+    'Return ONLY JSON: {"images": [{"description": "..."}, ...]} with one entry per image, in the same order.'
+)
+
+
+def _describe_media(segments: Sequence[Any], log: Any) -> Dict[int, str]:
+    """Gemini vision: una descripcion compacta por segmento (imagen o cuadro del video).
+
+    Una (o pocas) llamadas a Gemini para todas las escenas. Si no hay GEMINI_API_KEY
+    o falla la vision, devuelve {} y el director sigue solo con texto.
+    """
+    if not os.getenv("GEMINI_API_KEY"):
+        return {}
+    from ai.gemini_vision import ask_images
+    entries: List[tuple] = []  # (indice_0, bytes)
+    for i, seg in enumerate(segments):
+        if not isinstance(seg, MutableMapping):
+            continue
+        video = str(seg.get("video_path") or "").strip()
+        image = str(seg.get("image_path") or seg.get("filename") or "").strip()
+        try:
+            if video and os.path.exists(video):
+                import tempfile
+                with tempfile.TemporaryDirectory() as td:
+                    png = os.path.join(td, f"frame_{i}.png")
+                    _sl.frame_grab(video, png, at=0.5)
+                    with open(png, "rb") as fh:
+                        entries.append((i, fh.read()))
+            elif image and os.path.exists(image):
+                with open(image, "rb") as fh:
+                    entries.append((i, fh.read()))
+        except Exception as exc:
+            log(f"   [Director IA] sin vision en la escena {i + 1}: {' '.join(str(exc).split())[:80]}")
+    if not entries:
+        return {}
+
+    out: Dict[int, str] = {}
+    for k in range(0, len(entries), _VISION_CHUNK):
+        chunk = entries[k:k + _VISION_CHUNK]
+        try:
+            raw = ask_images(_VISION_PROMPT, [b for _, b in chunk], json_mode=True, timeout=180)
+            data = json.loads(raw)
+        except Exception as exc:
+            log(f"   [Director IA] vision no disponible ({' '.join(str(exc).split())[:120]}): sigo sin ver.")
+            break
+        items = data.get("images") or data.get("descriptions") or []
+        for j, item in enumerate(items):
+            if j >= len(chunk):
+                break
+            desc = _clean(item.get("description") if isinstance(item, dict) else item)
+            if desc:
+                out[chunk[j][0]] = desc
+    return out
 
 
 def _parse_plan(raw: Any, count: int) -> Dict[int, str]:
@@ -180,8 +242,10 @@ def direct_layouts_with_ai(
         # La primera y la ultima no cuentan para el presupuesto de composicion.
         eligible = max(0, count - 2)
         allowed = max(0, int(round(eligible * budget)))
+        # Ojos (Gemini vision): que ve cada imagen/cuadro antes de dirigir.
+        descriptions = _describe_media(segments, log)
         prompt = _PROMPT.format(
-            segments=_segment_lines(segments) or "(sin escenas)",
+            segments=_segment_lines(segments, descriptions) or "(sin escenas)",
             allowed=allowed,
             count=count,
         )

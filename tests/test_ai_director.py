@@ -131,5 +131,50 @@ class TestAiDirector(unittest.TestCase):
         self.assertEqual(sb["segments"][2]["layout_plan"]["layout"], "pip")
 
 
+class TestAiDirectorVision(unittest.TestCase):
+    def _with_image(self, sb):
+        import tempfile
+        from PIL import Image
+        td = tempfile.mkdtemp()
+        self.addCleanup(lambda: __import__("shutil").rmtree(td, ignore_errors=True))
+        img = os.path.join(td, "scene.jpg")
+        Image.new("RGB", (32, 32), (120, 30, 30)).save(img)
+        for seg in sb["segments"]:
+            seg["image_path"] = img
+        return img
+
+    def test_gemini_descriptions_feed_the_director_prompt(self):
+        sb = _storyboard(TEXTS)
+        self._with_image(sb)
+        client = FakeClient(plan={"scenes": [{"scene": i, "layout": "full"} for i in range(1, 8)]})
+        with mock.patch.dict(os.environ, {"GEMINI_API_KEY": "g"}), \
+                mock.patch("ai.gemini_vision.ask_images",
+                           return_value=json.dumps({"images": [{"description": "a dark red square"}
+                                                               for _ in range(7)]})) as vision:
+            ai_director.direct_layouts_with_ai(sb, level="ai", log=lambda m: None, client=client)
+        vision.assert_called_once()
+        self.assertIn("visto: a dark red square", client.prompt)
+
+    def test_vision_failure_falls_back_to_text_only(self):
+        sb = _storyboard(TEXTS)
+        self._with_image(sb)
+        client = FakeClient(plan={"scenes": [{"scene": i, "layout": "full"} for i in range(1, 8)]})
+        with mock.patch.dict(os.environ, {"GEMINI_API_KEY": "g"}), \
+                mock.patch("ai.gemini_vision.ask_images", side_effect=RuntimeError("quota")):
+            ai_director.direct_layouts_with_ai(sb, level="ai", log=lambda m: None, client=client)
+        self.assertIn("layout_plan", sb["segments"][0])
+        self.assertNotIn("visto:", client.prompt)   # siguio solo con texto
+
+    def test_no_vision_without_gemini_key(self):
+        sb = _storyboard(TEXTS)
+        self._with_image(sb)
+        client = FakeClient(plan={"scenes": [{"scene": i, "layout": "full"} for i in range(1, 8)]})
+        with mock.patch.dict(os.environ, {"GEMINI_API_KEY": ""}), \
+                mock.patch("ai.gemini_vision.ask_images") as vision:
+            ai_director.direct_layouts_with_ai(sb, level="ai", log=lambda m: None, client=client)
+        vision.assert_not_called()
+        self.assertNotIn("visto:", client.prompt)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
