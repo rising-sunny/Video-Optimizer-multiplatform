@@ -667,8 +667,17 @@ class ElJuezClaudeCLI(Base):
                                    "remaining": [bad], "corrections": []})
         self.assertEqual(sum("killed Admiral Villeneuve" in l for l in lines), 1)
 
+    def test_rewriter_tries_deepseek_first(self):
+        with mock.patch.dict(os.environ, {"DEEPSEEK_API_KEY": "sk-test", "FACT_CHECK_CLAUDE": "1"}), \
+                mock.patch("ai.deepseek_client.DeepSeekClient._generate", return_value='{"scenes": []}') as ds, \
+                mock.patch.object(sfc, "run_claude_cli") as cli:
+            out = sfc.default_rewriter(log=lambda m: None)("prompt")
+        self.assertEqual(out, '{"scenes": []}')
+        ds.assert_called_once()
+        cli.assert_not_called()
+
     def test_rewriter_tries_claude_first(self):
-        with mock.patch.dict(os.environ, {"GEMINI_API_KEY": "g", "FACT_CHECK_CLAUDE": "1"}), \
+        with mock.patch.dict(os.environ, {"GEMINI_API_KEY": "g", "FACT_CHECK_CLAUDE": "1", "DEEPSEEK_API_KEY": ""}), \
                 mock.patch.object(sfc, "run_claude_cli", return_value='{"scenes": []}') as cli, \
                 mock.patch("ai.gemini_vision.ask_images") as gemini:
             groq = mock.Mock(return_value="groq")
@@ -679,7 +688,7 @@ class ElJuezClaudeCLI(Base):
         self.assertEqual(cli.call_args.kwargs.get("tools", ()), ())
 
     def test_rewriter_falls_back_when_claude_is_down(self):
-        with mock.patch.dict(os.environ, {"GEMINI_API_KEY": "", "FACT_CHECK_CLAUDE": "1"}), \
+        with mock.patch.dict(os.environ, {"GEMINI_API_KEY": "", "FACT_CHECK_CLAUDE": "1", "DEEPSEEK_API_KEY": ""}), \
                 mock.patch.object(sfc, "run_claude_cli", side_effect=RuntimeError("Claude CLI: usage limit")):
             groq = mock.Mock(return_value="groq")
             self.assertEqual(sfc.default_rewriter(fallback=groq, log=lambda m: None)("prompt"), "groq")

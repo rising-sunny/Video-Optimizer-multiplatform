@@ -62,17 +62,17 @@ class DeepSeekClient:
         else:
             system_content = GENERAL_SYSTEM
 
-        temperature = 0.45 if str(task_type or "general").lower() == "script_quality" else 0.7
-
         payload = {
             "model": self.model,
             "messages": [
                 {"role": "system", "content": system_content},
                 {"role": "user", "content": prompt_text},
             ],
-            "temperature": temperature,
             "max_tokens": safe_max_tokens,
         }
+        # deepseek-reasoner (R1) no acepta temperature ni otros parametros de muestreo.
+        if "reasoner" not in self.model.lower():
+            payload["temperature"] = 0.45 if str(task_type or "general").lower() == "script_quality" else 0.7
         if json_mode:
             payload["response_format"] = {"type": "json_object"}
 

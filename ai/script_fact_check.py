@@ -681,10 +681,20 @@ def claude_judge(prompt: str) -> Tuple[str, List[Dict]]:
 
 def default_rewriter(fallback: Optional[Callable[[str], Any]] = None,
                      log: Callable = print) -> Callable[[str], Any]:
-    """Quien reescribe las escenas: Claude CLI, despues Gemini, y si no responde, `fallback`
-    (el cliente Groq del pipeline) o Groq directo."""
+    """Quien reescribe las escenas: DeepSeek, Claude CLI, despues Gemini, y si no responde,
+    `fallback` (el cliente Groq del pipeline) o Groq directo."""
     def rewrite(prompt: str) -> Any:
-        # Claude CLI primero (sin herramientas: reescribir no necesita buscar).
+        # DeepSeek primero (prioridad por pedido del usuario; sin busqueda, como el juez).
+        if os.getenv("DEEPSEEK_API_KEY") and not _cooling("rewrite:deepseek"):
+            try:
+                from ai.deepseek_client import DeepSeekClient
+                return DeepSeekClient()._generate(prompt, max_tokens=8000, task_type="script_quality",
+                                                  json_mode=True)
+            except Exception as exc:
+                if _is_capacity_error(exc):
+                    _UNAVAILABLE["rewrite:deepseek"] = time.time()
+                log(f"   [Hechos] reescritura con DeepSeek no disponible: {' '.join(str(exc).split())[:140]}")
+        # Claude CLI (sin herramientas: reescribir no necesita buscar).
         if claude_cli_enabled() and not _cooling("rewrite:claude-cli"):
             try:
                 return run_claude_cli(prompt)
