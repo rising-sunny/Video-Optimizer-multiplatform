@@ -90,12 +90,14 @@ DYNAMISM_SPECS = {
     "off": {"label": "Apagado", "budget": 0.0, "long_shot_s": None},
     "moderate": {"label": "Moderado", "budget": 0.40, "long_shot_s": 4.5},
     "high": {"label": "Alto", "budget": 0.70, "long_shot_s": 3.0},
+    "ai": {"label": "IA Director", "budget": 0.70, "long_shot_s": 3.0},
 }
 DEFAULT_DYNAMISM = "off"
 _DYNAMISM_ALIASES = {
     "apagado": "off", "none": "off", "no": "off", "false": "off",
     "moderado": "moderate", "medio": "moderate", "medium": "moderate",
     "alto": "high", "maximo": "high", "max": "high",
+    "ia": "ai", "director": "ai", "ia director": "ai",
 }
 
 MIN_LAYOUT_SECONDS = 1.6     # por debajo, una composicion no se llega a leer

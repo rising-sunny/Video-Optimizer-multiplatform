@@ -736,6 +736,7 @@ class StudioUiSetupMixin:
         self.dynamism_combo.addItem("Apagado", "off")
         self.dynamism_combo.addItem("Moderado", "moderate")
         self.dynamism_combo.addItem("Alto", "high")
+        self.dynamism_combo.addItem("IA Director", "ai")
         self.dynamism_combo.setCurrentIndex(1)
         self.dynamism_combo.setMaximumWidth(150)
         self.dynamism_combo.setToolTip(
@@ -746,7 +747,9 @@ class StudioUiSetupMixin:
             "- Punch-in: 2-3 planos de la misma imagen (climax, planos largos)\n"
             "- Reveal: la imagen siguiente entra a mitad de escena\n"
             "Usa las imagenes que ya tenes (vecinas o detalles): no genera imagenes nuevas.\n"
-            "Moderado: hasta 40% de las escenas. Alto: hasta 70%. Se ajusta por escena en el timeline."
+            "Moderado: hasta 40% de las escenas. Alto: hasta 70%. Se ajusta por escena en el timeline.\n"
+            "IA Director: la IA (DeepSeek) analiza cada imagen/video y decide la composicion "
+            "de cada escena como un director cinematografico; cae a las reglas si no responde."
         )
         dynamism_layout.addWidget(self.dynamism_combo)
 

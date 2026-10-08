@@ -2347,10 +2347,15 @@ class AutoVideoAssemblyMixin:
             if not _blender_exe:
                 self.log("   [WARN] Tomas 3D pedidas pero Blender no esta instalado: se usan composiciones de FFmpeg")
         try:
-            layout_summary = segment_layouts.plan_layouts(
-                storyboard_data, level=dynamism, blender_shots=_blender_max,
-                environment=blender_environment,
-            )
+            if segment_layouts.normalize_dynamism(dynamism) == "ai":
+                from pipeline import ai_director
+                layout_summary = ai_director.direct_layouts_with_ai(
+                    storyboard_data, level=dynamism, log=self.log)
+            else:
+                layout_summary = segment_layouts.plan_layouts(
+                    storyboard_data, level=dynamism, blender_shots=_blender_max,
+                    environment=blender_environment,
+                )
             self.log(f"   Composicion ({layout_summary['label']}): "
                      f"{segment_layouts.plan_summary_text(layout_summary)}")
         except Exception as layout_exc:
