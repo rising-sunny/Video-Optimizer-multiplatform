@@ -150,6 +150,28 @@ _SPANISH_MARKERS = {
     "donde", "cuando", "sobre", "entre", "hacia",
 }
 
+# Palabras de CONTENIDO comunes en temas de historia/misterio, sin acentos
+# (la gente tipea "Neron Incendio Roma", no "Neron Incendio de Roma"). Los
+# articulos/preposiciones de arriba no las detectan y el validador comparaba
+# un tema en espanol contra un guion en ingles: falsa alarma de "deriva".
+_SPANISH_CONTENT_WORDS = {
+    "incendio", "guerra", "batalla", "historia", "misterio", "misterios",
+    "imperio", "reino", "rey", "reina", "reyes", "reinas", "muerte", "caida",
+    "desaparicion", "expedicion", "descubrimiento", "antiguo", "antiguos",
+    "antigua", "antiguas", "ciudad", "pueblo", "pueblos", "mundo", "tierra",
+    "fuego", "mar", "ejercito", "soldado", "soldados", "victoria", "derrota",
+    "ataque", "invasion", "revolucion", "civilizacion", "catastrofe", "explosion",
+    "terremoto", "erupcion", "naufragio", "hundimiento", "asesinato", "crimen",
+    "secreto", "leyenda", "mito", "dios", "dioses", "demonio", "infierno",
+    "maldicion", "tesoro", "piramide", "tumba", "ruinas", "reliquia", "artefacto",
+    "documento", "manuscrito", "templo", "palacio", "castillo", "fortaleza",
+    "muralla", "torre", "puente", "ruta", "viaje", "explorador", "conquistador",
+    "emperador", "faraon", "principe", "princesa", "duque", "conde", "dinastia",
+    "caballero", "caballeros", "legion", "gladiador", "esclavo", "esclavos",
+    "cruzada", "cruzadas", "roma", "grecia", "egipto", "atenas", "esparta",
+    "cartago", "troya", "persia", "mesopotamia", "fenicia", "babilonia",
+}
+
 
 def topic_needs_localization(topic: str, language: str) -> bool:
     """.Hay que llevar el tema al idioma del guion antes de investigar?
@@ -169,7 +191,7 @@ def topic_needs_localization(topic: str, language: str) -> bool:
 
     import re as _re
     palabras = {w.lower() for w in _re.findall(r"[A-Za-zÀ-ÿ]+", texto)}
-    return bool(palabras & _SPANISH_MARKERS)
+    return bool(palabras & (_SPANISH_MARKERS | _SPANISH_CONTENT_WORDS))
 
 
 def scene_narration_text(scene) -> str:

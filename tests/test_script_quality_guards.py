@@ -243,7 +243,12 @@ class TopicLocalizationTests(unittest.TestCase):
     def test_spanish_topics_need_localization(self):
         for topic in ("El Núcleo del Demonio",
                       "¿Quiénes fueron los Pueblos del Mar?",
-                      "la expedición del régimen Nazi al Himalaya"):
+                      "la expedición del régimen Nazi al Himalaya",
+                      # Sin acentos ni articulos: el detector tiene que leer las
+                      # palabras de contenido ("incendio", "guerra", "misterio").
+                      "Neron Incendio Roma",
+                      "Guerra Ruso-japonesa",
+                      "Misterio del Triangulo de las Bermudas"):
             self.assertTrue(topic_needs_localization(topic, "en"), topic)
 
     def test_english_topics_do_not(self):
