@@ -600,9 +600,14 @@ def groq_judge(prompt: str) -> Tuple[str, List[Dict]]:
 
 
 def deepseek_judge(prompt: str) -> Tuple[str, List[Dict]]:
-    """Juez: DeepSeek (deepseek-chat) con los parrafos de Wikipedia del prompt. Sin busqueda web."""
+    """Juez: DeepSeek (deepseek-chat) con los parrafos de Wikipedia del prompt. Sin busqueda web.
+
+    Usa deepseek-chat (V3) y no deepseek-reasoner: el juez devuelve JSON estricto y
+    el reasoner (R1) lo entrega de forma intermitente (a veces vacio o ilegible).
+    """
     from ai.deepseek_client import DeepSeekClient
-    raw = DeepSeekClient()._generate(prompt, max_tokens=8000, task_type="script_quality", json_mode=True)
+    raw = DeepSeekClient()._generate(prompt, max_tokens=8000, task_type="script_quality", json_mode=True,
+                                     model="deepseek-chat")
     return raw or "", []
 
 
@@ -685,11 +690,12 @@ def default_rewriter(fallback: Optional[Callable[[str], Any]] = None,
     `fallback` (el cliente Groq del pipeline) o Groq directo."""
     def rewrite(prompt: str) -> Any:
         # DeepSeek primero (prioridad por pedido del usuario; sin busqueda, como el juez).
+        # deepseek-chat para JSON estricto (el reasoner lo devuelve de forma intermitente).
         if os.getenv("DEEPSEEK_API_KEY") and not _cooling("rewrite:deepseek"):
             try:
                 from ai.deepseek_client import DeepSeekClient
                 return DeepSeekClient()._generate(prompt, max_tokens=8000, task_type="script_quality",
-                                                  json_mode=True)
+                                                  json_mode=True, model="deepseek-chat")
             except Exception as exc:
                 if _is_capacity_error(exc):
                     _UNAVAILABLE["rewrite:deepseek"] = time.time()

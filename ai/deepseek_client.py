@@ -45,8 +45,12 @@ class DeepSeekClient:
         print(f"[OK] Cliente DeepSeek inicializado. Modelo: {self.model}")
 
     def _generate(self, prompt_text, max_tokens=4096, task_type="general", json_mode=False,
-                  system: Optional[str] = None):
-        """Genera texto con DeepSeek. Devuelve el contenido o None si falla."""
+                  system: Optional[str] = None, model: Optional[str] = None):
+        """Genera texto con DeepSeek. Devuelve el contenido o None si falla.
+
+        `model` permite elegir otro modelo para una tarea concreta sin tocar el
+        `DEEPSEEK_MODEL` global (p. ej. `deepseek-chat` para JSON estricto).
+        """
         if not self.api_key:
             print("[ERROR] DeepSeek no esta configurado.")
             return None
@@ -54,6 +58,8 @@ class DeepSeekClient:
             safe_max_tokens = max(256, min(8192, int(max_tokens)))
         except Exception:
             safe_max_tokens = 4096
+
+        use_model = (model or self.model or "deepseek-chat").strip()
 
         if system is not None:
             system_content = system
@@ -63,7 +69,7 @@ class DeepSeekClient:
             system_content = GENERAL_SYSTEM
 
         payload = {
-            "model": self.model,
+            "model": use_model,
             "messages": [
                 {"role": "system", "content": system_content},
                 {"role": "user", "content": prompt_text},
@@ -71,7 +77,7 @@ class DeepSeekClient:
             "max_tokens": safe_max_tokens,
         }
         # deepseek-reasoner (R1) no acepta temperature ni otros parametros de muestreo.
-        if "reasoner" not in self.model.lower():
+        if "reasoner" not in use_model.lower():
             payload["temperature"] = 0.45 if str(task_type or "general").lower() == "script_quality" else 0.7
         if json_mode:
             payload["response_format"] = {"type": "json_object"}
@@ -97,5 +103,5 @@ class DeepSeekClient:
                 cleaned = re.sub(r"[\u0000-\u001F\u007F-\u009F]", "", cleaned)
                 return cleaned
         except Exception as e:
-            print(f"[ERROR] Error en la API de DeepSeek ({self.model}): {str(e)[:180]}")
+            print(f"[ERROR] Error en la API de DeepSeek ({use_model}): {str(e)[:180]}")
         return None

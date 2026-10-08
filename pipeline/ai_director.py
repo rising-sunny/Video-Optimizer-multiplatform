@@ -249,7 +249,8 @@ def direct_layouts_with_ai(
             allowed=allowed,
             count=count,
         )
-        raw = client._generate(prompt, max_tokens=8000, task_type="script_quality", json_mode=True)
+        raw = client._generate(prompt, max_tokens=8000, task_type="script_quality", json_mode=True,
+                               model="deepseek-chat")
         if not raw:
             raise RuntimeError("el modelo no respondio")
         plan = _parse_plan(raw, count)
