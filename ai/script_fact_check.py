@@ -20,10 +20,11 @@ Como funciona. No se le pregunta al modelo que escribio el guion si mintio:
   1. Evidencia: se bajan de Wikipedia los articulos del tema y de las personas y
      lugares que nombra el guion, y se eligen los parrafos que tocan lo que el
      guion afirma (mas la investigacion que el pipeline ya tenia).
-  2. Juez: Gemini con Google Search (busca de verdad en la web) revisa CADA
-     afirmacion (quien hizo que, quien murio o fue capturado, fechas, horas,
-     cifras, citas, causas y consecuencias) contra esa evidencia. Si Gemini no
-     responde (cuota, red), juzga Groq contra los mismos parrafos de Wikipedia.
+  2. Juez: el primero que responda juzga. Prioridad: DeepSeek (API, contra los
+     parrafos de Wikipedia), despues Claude CLI (busca en la web), Gemini con
+     Google Search, Gemini sin busqueda y Groq. Cada uno revisa CADA afirmacion
+     (quien hizo que, quien murio o fue capturado, fechas, horas, cifras, citas,
+     causas y consecuencias) contra la evidencia.
   3. Reparacion: las frases con problemas se reescriben con el dato documentado,
      manteniendo el largo de cada escena (la voz todavia no existe).
   4. Se vuelve a verificar. Lo que siga mal queda en `needs_review` y la subida
@@ -598,6 +599,13 @@ def groq_judge(prompt: str) -> Tuple[str, List[Dict]]:
     return raw or "", []
 
 
+def deepseek_judge(prompt: str) -> Tuple[str, List[Dict]]:
+    """Juez: DeepSeek (deepseek-chat) con los parrafos de Wikipedia del prompt. Sin busqueda web."""
+    from ai.deepseek_client import DeepSeekClient
+    raw = DeepSeekClient()._generate(prompt, max_tokens=8000, task_type="script_quality", json_mode=True)
+    return raw or "", []
+
+
 # ------------------------------------------------------------------ Claude CLI local
 
 CLAUDE_WEB_TOOLS = ("WebSearch", "WebFetch")
@@ -709,17 +717,19 @@ def default_rewriter(fallback: Optional[Callable[[str], Any]] = None,
 def default_judges() -> List[Tuple[str, Callable, bool]]:
     """(nombre, funcion, usa_busqueda_web), del mejor al peor. El primero que responda juzga.
 
-    1. Claude CLI de esta PC (2026-09-25: prioridad por pedido del usuario; con Gemini primero
-       cada verificacion esperaba a que fallaran sus tres modelos sin cuota). Usa los parrafos
-       de Wikipedia y busca en la web solo lo que no puede resolver. Usa la cuenta de Claude
-       del usuario. FACT_CHECK_CLAUDE=0 lo saca;
-    2. Gemini + Google Search (gratis mientras haya cuota);
-    3. Gemini sin busqueda + parrafos de Wikipedia;
-    4. Groq + Wikipedia (siempre hay cuota; mas flojo, a veces marca como falso algo cierto).
+    1. DeepSeek + Wikipedia (juez por API; prioridad por pedido del usuario). Sin busqueda
+       web: usa los parrafos de Wikipedia que ya trae el prompt. DEEPSEEK_API_KEY lo activa;
+    2. Claude CLI de esta PC. Usa los parrafos de Wikipedia y busca en la web solo lo que no
+       puede resolver. FACT_CHECK_CLAUDE=0 lo saca;
+    3. Gemini + Google Search (gratis mientras haya cuota);
+    4. Gemini sin busqueda + parrafos de Wikipedia;
+    5. Groq + Wikipedia (siempre hay cuota; mas flojo, a veces marca como falso algo cierto).
     """
     from functools import partial
     judges: List[Tuple[str, Callable, Any]] = []
     models = _gemini_models() if os.getenv("GEMINI_API_KEY") else []
+    if os.getenv("DEEPSEEK_API_KEY"):
+        judges.append(("deepseek+wikipedia", deepseek_judge, False))
     if claude_cli_enabled():
         judges.append(("claude-cli+web", claude_judge, "as_needed"))
     judges += [(f"{m}+google", partial(gemini_judge, model=m), True) for m in models]

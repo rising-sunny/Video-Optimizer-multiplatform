@@ -629,11 +629,19 @@ class ElJuezClaudeCLI(Base):
     def test_claude_is_the_first_judge_and_searches_only_as_needed(self):
         # 2026-09-25: con Gemini primero, cada verificacion esperaba a que fallaran sus modelos sin cuota.
         with mock.patch.dict(os.environ, {"GEMINI_API_KEY": "g", "GROQ_API_KEY": "k", "FACT_CHECK_CLAUDE": "1",
-                                          "FACT_CHECK_GEMINI_MODELS": "m1,m2"}):
+                                          "FACT_CHECK_GEMINI_MODELS": "m1,m2", "DEEPSEEK_API_KEY": ""}):
             judges = sfc.default_judges()
         self.assertEqual([n for n, _, _ in judges], ["claude-cli+web", "m1+google", "m2+google", "m1+wikipedia",
                                                      "m2+wikipedia", "groq+wikipedia"])
         self.assertEqual(judges[0][2], "as_needed")
+
+    def test_deepseek_is_the_first_judge_when_its_key_is_set(self):
+        with mock.patch.dict(os.environ, {"DEEPSEEK_API_KEY": "sk-test", "GEMINI_API_KEY": "g",
+                                          "GROQ_API_KEY": "k", "FACT_CHECK_CLAUDE": "1",
+                                          "FACT_CHECK_GEMINI_MODELS": "m1,m2"}):
+            judges = sfc.default_judges()
+        self.assertEqual([n for n, _, _ in judges][0], "deepseek+wikipedia")
+        self.assertEqual(judges[0][2], False)  # sin busqueda web: solo los parrafos de Wikipedia
         p = sfc.build_verify_prompt(["x"], "t", "EVIDENCE", grounded="as_needed")
         self.assertIn("Run a web search ONLY for a specific claim you cannot settle", p)
         self.assertNotIn("AND web search", p)
