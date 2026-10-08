@@ -14,6 +14,7 @@ def pilot_render_settings(config, profile, root):
         'dynamism': str(config.get('dynamism') or 'off').lower(),
         'blender_shots': bool(config.get('blender_shots', False)),
         'blender_quality': str(config.get('blender_quality') or 'normal').lower(),
+        'blender_environment': str(config.get('blender_environment') or 'auto').lower(),
         'transition_type': config.get('transition_type') or profile.get('transition_type', 'Fade Smooth'),
         'transition_duration': config.get('transition_duration', profile.get('transition_duration', 0.3)),
         'enable_transition_sfx': config.get('transition_sfx_enabled', True),

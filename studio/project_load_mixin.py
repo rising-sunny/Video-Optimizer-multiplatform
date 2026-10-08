@@ -344,6 +344,10 @@ class ProjectLoadMixin:
                 index = self.studio_tab.blender_quality_combo.findData(
                     str(config.get('blender_quality', 'normal') or 'normal'))
                 self.studio_tab.blender_quality_combo.setCurrentIndex(max(0, index))
+            if hasattr(self.studio_tab, 'blender_environment_combo'):
+                index = self.studio_tab.blender_environment_combo.findData(
+                    str(config.get('blender_environment', 'auto') or 'auto'))
+                self.studio_tab.blender_environment_combo.setCurrentIndex(max(0, index))
 
             if hasattr(self.studio_tab, 'transition_type_combo') and config.get('transition_type'):
                 transition_text = config.get('transition_type')

@@ -80,6 +80,8 @@ bing.html
 *.gif
 *.webp
 *.ico
+# Imagenes chicas de prueba (dominio publico) para las guardas de tests/
+!tests/fixtures/*.png
 # Allow small assets we explicitly want in git (whitelist as needed):
 !docs/**/*.png
 !assets/**/*.png

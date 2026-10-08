@@ -13,7 +13,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer
 
-from pipeline.segment_layouts import LAYOUT_LABELS, LAYOUT_VERSION
+from pipeline.segment_layouts import BLENDER_ENVIRONMENTS, LAYOUT_LABELS, LAYOUT_VERSION, normalize_layout
 
 
 class SegmentEditor(QWidget):
@@ -94,6 +94,8 @@ class SegmentEditor(QWidget):
                 'tag': self.layout_tag_edit.text().strip().upper(),
                 'locked': True,
             })
+            if choice == 'blender_3d':
+                plan['environment'] = self.layout_env_combo.currentData()
         if extra or 'extra_media' in plan:
             plan['extra_media'] = extra
         return plan
@@ -101,6 +103,7 @@ class SegmentEditor(QWidget):
     def _layout_choice_changed(self, *_args):
         fixed = self.layout_combo.currentData() != 'auto'
         self.layout_tag_edit.setEnabled(fixed)
+        self.layout_env_combo.setEnabled(self.layout_combo.currentData() == 'blender_3d')
         self._trigger_auto_save()
 
     def _refresh_layout_extra_label(self):
@@ -127,12 +130,19 @@ class SegmentEditor(QWidget):
 
     def _load_layout_plan(self, segment_data):
         plan = segment_data.get('layout_plan') or {}
+        layout = normalize_layout(plan.get('layout'))
         auto_label = "Automatica (segun el guion)"
         if plan and not plan.get('locked'):
-            auto_label = f"Automatica (ahora: {LAYOUT_LABELS.get(plan.get('layout'), 'pantalla completa')})"
+            now = LAYOUT_LABELS.get(layout, 'pantalla completa')
+            if layout == 'blender_3d' and plan.get('environment'):
+                now += f" - {BLENDER_ENVIRONMENTS.get(plan['environment'], plan['environment'])}"
+            auto_label = f"Automatica (ahora: {now})"
         self.layout_combo.setItemText(0, auto_label)
-        index = self.layout_combo.findData(plan.get('layout')) if plan.get('locked') else 0
+        index = self.layout_combo.findData(layout) if plan.get('locked') else 0
         self.layout_combo.setCurrentIndex(index if index >= 0 else 0)
+        env_index = self.layout_env_combo.findData(plan.get('environment') or 'auto')
+        self.layout_env_combo.setCurrentIndex(env_index if env_index >= 0 else 0)
+        self.layout_env_combo.setEnabled(bool(plan.get('locked')) and layout == 'blender_3d')
         self.layout_tag_edit.setText(str(plan.get('tag') or ''))
         self.layout_tag_edit.setEnabled(bool(plan.get('locked')))
         self._layout_extra_media = [str(p) for p in (plan.get('extra_media') or []) if p]
@@ -420,11 +430,20 @@ class SegmentEditor(QWidget):
         layout_row.addWidget(self.layout_combo, 1)
         layout_box.addLayout(layout_row)
 
+        env_row = QHBoxLayout()
+        self.layout_env_combo = QComboBox()
+        for value, label in BLENDER_ENVIRONMENTS.items():
+            self.layout_env_combo.addItem(label, value)
+        self.layout_env_combo.setToolTip("Ambiente de la toma 3D de esta escena (solo con 'Toma 3D').")
+        env_row.addWidget(QLabel("Ambiente 3D:"))
+        env_row.addWidget(self.layout_env_combo, 1)
+        layout_box.addLayout(env_row)
+
         tag_row = QHBoxLayout()
         self.layout_tag_edit = QLineEdit()
-        self.layout_tag_edit.setMaxLength(32)
-        self.layout_tag_edit.setPlaceholderText("Rotulo del retrato flotante (opcional)")
-        tag_row.addWidget(QLabel("Rotulo:"))
+        self.layout_tag_edit.setMaxLength(40)
+        self.layout_tag_edit.setPlaceholderText("Nombre del retrato flotante o titular del periodico (opcional)")
+        tag_row.addWidget(QLabel("Rotulo / titular:"))
         tag_row.addWidget(self.layout_tag_edit, 1)
         layout_box.addLayout(tag_row)
 
@@ -450,6 +469,7 @@ class SegmentEditor(QWidget):
         layout_box.addWidget(layout_info)
 
         self.layout_combo.currentIndexChanged.connect(self._layout_choice_changed)
+        self.layout_env_combo.currentIndexChanged.connect(self._trigger_auto_save)
         self.layout_tag_edit.textChanged.connect(self._trigger_auto_save)
         self.btn_layout_extra.clicked.connect(self._choose_layout_extra_media)
         self.btn_layout_extra_clear.clicked.connect(self._clear_layout_extra_media)
@@ -593,7 +613,7 @@ class SegmentEditor(QWidget):
             self.cinematic_camera_combo, self.cinematic_atmosphere_combo,
             self.cinematic_lighting_combo, self.cinematic_lens_combo,
             self.cinematic_intensity_spin, self.cinematic_lock_check,
-            self.layout_combo, self.layout_tag_edit,
+            self.layout_combo, self.layout_tag_edit, self.layout_env_combo,
         )
         for widget in cinematic_widgets:
             widget.blockSignals(True)
@@ -738,11 +758,11 @@ class SegmentEditor(QWidget):
         self.overlay_edit.clear()
         self.filename_edit.clear()
         self.hook_group.setVisible(False)
-        self.layout_combo.blockSignals(True)
-        self.layout_tag_edit.blockSignals(True)
+        for widget in (self.layout_combo, self.layout_tag_edit, self.layout_env_combo):
+            widget.blockSignals(True)
         self._load_layout_plan({})
-        self.layout_combo.blockSignals(False)
-        self.layout_tag_edit.blockSignals(False)
+        for widget in (self.layout_combo, self.layout_tag_edit, self.layout_env_combo):
+            widget.blockSignals(False)
 
         # Desbloquear señales
         self.start_spin.blockSignals(False)

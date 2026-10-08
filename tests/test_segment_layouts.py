@@ -37,6 +37,18 @@ class TestNameTag(unittest.TestCase):
                          "ARCHDUKE FRANZ FERDINAND")
         self.assertEqual(sl.extract_name_tag("Leonardo da Vinci painted it."), "LEONARDO DA VINCI")
 
+    def test_places_are_not_people(self):
+        """Visto en un short real: 'in Orange, New Jersey' salio rotulado NEW JERSEY."""
+        text = "In 1917, U.S. Radium in Orange, New Jersey, hired young women."
+        self.assertEqual(sl.extract_name_tag(text), "")
+        for text in ("They sailed from San Francisco at dawn.", "Troops landed at Pearl Harbor.",
+                     "The United States declared war.", "Llegaron desde Buenos Aires."):
+            self.assertEqual(sl.extract_name_tag(text), "", text)
+        self.assertEqual(sl.extract_name_tag("In 1925, Newark's county physician, Harrison Martland, proved it."),
+                         "HARRISON MARTLAND")
+        self.assertEqual(sl.extract_name_tag("Grace Fryer spent two years searching for a lawyer."),
+                         "GRACE FRYER")
+
     def test_rejects_what_is_not_a_name(self):
         for text in ("The Romans built it.", "World War began in Europe.",
                      "In June the city burned.", "nothing capitalized here", ""):
@@ -96,23 +108,45 @@ class TestPlanLayouts(unittest.TestCase):
         self.assertEqual(sb["segments"][4]["layout_plan"]["layout"], "triptych")
         self.assertEqual(sb["segments"][5]["layout_plan"]["extra_media"], ["a.png"])
 
-    def test_video_and_short_scenes_stay_full(self):
+    def test_short_scenes_stay_full(self):
         sb = _storyboard(self.TEXTS)
-        sb["segments"][2]["video_path"] = "clip.mp4"
         sb["segments"][3]["end"] = sb["segments"][3]["start"] + 1.0
         sl.plan_layouts(sb, level="high")
-        self.assertEqual(_layouts(sb)[2], "full")
         self.assertEqual(_layouts(sb)[3], "full")
+
+    def test_video_scenes_join_but_never_just_for_being_long(self):
+        """Un video entra en composiciones por su contenido; no por "plano largo",
+        porque ya se mueve solo."""
+        sb = _storyboard(self.TEXTS, dur=6.0)
+        sb["segments"][2]["video_path"] = "clip.mp4"           # comparacion
+        sb["segments"][4]["video_path"] = "otro.mp4"           # sin regla de contenido
+        sl.plan_layouts(sb, level="high")
+        self.assertEqual(_layouts(sb)[2], "split")
+        self.assertEqual(_layouts(sb)[4], "full")
+
+    def test_manual_3d_shot_uses_the_budget(self):
+        """Fijar la toma 3D a mano no puede sumar otra del planificador (dos tomas = minutos de mas)."""
+        sb = _storyboard(self.TEXTS)
+        sb["segments"][2]["layout_plan"] = {"layout": "blender_3d", "environment": "newspaper", "locked": True}
+        sl.plan_layouts(sb, level="high", blender_shots=1)
+        self.assertEqual(_layouts(sb).count("blender_3d"), 1)
+        self.assertEqual(_layouts(sb)[2], "blender_3d")
+
+    def test_old_projects_keep_their_3d_shot(self):
+        sb = _storyboard(self.TEXTS)
+        sb["segments"][3]["layout_plan"] = {"layout": "blender_desk", "locked": True}
+        sl.plan_layouts(sb, level="moderate")
+        self.assertEqual(_layouts(sb)[3], "blender_3d")
 
     def test_blender_goes_to_the_strong_moment(self):
         sb = _storyboard(self.TEXTS)
         sl.plan_layouts(sb, level="moderate", blender_shots=1)
         got = _layouts(sb)
-        self.assertEqual(got.count("blender_desk"), 1)
-        self.assertEqual(got[5], "blender_desk", "el climax se lleva la toma 3D")
+        self.assertEqual(got.count("blender_3d"), 1)
+        self.assertEqual(got[5], "blender_3d", "el climax se lleva la toma 3D")
         sb = _storyboard(self.TEXTS)
         sl.plan_layouts(sb, level="off", blender_shots=1)
-        self.assertNotIn("blender_desk", _layouts(sb))
+        self.assertNotIn("blender_3d", _layouts(sb))
 
 
 class TestResolveSources(unittest.TestCase):
@@ -151,10 +185,15 @@ class TestResolveSources(unittest.TestCase):
         self.assertTrue(all(s.get("detail") for s in clips[0]["layout_sources"]),
                         "sin vecinas, los paneles salen de detalles de la misma imagen")
 
-    def test_video_scene_gets_nothing(self):
-        clips = [{"filename": "a.mp4", "layout_plan": {"layout": "split"}}, {"filename": self.imgs[0]}]
+    def test_videos_are_scenes_and_panels(self):
+        clips = [{"filename": "a.mp4", "layout_plan": {"layout": "split"}},
+                 {"filename": "b.mp4"}, {"filename": self.imgs[0]}]
         sl.resolve_layout_sources(clips)
-        self.assertNotIn("layout_sources", clips[0])
+        self.assertEqual(clips[0]["layout_sources"][0]["path"], "b.mp4", "un video vecino es panel")
+        clips[2]["layout_plan"] = {"layout": "blender_3d"}
+        sl.resolve_layout_sources(clips)
+        self.assertNotIn("b.mp4", [s["path"] for s in clips[2]["layout_sources"]],
+                         "la toma 3D (mesa, tablero) solo carga fotos")
 
 
 class TestFrameFit(unittest.TestCase):
@@ -214,8 +253,7 @@ class TestLayoutGraphs(unittest.TestCase):
                                      size=size, fps=fps, temp_dir=self.tmp, index=1, tag=tag,
                                      main_size=(300, 200))
         cmd = [FFMPEG, "-v", "error"]
-        for path in spec["inputs"]:
-            cmd += ["-i", path]
+        cmd += sl.input_args(spec)
         cmd += ["-t", str(duration), "-filter_complex", spec["graph"], "-map", "[lay]",
                 "-f", "framemd5", "-"]
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
@@ -233,7 +271,7 @@ class TestLayoutGraphs(unittest.TestCase):
         spec = sl.build_layout_graph("punch_in", main=self.imgs[0], sources=[], duration=4.0,
                                      size=(216, 384), fps=15, temp_dir=self.tmp, main_size=(300, 200))
         out = os.path.join(self.tmp, "pk_%03d.png")
-        cmd = [FFMPEG, "-v", "error", "-y", "-i", spec["inputs"][0], "-t", "4",
+        cmd = [FFMPEG, "-v", "error", "-y"] + sl.input_args(spec) + ["-t", "4",
                "-filter_complex", spec["graph"], "-map", "[lay]", out]
         subprocess.run(cmd, check=True, capture_output=True, timeout=120)
         from PIL import Image
@@ -241,6 +279,74 @@ class TestLayoutGraphs(unittest.TestCase):
                  for k in range(60)]
         flashes = [k for k in range(1, 60) if means[k] - means[k - 1] > 25]
         self.assertGreaterEqual(len(flashes), 1, "sin cortes visibles: %s" % flashes)
+
+
+class TestEnvironmentChoice(unittest.TestCase):
+    def test_rules(self):
+        self.assertEqual(sl.choose_environment("anything", is_video=True), "crt_tv")
+        self.assertEqual(sl.choose_environment("The detective found a clue."), "corkboard")
+        self.assertEqual(sl.choose_environment("Nadie supo por que desaparecio."), "corkboard")
+        self.assertEqual(sl.choose_environment("The treaty was signed in Versailles."), "newspaper")
+        self.assertEqual(sl.choose_environment("Ships sailed across the sea."), "desk")
+
+    def test_manual_choice_wins(self):
+        self.assertEqual(sl.choose_environment("a clue", preferred="desk"), "desk")
+        self.assertEqual(sl.choose_environment("a clue", is_video=True, preferred="newspaper"), "newspaper")
+        self.assertEqual(sl.choose_environment("a clue", preferred="auto"), "corkboard")
+
+    def test_planner_stores_the_environment(self):
+        sb = _storyboard(TestPlanLayouts.TEXTS)
+        sb["segments"][5]["text"] = sb["segments"][5]["narration_text"] = "A secret meeting nobody solved."
+        sl.plan_layouts(sb, level="moderate", blender_shots=1)
+        plan = sb["segments"][5]["layout_plan"]
+        self.assertEqual((plan["layout"], plan["environment"]), ("blender_3d", "corkboard"))
+        sb = _storyboard(TestPlanLayouts.TEXTS)
+        sl.plan_layouts(sb, level="moderate", blender_shots=1, environment="newspaper")
+        self.assertEqual(sb["segments"][5]["layout_plan"]["environment"], "newspaper")
+
+
+@unittest.skipUnless(FFMPEG, "ffmpeg no disponible")
+class TestVideoInLayouts(unittest.TestCase):
+    """Videos como escena y como panel: duracion exacta y el video SIGUE moviendose
+    (un panel de video congelado fue lo primero que se vio en el demo)."""
+
+    @classmethod
+    def setUpClass(cls):
+        from PIL import Image
+        cls.tmp = tempfile.mkdtemp(prefix="video_layouts_")
+        cls.video = os.path.join(cls.tmp, "moving.mp4")
+        subprocess.run([FFMPEG, "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=320x240:r=25:d=6",
+                        "-c:v", "libx264", "-pix_fmt", "yuv420p", cls.video],
+                       check=True, capture_output=True, timeout=60)
+        cls.image = os.path.join(cls.tmp, "still.png")
+        Image.new("RGB", (300, 200), (150, 90, 40)).save(cls.image)
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.tmp, ignore_errors=True)
+
+    def _render(self, layout, main, sources, crop=None, duration=2.0, fps=15):
+        spec = sl.build_layout_graph(layout, main=main, sources=sources, duration=duration,
+                                     size=(216, 384), fps=fps, temp_dir=self.tmp, index=2,
+                                     main_size=(320, 240) if main.endswith(".mp4") else (300, 200))
+        graph = spec["graph"] + (f";[lay]{crop}[v]" if crop else ";[lay]null[v]")
+        cmd = [FFMPEG, "-v", "error"] + sl.input_args(spec) + [
+            "-t", str(duration), "-filter_complex", graph, "-map", "[v]", "-f", "framemd5", "-"]
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        self.assertEqual(proc.returncode, 0, f"{layout}: {proc.stderr[-400:]}")
+        hashes = [l.rsplit(",", 1)[-1].strip() for l in proc.stdout.splitlines() if l and not l.startswith("#")]
+        return hashes
+
+    def test_video_scene_layouts_render_exact_frames(self):
+        for layout, sources in (("split", [{"path": self.image}]), ("reveal", [{"path": self.image}]),
+                                ("triptych", [{"path": self.image}, {"path": self.video}]),
+                                ("punch_in", []), ("pip", [{"path": self.video, "detail": sl.DETAIL_CROPS[0]}])):
+            self.assertEqual(len(self._render(layout, self.video, sources)), 30, layout)
+
+    def test_video_panel_keeps_moving(self):
+        # Panel de abajo de una pantalla dividida (foto arriba, video abajo).
+        hashes = self._render("split", self.image, [{"path": self.video}], crop="crop=216:186:0:198")
+        self.assertGreater(len(set(hashes[10:])), 15, "el panel de video se quedo quieto")
 
 
 @unittest.skipUnless(FFMPEG, "ffmpeg no disponible")

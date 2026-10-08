@@ -556,6 +556,9 @@ class AutoVideoStudioTab(StudioUiSetupMixin, StudioVoiceMixin, StudioThumbnailIn
         if hasattr(self, 'blender_quality_combo'):
             self.blender_quality_combo.currentIndexChanged.connect(
                 lambda: self._trigger_config_auto_save("cambio de calidad 3D"))
+        if hasattr(self, 'blender_environment_combo'):
+            self.blender_environment_combo.currentIndexChanged.connect(
+                lambda: self._trigger_config_auto_save("cambio de ambiente 3D"))
 
         if hasattr(self, 'transition_type_combo'):
             self.transition_type_combo.currentIndexChanged.connect(
@@ -2524,6 +2527,8 @@ class AutoVideoStudioTab(StudioUiSetupMixin, StudioVoiceMixin, StudioThumbnailIn
                 self.blender_check.setChecked(False)
             if hasattr(self, 'blender_quality_combo'):
                 self.blender_quality_combo.setCurrentIndex(max(0, self.blender_quality_combo.findData('normal')))
+            if hasattr(self, 'blender_environment_combo'):
+                self.blender_environment_combo.setCurrentIndex(0)
             
             # Resetear tipo de transiciÃ³n a "ðŸŒ… Fade Suave" (Ã­ndice 1, que es el segundo item)
             if hasattr(self, 'transition_type_combo'):

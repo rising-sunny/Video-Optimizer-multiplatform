@@ -970,6 +970,10 @@ class StudioVideoAssemblyHandlers:
                 self.studio_tab.blender_quality_combo.currentData()
                 if hasattr(self.studio_tab, 'blender_quality_combo') else 'normal'
             ),
+            blender_environment=(
+                self.studio_tab.blender_environment_combo.currentData()
+                if hasattr(self.studio_tab, 'blender_environment_combo') else 'auto'
+            ),
             transition_type=self.studio_tab.transition_type_combo.currentText(),
             transition_duration=self.studio_tab.transition_duration_spin.value(),
             enable_transition_sfx=self.studio_tab.is_transition_sfx_enabled() if hasattr(self.studio_tab, "is_transition_sfx_enabled") else True,

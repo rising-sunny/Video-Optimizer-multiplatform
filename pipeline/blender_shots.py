@@ -73,19 +73,62 @@ def find_blender(env: Optional[Dict[str, str]] = None) -> Optional[str]:
     return max(candidates, key=_version_key) if candidates else None
 
 
+COMMON_MODULE = os.path.join(TEMPLATES_DIR, "_scene_common.py")
+_QUALITY_ORDER = ("draft", "normal", "high")
+
+ENVIRONMENTS = {
+    # s_per_frame en la UHD 630 a 1080x1920: medido en Borrador (mesa, tablero en
+    # Normal, TV y periodico) y estimado en el resto. El tablero necesita Normal
+    # como minimo: en Borrador el hilo fino sale serruchado.
+    "desk": {"template": "desk_photos.py", "min_quality": None,
+             "s_per_frame": {"draft": 1.6, "normal": 3.2, "high": 8.0}},
+    "corkboard": {"template": "corkboard.py", "min_quality": "normal",
+                  "overrides": {"samples": 8, "shadow_scale": 1.0},
+                  "s_per_frame": {"draft": 5.6, "normal": 5.6, "high": 11.0}},
+    "crt_tv": {"template": "crt_tv.py", "min_quality": None,
+               "s_per_frame": {"draft": 1.5, "normal": 3.0, "high": 7.5}},
+    "newspaper": {"template": "newspaper.py", "min_quality": None,
+                  "s_per_frame": {"draft": 2.5, "normal": 4.5, "high": 10.0}},
+}
+
+
+def normalize_environment(value: Any) -> str:
+    key = str(value or "").strip().lower()
+    return key if key in ENVIRONMENTS else "desk"
+
+
+def effective_quality(environment: str, quality: Any) -> str:
+    """La calidad pedida, subida al minimo del ambiente si hace falta."""
+    chosen = normalize_quality(quality)
+    minimum = ENVIRONMENTS[normalize_environment(environment)].get("min_quality")
+    if minimum and _QUALITY_ORDER.index(chosen) < _QUALITY_ORDER.index(minimum):
+        return minimum
+    return chosen
+
+
+def template_path(environment: str) -> str:
+    return os.path.join(TEMPLATES_DIR, ENVIRONMENTS[normalize_environment(environment)]["template"])
+
+
 def shot_frames(duration: float, fps: float) -> int:
     return max(2, int(round((float(duration) + TAIL_SECONDS) * float(fps))))
 
 
-def estimate_seconds(duration: float, fps: float, quality: str = DEFAULT_QUALITY) -> float:
-    spec = QUALITY_PRESETS[normalize_quality(quality)]
-    return COMPILE_SECONDS + shot_frames(duration, fps) * spec["s_per_frame"]
+def estimate_seconds(duration: float, fps: float, quality: str = DEFAULT_QUALITY,
+                     environment: str = "desk") -> float:
+    env = normalize_environment(environment)
+    rate = ENVIRONMENTS[env]["s_per_frame"][effective_quality(env, quality)]
+    return COMPILE_SECONDS + shot_frames(duration, fps) * rate
 
 
 def build_params(images: Sequence[str], duration: float, size: Sequence[int], fps: float,
-                 quality: str, out_dir: str, seed: int = 7) -> Dict[str, Any]:
-    spec = QUALITY_PRESETS[normalize_quality(quality)]
+                 quality: str, out_dir: str, seed: int = 7, environment: str = "desk") -> Dict[str, Any]:
+    env = normalize_environment(environment)
+    spec = dict(QUALITY_PRESETS[effective_quality(env, quality)])
+    for key, minimum in (ENVIRONMENTS[env].get("overrides") or {}).items():
+        spec[key] = max(spec[key], minimum)
     return {
+        "environment": env,
         "images": [os.path.abspath(str(p)) for p in images],
         "frames": shot_frames(duration, fps),
         "fps": int(round(float(fps))),
@@ -99,12 +142,13 @@ def build_params(images: Sequence[str], duration: float, size: Sequence[int], fp
     }
 
 
-def cache_key(params: Dict[str, Any], template: str = DESK_TEMPLATE) -> str:
-    """Cambia si cambian las imagenes (contenido via mtime/tamano), la toma o la plantilla."""
+def cache_key(params: Dict[str, Any], template: Optional[str] = None) -> str:
+    """Cambia si cambian los medios (via mtime/tamano), la toma, la plantilla o lo comun."""
+    template = template or template_path(params.get("environment", "desk"))
     digest = hashlib.sha1()
     stable = {k: v for k, v in params.items() if k != "out_dir"}
     digest.update(json.dumps(stable, sort_keys=True).encode("utf-8"))
-    for path in list(params.get("images") or []) + [template]:
+    for path in list(params.get("images") or []) + [template, COMMON_MODULE]:
         try:
             st = os.stat(path)
             digest.update(f"{path}|{st.st_size}|{int(st.st_mtime)}".encode("utf-8"))
@@ -113,7 +157,42 @@ def cache_key(params: Dict[str, Any], template: str = DESK_TEMPLATE) -> str:
     return digest.hexdigest()[:16]
 
 
-def render_desk_shot(
+def prepare_screen_video(video: str, duration: float, fps: float, cache_dir: str,
+                         ffmpeg_exe: Optional[str] = None) -> str:
+    """El video para la pantalla de la TV: solo el tramo con movimiento, al largo de
+    la toma y a `fps` (Blender lo reproduce cuadro a cuadro). Queda en cache."""
+    from pipeline import video_motion
+    ffmpeg_exe = ffmpeg_exe or shutil.which("ffmpeg") or "ffmpeg"
+    needed = shot_frames(duration, fps) / float(fps)
+    start, length, stretch = video_motion.input_window(video_motion.analyze(video, ffmpeg_exe), needed)
+    st = os.stat(video)
+    key = hashlib.sha1(repr((os.path.abspath(video), st.st_size, int(st.st_mtime), round(start, 3),
+                             round(length, 3), round(stretch, 4), fps)).encode("utf-8")).hexdigest()[:14]
+    os.makedirs(cache_dir, exist_ok=True)
+    out = os.path.join(cache_dir, f"screen_{key}.mp4")
+    if os.path.exists(out) and os.path.getsize(out) > 1000:
+        return out
+    rate = f"{float(fps):g}"
+    vf = f"fps={rate},scale='min(1280,iw)':-2"
+    if stretch > 1.001:
+        vf = (f"setpts={stretch:.6f}*PTS,minterpolate=fps={rate}:mi_mode=mci:mc_mode=aobmc:"
+              f"me_mode=bidir:vsbmc=1,{vf}")
+    staging = out + ".part.mp4"
+    proc = subprocess.run(
+        [ffmpeg_exe, "-y", "-v", "error", "-ss", f"{start:.3f}", "-t", f"{length:.3f}", "-i", video,
+         "-vf", vf, "-t", f"{needed:.3f}", "-an", "-c:v", "libx264", "-crf", "16", "-preset", "fast",
+         staging],
+        capture_output=True, text=True, timeout=600,
+        creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+    )
+    if proc.returncode != 0 or not os.path.exists(staging):
+        raise RuntimeError(f"no se pudo preparar el video de la pantalla: {(proc.stderr or '')[-200:]}")
+    os.replace(staging, out)
+    return out
+
+
+def render_shot(
+    environment: str,
     images: Sequence[str],
     *,
     duration: float,
@@ -127,12 +206,15 @@ def render_desk_shot(
     timeout_s: float = 3600,
     seed: int = 7,
 ) -> Dict[str, Any]:
-    """Renderiza 'fotos sobre la mesa' que termina en `images[0]`.
+    """Renderiza una toma 3D del `environment` (ver ENVIRONMENTS) con `images[0]` de protagonista.
 
-    Devuelve {'ok', 'path', 'seconds', 'cached', 'error'}. Nunca lanza: un
-    error vuelve con ok=False para que el ensamblaje siga con FFmpeg.
+    Devuelve {'ok', 'path', 'seconds', 'cached', 'error', 'quality'}. Nunca lanza:
+    un error vuelve con ok=False para que el ensamblaje siga con FFmpeg.
     """
-    result: Dict[str, Any] = {"ok": False, "path": None, "seconds": 0.0, "cached": False, "error": ""}
+    env = normalize_environment(environment)
+    quality = effective_quality(env, quality)
+    result: Dict[str, Any] = {"ok": False, "path": None, "seconds": 0.0, "cached": False,
+                              "error": "", "quality": quality}
     images = [str(p) for p in images if p and os.path.exists(str(p))]
     if not images:
         result["error"] = "sin imagenes para la toma"
@@ -145,27 +227,88 @@ def render_desk_shot(
     os.makedirs(cache_dir, exist_ok=True)
 
     work = tempfile.mkdtemp(prefix="blender_shot_")
-    params = build_params(images, duration, size, fps, quality, os.path.join(work, "frames"), seed)
+    params = build_params(images, duration, size, fps, quality, os.path.join(work, "frames"), seed, env)
     os.makedirs(params["out_dir"], exist_ok=True)
-    out_path = os.path.join(cache_dir, f"desk_{cache_key(params)}.mp4")
+    template = template_path(env)
+    out_path = os.path.join(cache_dir, f"{env}_{cache_key(params, template)}.mp4")
     if os.path.exists(out_path) and os.path.getsize(out_path) > 1000:
-        shutil.rmtree(work, ignore_errors=True)
-        result.update(ok=True, path=out_path, cached=True)
-        return result
+        # Tambien se revisa lo cacheado: una toma negra guardada antes de esta
+        # validacion se reusaria para siempre.
+        if not black_segments(out_path, ffmpeg_exe):
+            shutil.rmtree(work, ignore_errors=True)
+            result.update(ok=True, path=out_path, cached=True)
+            return result
+        log("      [3D] La toma del cache tiene cuadros negros: se vuelve a renderizar")
+        os.remove(out_path)
 
     params_path = os.path.join(work, "params.json")
     with open(params_path, "w", encoding="utf-8") as fh:
         json.dump(params, fh)
-    frames = params["frames"]
-    log(f"      [3D] Blender: {frames} cuadros, calidad {QUALITY_PRESETS[normalize_quality(quality)]['label']} "
-        f"(~{estimate_seconds(duration, fps, quality) / 60:.0f} min estimados)")
+    log(f"      [3D] Blender ({env}): {params['frames']} cuadros, calidad {QUALITY_PRESETS[quality]['label']} "
+        f"(~{estimate_seconds(duration, fps, quality, env) / 60:.0f} min estimados)")
+    t0 = time.time()
+    try:
+        for attempt in range(1, MAX_ATTEMPTS + 1):
+            shutil.rmtree(params["out_dir"], ignore_errors=True)
+            os.makedirs(params["out_dir"], exist_ok=True)
+            partial, error = _run_once(blender_exe, template, params_path, params, ffmpeg_exe,
+                                       work, timeout_s, log)
+            if partial is None:
+                result["error"] = error
+                return result
+            # La GPU integrada a veces falla A MITAD del render y Blender sigue
+            # guardando cuadros NEGROS sin avisar (visto el 2026-10-06: TV negra
+            # desde 0.5 s; la repeticion salio bien). Nunca entra al video ni al cache.
+            black = black_segments(partial, ffmpeg_exe)
+            if not black:
+                break
+            result["error"] = (f"Blender devolvio cuadros negros ({black[0][0]:.1f}s en adelante)"
+                               f"{', reintentando' if attempt < MAX_ATTEMPTS else ''}")
+            log(f"      [3D] {result['error']}")
+        else:
+            return result
+        staging = out_path + ".part"     # misma carpeta: el replace es atomico
+        shutil.copyfile(partial, staging)
+        os.replace(staging, out_path)
+        result.update(ok=True, path=out_path, seconds=round(time.time() - t0, 1), error="")
+        return result
+    except Exception as exc:
+        result["error"] = str(exc)
+        return result
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
 
+
+MAX_ATTEMPTS = 2
+_BLACK_RE = re.compile(r"black_start:\s*([0-9.]+)\s+black_end:\s*([0-9.]+)")
+
+
+def parse_black_segments(blackdetect_log: str) -> List[tuple]:
+    """[(inicio, fin)] de la salida de `blackdetect`."""
+    return [(float(a), float(b)) for a, b in _BLACK_RE.findall(str(blackdetect_log or ""))]
+
+
+def black_segments(video: str, ffmpeg_exe: Optional[str] = None) -> List[tuple]:
+    """Tramos negros de >=0.2 s (un cuadro es negro si el 98% de sus pixeles lo son:
+    el cuarto oscuro de la TV no cuenta, porque la pantalla esta encendida)."""
+    proc = subprocess.run(
+        [ffmpeg_exe or shutil.which("ffmpeg") or "ffmpeg", "-hide_banner", "-nostats", "-i", video,
+         "-vf", "blackdetect=d=0.2:pic_th=0.98:pix_th=0.10", "-an", "-f", "null", "-"],
+        capture_output=True, text=True, timeout=300,
+        creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+    )
+    return parse_black_segments(proc.stderr)
+
+
+def _run_once(blender_exe, template, params_path, params, ffmpeg_exe, work, timeout_s, log):
+    """Un render de Blender + encode a mp4. Devuelve (ruta, '') o (None, error)."""
+    frames = params["frames"]
     t0 = time.time()
     proc = None
     watchdog = None
     try:
         proc = subprocess.Popen(
-            [blender_exe, "-b", "--factory-startup", "-P", DESK_TEMPLATE, "--", params_path],
+            [blender_exe, "-b", "--factory-startup", "-P", template, "--", params_path],
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8",
             errors="replace", creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
         )
@@ -173,9 +316,11 @@ def render_desk_shot(
         watchdog = threading.Timer(timeout_s, proc.kill)
         watchdog.daemon = True
         watchdog.start()
-        saved, tail, t_first = 0, [], None
+        saved, tail, t_first, finished = 0, [], None, False
         for line in proc.stdout:
             tail = (tail + [line.rstrip()])[-25:]
+            if line.startswith("RENDER_TIME"):
+                finished = True
             if "Saved:" in line:
                 saved += 1
                 if saved == 1:
@@ -188,16 +333,20 @@ def render_desk_shot(
                     log(f"      [3D] {saved}/{frames} cuadros, faltan ~{rate * (frames - saved) / 60:.1f} min")
         proc.wait(timeout=60)
         if time.time() - t0 >= timeout_s:
-            result["error"] = f"Blender supero {timeout_s / 60:.0f} min"
-            return result
+            return None, f"Blender supero {timeout_s / 60:.0f} min"
         rendered = sorted(glob.glob(os.path.join(params["out_dir"], "f_*.png")))
-        if proc.returncode != 0 or len(rendered) < frames:
+        # EEVEE en segundo plano a veces se cae AL CERRAR (EXCEPTION_ACCESS_VIOLATION
+        # con drivers Intel) despues de guardar todo: con los cuadros completos y el
+        # RENDER_TIME de la plantilla, la toma esta bien y no se tiran minutos.
+        crashed_on_exit = proc.returncode != 0 and finished and len(rendered) >= frames
+        if (proc.returncode != 0 and not crashed_on_exit) or len(rendered) < frames:
             detail = next((ln for ln in reversed(tail) if "Error" in ln or "Traceback" in ln), tail[-1] if tail else "")
-            result["error"] = f"Blender termino con {len(rendered)}/{frames} cuadros: {detail[:200]}"
-            return result
+            return None, f"Blender termino con {len(rendered)}/{frames} cuadros: {detail[:200]}"
+        if crashed_on_exit:
+            log("      [3D] Blender se cerro con error despues de terminar; los cuadros estan completos")
 
-        # Se codifica a un temporal y se renombra al final: un corte a mitad del
-        # encode dejaria un mp4 parcial que el cache reusaria para siempre.
+        # Se codifica a un temporal; el que llama lo copia al cache recien validado
+        # (un mp4 parcial o con cuadros negros no puede quedar para siempre).
         partial = os.path.join(work, "shot.mp4")
         enc = subprocess.run(
             [ffmpeg_exe, "-y", "-v", "error", "-framerate", str(params["fps"]),
@@ -208,19 +357,15 @@ def render_desk_shot(
             creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
         )
         if enc.returncode != 0 or not os.path.exists(partial):
-            result["error"] = f"no se pudo codificar la toma: {(enc.stderr or '')[-200:]}"
-            return result
-        staging = out_path + ".part"     # misma carpeta: el replace es atomico
-        shutil.copyfile(partial, staging)
-        os.replace(staging, out_path)
-        result.update(ok=True, path=out_path, seconds=round(time.time() - t0, 1))
-        return result
-    except Exception as exc:
-        result["error"] = str(exc)
-        return result
+            return None, f"no se pudo codificar la toma: {(enc.stderr or '')[-200:]}"
+        return partial, ""
     finally:
         if watchdog is not None:
             watchdog.cancel()
         if proc is not None and proc.poll() is None:
             proc.kill()
-        shutil.rmtree(work, ignore_errors=True)
+
+
+def render_desk_shot(images: Sequence[str], **kwargs: Any) -> Dict[str, Any]:
+    """La mesa con fotos (compatibilidad con el nombre original)."""
+    return render_shot("desk", images, **kwargs)

@@ -34,6 +34,8 @@ class ProjectSaveMixin:
             'blender_shots': bool(tab.blender_check.isChecked()) if hasattr(tab, 'blender_check') else False,
             'blender_quality': (tab.blender_quality_combo.currentData()
                                 if hasattr(tab, 'blender_quality_combo') else 'normal'),
+            'blender_environment': (tab.blender_environment_combo.currentData()
+                                    if hasattr(tab, 'blender_environment_combo') else 'auto'),
         }
 
     def save_project(self):

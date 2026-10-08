@@ -88,13 +88,21 @@ Entry point: `daily_short_pipeline.py` → función `run_pipeline(...)`.
 Flags útiles: `--count N`, `--voice en-US-GuyNeural`, `--image-provider flux_dev`
 (calidad, ~$0.025/img) | `flux_schnell` (rápido) | `auto`, `--style Photorealism`,
 `--upload` (¡solo si te lo piden!), `--privacy unlisted|public`.
+Composición (§6c): `--dynamism off|moderate|high`, `--blender`, `--blender-quality draft|normal|high`,
+`--blender-env auto|desk|corkboard|crt_tv|newspaper`. Por defecto, el ensamblaje de siempre.
 
 **Programático (agente):**
 ```python
 from daily_short_pipeline import run_pipeline
-res = run_pipeline(topic="TEMA", bgm_path=r"C:\ruta.mp3", image_provider="flux_dev")
+res = run_pipeline(topic="TEMA", bgm_path=r"C:\ruta.mp3", image_provider="flux_dev",
+                   assembly_options=dict(dynamism="high", blender_shots=True))  # opcional
 # res: {video_path, thumbnail_path, metadata, output_dir}. upload=False por defecto.
 ```
+**Música propia en un Short de más de 60 s:** el ensamblador trata la pista manual sin metadata
+como si fuera de Jamendo y **la saca en silencio** (solo un `[WARN]` en el log) salvo que el
+archivo empiece con `local_`. Para la Biblioteca de Audio de YouTube (`catarsis_music/`) pasá
+`assembly_options=dict(manual_bgm_metadata={"source": "local", "license_code": "LOCAL", "title": ...})`
+y confirmá en el QA "[OK] Ducking aplicado" (no "[--] sin musica de fondo").
 El pipeline: elige/usa tema → guión (Groq, con reglas del Bible) → TTS → imágenes IA →
 ensamblaje FFmpeg + subtítulos → metadata (Short) + thumbnail. Deja todo en `output_dir`.
 La salida por defecto va a `daily_shorts/<fecha>/` (junction a Drive).
@@ -232,16 +240,31 @@ Ahora el Studio tiene **Dinamismo** (Apagado / Moderado / Alto) y **Tomas 3D con
   medio va sobre un fondo de sí mismo desenfocado; si difiere poco, se recorta.
 - **Timeline:** grupo "Composición de la escena" para fijar el tipo, editar el rótulo y elegir
   una imagen extra. "Automática" muestra qué eligió el planificador.
-- **Blender** (`blender_shots.py` + `blender_templates/desk_photos.py`): fotos de la escena y
-  sus vecinas sobre una mesa, cámara que baja hasta la protagonista, con luz, sombras y foco.
+- **Videos** (escenas con `video_path`) también entran: pueden ser la escena o un panel
+  (foto + video, tríptico mixto), el punch-in corta dentro del video en curso y el retrato
+  flotante toma un cuadro del video. No reciben composición "por plano largo": ya se mueven.
+- **Video congelado** (`video_motion.py`, siempre): `freezedetect` encuentra cuadros repetidos
+  y se usa solo el tramo con movimiento, estirado con interpolación si no alcanza. Caso real:
+  el avión de "El triángulo de las Bermudas" se movía 2.44 s y quedaba quieto hasta los 10.64 s.
+- **Blender, 4 ambientes** (`blender_shots.py` + `blender_templates/`, piezas comunes en
+  `_scene_common.py`): **mesa con fotos**, **tablero de evidencias** (corcho, chinches, hilo
+  rojo trenzado), **TV de tubo** (reproduce el video de la escena) y **periódico que gira**
+  (`front_page.py`: cabecera = nombre del canal, titular = rótulo del timeline o título del
+  video, fecha del guion, columnas con la narración real). Automático: video → TV; misterio o
+  crimen → tablero; anuncio o noticia → periódico; resto → mesa. Se elige en el Studio
+  ("Ambiente 3D") o por escena en el timeline.
   Una toma por short (dos en largos), en el clímax. Corre `blender -b` en segundo plano; el mp4
   entra como un video más y **queda en caché** (`generated_media/blender_shots/`), así que
   re-ensamblar no re-renderiza. Si Blender no está o falla, la escena cae a punch-in.
-  En esta PC (UHD 630, sin GPU dedicada) cuestan las **muestras**, no la resolución: Borrador
-  ~1.6 s/cuadro (toma de 4 s ≈ 3.5 min), Normal ~3 s, Alta ~8 s. `BLENDER_PATH` en `.env`
-  si no está en `C:\Program Files\Blender Foundation`.
-- El QA del render suma `Composicion`, `Sin barras negras` y `Tomas 3D`; una composición que
-  falla sale a pantalla completa (no en negro) y figura como `[FAIL]`.
+  En esta PC (UHD 630, sin GPU dedicada) cuestan las **muestras**, no la resolución. Medido,
+  3.5 s de toma: mesa ~3 min (Borrador), TV ~2.7, periódico ~4.4, **tablero ~10 min** (usa
+  Normal como mínimo: en Borrador el hilo sale serruchado). `BLENDER_PATH` en `.env` si no
+  está en `C:\Program Files\Blender Foundation`.
+  EEVEE a veces se cae **al cerrar** (`EXCEPTION_ACCESS_VIOLATION`) con los cuadros ya
+  guardados: si están todos y la plantilla imprimió `RENDER_TIME`, la toma se acepta.
+- El QA del render suma `Composicion`, `Sin barras negras`, `Tomas 3D` (con su ambiente) y
+  `Video congelado corregido`; una composición que falla sale a pantalla completa (no en
+  negro) y figura como `[FAIL]`.
 
 ---
 
@@ -298,7 +321,9 @@ concreta + sujeto nombrado**, duración corta. Ej: "72 Seconds: The Wow! Signal"
 | `thumbnail_research.py` | Miniaturas de la competencia → acento, brillo y texto del super prompt |
 | `video_opening.py` | Arranque del video: sin placa, voz en 0 s, acercamiento, primer plano ≥1.8 s y texto de gancho (ASS) |
 | `pipeline/segment_layouts.py` | Composición por escena (dividida, retrato, punch-in, reveal, tríptico), sus filtergraphs y el encaje sin barras negras |
-| `pipeline/blender_shots.py` + `pipeline/blender_templates/` | Tomas 3D opcionales con Blender en segundo plano, con caché y caída a FFmpeg |
+| `pipeline/blender_shots.py` + `pipeline/blender_templates/` | Tomas 3D opcionales con Blender (mesa, tablero, TV, periódico), con caché y caída a FFmpeg |
+| `pipeline/front_page.py` | Portada del periódico 3D (cabecera del canal, titular, fecha y narración real) |
+| `pipeline/video_motion.py` | Tramo con movimiento de un video (detecta cuadros congelados con `freezedetect`) |
 | `thumbnail_typography.py` + `gemini_vision.py` | Plan tipográfico medido (tamaño, peso, color, contorno, zona) y revisión con visión de la miniatura elegida |
 | `facebook_metadata.py` | Título, arranque de la descripción y hashtags de Facebook e Instagram con la investigación de YouTube |
 | `tiktok_uploader.py` | Borrador a la bandeja de TikTok (sandbox, `video.upload`); `--setup` guarda credenciales y conecta; `--auth` reutiliza las guardadas; `--check`, `--upload` |
@@ -325,6 +350,57 @@ concreta + sujeto nombrado**, duración corta. Ej: "72 Seconds: The Wow! Signal"
 
 ## Changelog
 
+- **2026-10-06e** — **Prueba de fuego: un Short real con dinamismo y Blender** ("The Radium Girls",
+  Stunning Facts of History, 73.5 s, 9 escenas con fotos reales de dominio público de Wikimedia
+  Commons; no se subió).
+  - **Bug:** el rótulo del retrato flotante salía "NEW JERSEY" (tomaba el lugar por un nombre).
+    `extract_name_tag` ahora descarta palabras de lugar y lo que viene después de una preposición
+    de lugar ("in Orange, New Jersey"), sin perder "In June 1914, Archduke…".
+  - **Bug:** una toma 3D fijada a mano no contaba en el tope de Moderado/Alto y el planificador
+    agregaba composiciones de más. Ahora resta del presupuesto.
+  - `run_pipeline(assembly_options=...)` y flags `--dynamism/--blender/--blender-quality/--blender-env` (§3).
+  - **Trampa de la música en Shorts >60 s** documentada en §3 (pista local sin metadata = se saca).
+  - Medido: el periódico que gira, 8.7 s en Borrador = 9.3 min de Blender la primera vez; del caché
+    al instante. El retrato de "Mollie Maggia" cayó bien a punch-in (la foto era una máquina).
+  - Guardas: tests de lugares y del presupuesto 3D en `tests/test_segment_layouts.py`.
+- **2026-10-06d** — **El retrato flotante se centra en la cara** (`pipeline/face_focus.py`).
+  - **Bug (reportado por el usuario):** el círculo recortaba a ciegas (arriba al centro); con el
+    clip del oficial la cara estaba a la izquierda y el círculo mostraba el hombro.
+  - Ahora, si la escena nombra a una persona (o tiene rótulo), el círculo es un cuadrado
+    centrado en la cara más grande (clasificadores Haar de OpenCV, de frente y de perfil, local).
+    Sin una cara clara, la escena va como **punch-in** y el QA lo dice. Probado en material
+    real: encuentra al oficial, a Princip, al archiduque; no inventa caras en la ilustración del
+    Petit Journal, la trinchera ni la artillería.
+  - **Dependencia nueva: `opencv-python-headless==4.10.0.84`** (en los dos requirements). La 5.x
+    quitó los Haar y además **pip subió numpy a 2.4.6** sin avisar (el proyecto fija 1.26.4):
+    se volvió a 1.26.4. Instalar siempre con el pin de numpy en el mismo comando.
+  - `cv2.imread` no abre rutas con tildes en Windows: se lee con `np.fromfile` + `cv2.imdecode`.
+  - Guardas: `tests/test_face_focus.py` (6), con una foto de Princip de 1914 (dominio público)
+    en `tests/fixtures/` (`.gitignore` tiene una excepción solo para esa carpeta). Suite: 1273 OK.
+- **2026-10-06c** — **Videos en las composiciones, video congelado corregido y 3 ambientes 3D más** (§6c).
+  - **Bug encontrado en material real:** clips de proyectos con el último tramo congelado (el avión
+    de las Bermudas: 2.44 s de movimiento y 8 s de foto quieta; otro short, ~1 s). Se veían como
+    una foto en el video final, sin aviso. `video_motion.analyze()` + `input_window()`; el QA lo
+    reporta. Guarda: `tests/test_video_motion.py` (verificada contra el comportamiento viejo).
+  - Composiciones con video como escena o panel (`build_layout_graph(video_windows=...)`; los
+    `inputs` ahora son listas de argumentos `-ss/-t/-i`, ver `input_args`).
+  - Layout `blender_desk` renombrado a `blender_3d` + `environment`; los proyectos viejos se
+    leen igual (`normalize_layout`). Studio: combo "Ambiente 3D"; timeline: "Ambiente 3D" y
+    "Rótulo / titular". Proyecto: `blender_environment`.
+  - Plantillas nuevas `corkboard.py`, `crt_tv.py`, `newspaper.py`; `desk_photos.py` pasa a usar
+    `_scene_common.py`. Calidad mínima por ambiente (`effective_quality`). Gotchas de Blender
+    medidos: `primitive_grid_add` trae el UV invertido; un `SIMPLE_DEFORM 'BEND'` sobre la hoja
+    la tapaba; las luces SPOT usan `shadow_soft_size` (no `size`); con la cámara mirando desde
+    +Y, "arriba" del cuadro es -Y.
+  - **Bug encontrado al probar: la GPU integrada falla A MITAD del render y Blender sigue
+    guardando cuadros NEGROS sin avisar** (la TV salió negra desde 0.5 s; repetirla salió bien).
+    `render_shot` valida cada toma con `blackdetect` antes de aceptarla, reintenta una vez y si
+    sigue negra la escena cae a punch-in; nunca entra al caché, y lo cacheado también se
+    revisa. Lo detectó el QA de video congelado ("video casi quieto"): dejarlo prendido para
+    las tomas 3D es a propósito.
+  - Guardas: `test_video_motion` (5), `test_front_page` (6), `test_segment_layouts` (26),
+    `test_blender_shots` (20; con un Blender falso para caída al cerrar y cuadros negros, y
+    renders reales de los 4 ambientes con `RUN_BLENDER_TESTS=1`). Suite: 1267 OK.
 - **2026-10-06b** — **Composición por escena, sin barras negras y tomas 3D con Blender** (detalle en §6c).
   - Nuevos: `pipeline/segment_layouts.py` (planificador + filtergraphs + encaje),
     `pipeline/blender_shots.py`, `pipeline/blender_templates/desk_photos.py`. Studio: fila

@@ -88,8 +88,130 @@ class TestParamsAndCache(unittest.TestCase):
         self.assertFalse(no_blender["ok"])
         self.assertIn("BLENDER_PATH", no_blender["error"])
 
-    def test_template_is_valid_python(self):
-        py_compile.compile(bs.DESK_TEMPLATE, doraise=True)
+    def test_templates_are_valid_python(self):
+        for env in bs.ENVIRONMENTS:
+            py_compile.compile(bs.template_path(env), doraise=True)
+        py_compile.compile(bs.COMMON_MODULE, doraise=True)
+
+    def test_corkboard_never_renders_in_draft(self):
+        """En Borrador el hilo fino del tablero sale serruchado: sube a Normal."""
+        self.assertEqual(bs.effective_quality("corkboard", "draft"), "normal")
+        self.assertEqual(bs.effective_quality("corkboard", "high"), "high")
+        self.assertEqual(bs.effective_quality("desk", "draft"), "draft")
+        params = bs.build_params([self.img], 3.0, (1080, 1920), 30, "draft", self.tmp, environment="corkboard")
+        self.assertGreaterEqual(params["samples"], 8)
+        self.assertEqual(params["shadow_scale"], 1.0)
+
+    def test_cache_key_depends_on_environment(self):
+        keys = {bs.cache_key(bs.build_params([self.img], 3.0, (1080, 1920), 30, "normal", self.tmp,
+                                             environment=env)) for env in bs.ENVIRONMENTS}
+        self.assertEqual(len(keys), len(bs.ENVIRONMENTS))
+
+
+@unittest.skipUnless(shutil.which("ffmpeg"), "ffmpeg no disponible")
+class TestScreenVideo(unittest.TestCase):
+    """La TV reproduce el video cuadro a cuadro: tiene que llegar sin el tramo congelado,
+    del largo de la toma, y quedar en cache (si se re-codifica, la toma se re-renderiza)."""
+
+    def test_moving_part_stretched_and_cached(self):
+        tmp = tempfile.mkdtemp(prefix="screen_")
+        self.addCleanup(shutil.rmtree, tmp, True)
+        clip = os.path.join(tmp, "frozen.mp4")
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=320x240:r=25:d=1.5",
+                        "-vf", "tpad=stop_mode=clone:stop_duration=4", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+                        clip], check=True, capture_output=True, timeout=60)
+        out = bs.prepare_screen_video(clip, 3.0, 30, tmp)
+        dur = float(subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of",
+                                    "csv=p=0", out], capture_output=True, text=True).stdout)
+        self.assertAlmostEqual(dur, bs.shot_frames(3.0, 30) / 30.0, delta=0.15)
+        log = subprocess.run(["ffmpeg", "-hide_banner", "-i", out, "-vf", "freezedetect=n=0.003:d=0.5",
+                              "-f", "null", "-"], capture_output=True, text=True).stderr
+        self.assertNotIn("freeze_start", log, "la pantalla de la TV se congelaria")
+        mtime = os.path.getmtime(out)
+        time.sleep(1.1)
+        self.assertEqual(bs.prepare_screen_video(clip, 3.0, 30, tmp), out)
+        self.assertEqual(os.path.getmtime(out), mtime)
+
+
+@unittest.skipUnless(os.name == "nt" and shutil.which("ffmpeg"), "usa un .bat como Blender falso")
+class TestBlenderCrashOnExit(unittest.TestCase):
+    """Visto el 2026-10-06: EEVEE en segundo plano se cayo con EXCEPTION_ACCESS_VIOLATION
+    AL CERRAR, con todos los cuadros ya guardados. Tirar esa toma costaba minutos."""
+
+    FAKE = r'''
+import json, os, sys
+params = json.load(open(sys.argv[-1], encoding="utf-8"))
+from PIL import Image
+# FAKE_BLACK_ONCE=<archivo>: el primer intento sale negro (la GPU que falla a mitad).
+once = os.environ.get("FAKE_BLACK_ONCE")
+black = os.environ.get("FAKE_BLACK") == "1" or bool(once and not os.path.exists(once))
+if once and not os.path.exists(once):
+    open(once, "w").close()
+for k in range(1, int(params["frames"]) + 1 - int(os.environ.get("FAKE_MISSING", "0"))):
+    path = os.path.join(params["out_dir"], "f_%04d.png" % k)
+    Image.new("RGB", (64, 112), (0, 0, 0) if black else (20 * k, 40, 60)).save(path)
+    print("Saved: '%s'" % path, flush=True)
+if os.environ.get("FAKE_FINISH") == "1":
+    print("RENDER_TIME 1.0", flush=True)
+'''
+
+    def setUp(self):
+        import sys
+        self.tmp = tempfile.mkdtemp(prefix="fake_blender_")
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        script = os.path.join(self.tmp, "fake_blender.py")
+        with open(script, "w", encoding="utf-8") as fh:
+            fh.write(self.FAKE)
+        self.exe = os.path.join(self.tmp, "blender.bat")
+        with open(self.exe, "w", encoding="utf-8") as fh:
+            fh.write(f'@echo off\r\n"{sys.executable}" "{script}" %*\r\nexit /b 3\r\n')
+        self.img = os.path.join(self.tmp, "a.png")
+        from PIL import Image
+        Image.new("RGB", (40, 60), (100, 100, 100)).save(self.img)
+
+    def _render(self, **env):
+        with mock.patch.dict(os.environ, env):
+            return bs.render_shot("desk", [self.img], duration=0.0, size=(64, 112), fps=5,
+                                  cache_dir=os.path.join(self.tmp, "cache"), quality="draft",
+                                  blender_exe=self.exe, log=lambda *_: None)
+
+    def test_crash_after_finishing_keeps_the_shot(self):
+        result = self._render(FAKE_FINISH="1", FAKE_MISSING="0")
+        self.assertTrue(result["ok"], result["error"])
+
+    def test_crash_before_finishing_is_an_error(self):
+        self.assertFalse(self._render(FAKE_FINISH="0", FAKE_MISSING="0")["ok"])
+        self.assertFalse(self._render(FAKE_FINISH="1", FAKE_MISSING="1")["ok"], "falta un cuadro")
+
+    def test_black_frames_are_retried(self):
+        """Visto el 2026-10-06: la TV salio negra desde 0.5 s (la GPU fallo a mitad del
+        render) y llego al video; repetirlo salio bien."""
+        flag = os.path.join(self.tmp, "first_attempt_done")
+        result = self._render(FAKE_FINISH="1", FAKE_MISSING="0", FAKE_BLACK_ONCE=flag, FAKE_BLACK="0")
+        self.assertTrue(result["ok"], result["error"])
+        self.assertTrue(os.path.exists(flag), "no hubo primer intento negro")
+        self.assertEqual(bs.black_segments(result["path"]), [])
+
+    def test_always_black_fails_and_never_reaches_the_cache(self):
+        result = self._render(FAKE_FINISH="1", FAKE_MISSING="0", FAKE_BLACK="1")
+        self.assertFalse(result["ok"])
+        self.assertIn("negros", result["error"])
+        self.assertEqual([f for f in os.listdir(os.path.join(self.tmp, "cache")) if f.endswith(".mp4")], [])
+
+    def test_black_shot_in_the_cache_is_rendered_again(self):
+        good = self._render(FAKE_FINISH="1", FAKE_MISSING="0", FAKE_BLACK="0")
+        self.assertTrue(good["ok"])
+        # Simula una toma negra cacheada antes de que existiera la validacion.
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "color=c=black:s=64x112:r=5:d=2",
+                        "-c:v", "libx264", "-pix_fmt", "yuv420p", good["path"]], check=True, capture_output=True)
+        again = self._render(FAKE_FINISH="1", FAKE_MISSING="0", FAKE_BLACK="0")
+        self.assertTrue(again["ok"])
+        self.assertFalse(again["cached"], "reuso una toma negra del cache")
+        self.assertEqual(bs.black_segments(again["path"]), [])
+
+    def test_parse_black_segments(self):
+        log = "[blackdetect @ 0x1] black_start:0.466667 black_end:4.366667 black_duration:3.9"
+        self.assertEqual(bs.parse_black_segments(log), [(0.466667, 4.366667)])
 
 
 class TestAssemblerFallsBackWithoutBlender(unittest.TestCase):
@@ -116,6 +238,24 @@ class TestAssemblerFallsBackWithoutBlender(unittest.TestCase):
         problemas = AutoVideoGenerator.log_audio_qa(gen)
         self.assertTrue(any("toma 3D" in p for p in problemas))
         self.assertTrue(any("Toma 3D -> punch-in" in ln for ln in lineas))
+
+
+@unittest.skipUnless(os.environ.get("RUN_BLENDER_TESTS") == "1" and bs.find_blender(),
+                     "render real de Blender: RUN_BLENDER_TESTS=1 (tarda ~2 min)")
+class TestEveryEnvironmentRenders(unittest.TestCase):
+    def test_each_template_produces_its_frames(self):
+        from PIL import Image
+        tmp = tempfile.mkdtemp(prefix="blender_envs_")
+        self.addCleanup(shutil.rmtree, tmp, True)
+        imgs = []
+        for i, color in enumerate(((180, 120, 60), (60, 120, 180), (90, 160, 90))):
+            path = os.path.join(tmp, f"p{i}.png")
+            Image.new("RGB", (120, 160), color).save(path)
+            imgs.append(path)
+        for env in bs.ENVIRONMENTS:
+            result = bs.render_shot(env, imgs, duration=0.0, size=(108, 192), fps=5,
+                                    cache_dir=tmp, quality="draft", log=lambda *_: None)
+            self.assertTrue(result["ok"], f"{env}: {result['error']}")
 
 
 @unittest.skipUnless(os.environ.get("RUN_BLENDER_TESTS") == "1" and bs.find_blender(),

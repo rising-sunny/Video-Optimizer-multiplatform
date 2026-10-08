@@ -1938,9 +1938,14 @@ def run_pipeline(topic: str = None, voice_id: str = None, upload: bool = False,
                  fal_video_model: str = "kling",
                  visual_style: str = None,
                  subtitle_style: str = None, transition_type: str = None,
-                 transition_duration: float = None) -> dict:
+                 transition_duration: float = None,
+                 assembly_options: dict = None) -> dict:
     """
     Ejecuta el pipeline completo para generar un Short.
+
+    `assembly_options` va directo a `assemble_video_from_storyboard` (p. ej.
+    dynamism='high', blender_shots=True, blender_quality='normal',
+    blender_environment='newspaper'). Por defecto, el ensamblaje de siempre.
 
     Returns:
         dict con video_path, thumbnail_path, metadata, output_dir
@@ -2018,7 +2023,8 @@ def run_pipeline(topic: str = None, voice_id: str = None, upload: bool = False,
                                visual_style=visual_style,
                                subtitle_style=subtitle_style,
                                transition_type=transition_type,
-                               transition_duration=transition_duration)
+                               transition_duration=transition_duration,
+                               assembly_options=assembly_options)
     if not video_path:
         log("Pipeline abortado: no se pudo ensamblar video", "ERROR")
         return None
@@ -2185,6 +2191,13 @@ def main():
                         help="Tipo de transición (ej: 'Fade Smooth', 'Circle Open', 'Squeeze H', etc.)")
     parser.add_argument("--transition-duration", type=float, default=None,
                         help="Duración de transición en segundos (0.1-2.0)")
+    parser.add_argument("--dynamism", choices=["off", "moderate", "high"], default="off",
+                        help="Composicion por escena (pantalla dividida, retrato, punch-in...)")
+    parser.add_argument("--blender", action="store_true",
+                        help="Toma 3D con Blender en el momento fuerte (tarda minutos)")
+    parser.add_argument("--blender-quality", choices=["draft", "normal", "high"], default="normal")
+    parser.add_argument("--blender-env", choices=["auto", "desk", "corkboard", "crt_tv", "newspaper"],
+                        default="auto", help="Ambiente de la toma 3D (auto = segun la escena)")
     parser.add_argument("--list-voices", action="store_true",
                         help="Listar voces TTS disponibles y salir")
     parser.add_argument("--list-subtitle-styles", action="store_true",
@@ -2259,7 +2272,11 @@ def main():
                               visual_style=args.style,
                               subtitle_style=args.subtitle_style,
                               transition_type=args.transition,
-                              transition_duration=args.transition_duration)
+                              transition_duration=args.transition_duration,
+                              assembly_options=dict(
+                                  dynamism=args.dynamism, blender_shots=args.blender,
+                                  blender_quality=args.blender_quality,
+                                  blender_environment=args.blender_env))
         if result:
             results.append(result)
 

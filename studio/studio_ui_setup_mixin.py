@@ -771,18 +771,36 @@ class StudioUiSetupMixin:
                 "No se encontro Blender. Instalalo o defini BLENDER_PATH en .env\n"
                 "(ruta completa a blender.exe)."
             )
-        self.blender_quality_combo.setToolTip("Calidad del render 3D: mas calidad = mas minutos.")
+        self.blender_quality_combo.setToolTip(
+            "Calidad del render 3D: mas calidad = mas minutos.\n"
+            "El tablero de evidencias usa Normal como minimo (en Borrador el hilo sale serruchado).")
+
+        from pipeline.segment_layouts import BLENDER_ENVIRONMENTS
+        self.blender_environment_combo = QComboBox()
+        for key, label in BLENDER_ENVIRONMENTS.items():
+            self.blender_environment_combo.addItem(label, key)
+        self.blender_environment_combo.setMaximumWidth(230)
+        self.blender_environment_combo.setToolTip(
+            "Ambiente de la toma 3D. Automatico elige por escena:\n"
+            "- Escena de video -> TV de tubo (reproduce el video)\n"
+            "- Misterio o crimen -> Tablero de evidencias (~10 min por 3.5 s)\n"
+            "- Anuncio o noticia -> Periodico que gira (titulo del video en portada)\n"
+            "- El resto -> Mesa con fotos\n"
+            "Se puede cambiar por escena en el timeline."
+        )
 
         def _sync_blender_controls(*_args):
             usable = bool(blender_exe) and self.dynamism_combo.currentData() != "off"
             self.blender_check.setEnabled(usable)
             self.blender_quality_combo.setEnabled(usable and self.blender_check.isChecked())
+            self.blender_environment_combo.setEnabled(usable and self.blender_check.isChecked())
 
         self.dynamism_combo.currentIndexChanged.connect(_sync_blender_controls)
         self.blender_check.toggled.connect(_sync_blender_controls)
         _sync_blender_controls()
         dynamism_layout.addWidget(self.blender_check)
         dynamism_layout.addWidget(self.blender_quality_combo)
+        dynamism_layout.addWidget(self.blender_environment_combo)
         dynamism_layout.addStretch()
         layout.addLayout(dynamism_layout)
 
