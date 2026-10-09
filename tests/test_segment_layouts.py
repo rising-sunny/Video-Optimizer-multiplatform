@@ -77,11 +77,20 @@ class TestPlanLayouts(unittest.TestCase):
         got = _layouts(sb)
         self.assertEqual(got[0], "full", "la entrada lleva su propio movimiento y el gancho")
         self.assertEqual(got[-1], "full", "el cierre va limpio")
-        self.assertEqual(got[1], "pip")
-        self.assertEqual(sb["segments"][1]["layout_plan"]["tag"], "ARCHDUKE FRANZ FERDINAND")
+        # 2026-10: la escena de "persona" ya no saca retrato flotante (pip); cae al
+        # generico de plano largo (punch-in).
+        self.assertEqual(got[1], "punch_in")
         self.assertEqual(got[2], "split")
         self.assertEqual(got[3], "triptych")
         self.assertEqual(got[5], "punch_in")
+
+    def test_person_never_gets_pip(self):
+        # 2026-10: el rostro en circulo (retrato flotante) se retiro del planificador.
+        sb = _storyboard(["Archduke Franz Ferdinand arrived in Sarajevo.",
+                          "Gavrilo Princip waited by the river.",
+                          "The archduke's wife Sophie rode beside him."])
+        sl.plan_layouts(sb, level="high")
+        self.assertNotIn("pip", _layouts(sb))
 
     def test_never_the_same_layout_twice_in_a_row(self):
         sb = _storyboard(["x"] + ["Three things, while a long shot holds."] * 8 + ["y"], dur=6.0)

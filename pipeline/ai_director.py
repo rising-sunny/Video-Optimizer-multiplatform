@@ -24,7 +24,7 @@ from pipeline import segment_layouts as _sl
 
 load_project_env()
 
-AI_LAYOUTS = ("full", "split", "pip", "reveal", "punch_in", "triptych")
+AI_LAYOUTS = ("full", "split", "reveal", "punch_in", "triptych")
 _MAX_NARRATION = 220
 _MAX_VISUAL = 140
 
@@ -37,7 +37,6 @@ Escenas (numero | duracion | medio | narracion | descripcion visual):
 Composiciones posibles (elige UNA por escena):
 - full: pantalla completa (una sola imagen/video, la escena normal).
 - split: pantalla dividida (contrastar dos cosas: "vs", "mientras", "sin embargo").
-- pip: retrato flotante (presentar a UNA persona, lugar u objeto/evidencia que se nombra).
 - reveal: una segunda imagen entra sobre la primera (un giro o una revelacion).
 - punch_in: cortes que se acercan a una sola imagen (climax, accion, momento intenso).
 - triptych: tres paneles (enumeraciones: "tres causas", "varias", "primero/segundo/tercero").

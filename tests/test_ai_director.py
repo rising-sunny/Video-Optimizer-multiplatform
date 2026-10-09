@@ -45,7 +45,7 @@ class TestAiDirector(unittest.TestCase):
     def test_ai_decides_layouts_with_boundaries_forced_full(self):
         client = FakeClient(plan={"scenes": [
             {"scene": 1, "layout": "split"},
-            {"scene": 2, "layout": "pip"},
+            {"scene": 2, "layout": "reveal"},
             {"scene": 3, "layout": "split"},
             {"scene": 4, "layout": "triptych"},
             {"scene": 5, "layout": "punch_in"},
@@ -59,7 +59,7 @@ class TestAiDirector(unittest.TestCase):
         self.assertEqual(layouts[0], "full")
         self.assertEqual(layouts[-1], "full")
         # El resto toma lo que dijo la IA (respetando el presupuesto).
-        self.assertEqual(layouts[1], "pip")
+        self.assertEqual(layouts[1], "reveal")
         self.assertEqual(layouts[2], "split")
         self.assertEqual(summary["level"], "ai")
         self.assertEqual(summary["director"], "ai")
@@ -122,13 +122,18 @@ class TestAiDirector(unittest.TestCase):
     def test_plan_with_unknown_layouts_is_filtered(self):
         client = FakeClient(plan={"scenes": [
             {"scene": 2, "layout": "no_existe"},
-            {"scene": 3, "layout": "pip"},
+            {"scene": 3, "layout": "reveal"},
         ]})
         sb = _storyboard(TEXTS)
         ai_director.direct_layouts_with_ai(sb, level="ai", log=lambda m: None, client=client)
-        # 'no_existe' se descarta: la escena 2 queda a full, la 3 toma pip.
+        # 'no_existe' se descarta: la escena 2 queda a full, la 3 toma reveal.
         self.assertEqual(sb["segments"][1]["layout_plan"]["layout"], "full")
-        self.assertEqual(sb["segments"][2]["layout_plan"]["layout"], "pip")
+        self.assertEqual(sb["segments"][2]["layout_plan"]["layout"], "reveal")
+
+    def test_pip_is_not_offered_to_the_ai(self):
+        # 2026-10: el retrato flotante (rostro en circulo) se retiro del Director IA.
+        self.assertNotIn("pip", ai_director.AI_LAYOUTS)
+        self.assertNotIn("retrato flotante", ai_director._PROMPT)
 
 
 class TestAiDirectorVision(unittest.TestCase):

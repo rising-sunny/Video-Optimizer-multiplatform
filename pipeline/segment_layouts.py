@@ -225,10 +225,8 @@ def layout_candidates(text: Any, role: str, duration: float, index: int, level: 
         out.append(("triptych", 3, "enumeration"))
     if tokens & _COMPARISON_WORDS:
         out.append(("split", 3, "comparison"))
-    if extract_name_tag(text):
-        out.append(("pip", 3, "person"))
-    if tokens & _EVIDENCE_WORDS:
-        out.append(("pip", 3, "evidence"))
+    # El retrato flotante (pip) se retiro (2026-10): el rostro en circulo
+    # molestaba y no aportaba. Se conserva el render para proyectos viejos.
     if role == "climax":
         out.append(("punch_in", 2, "climax"))
     if role == "turn":
