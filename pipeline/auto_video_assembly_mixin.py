@@ -2350,7 +2350,8 @@ class AutoVideoAssemblyMixin:
             if segment_layouts.normalize_dynamism(dynamism) == "ai":
                 from pipeline import ai_director
                 layout_summary = ai_director.direct_layouts_with_ai(
-                    storyboard_data, level=dynamism, log=self.log)
+                    storyboard_data, level=dynamism, log=self.log,
+                    blender_shots=_blender_max, environment=blender_environment)
             else:
                 layout_summary = segment_layouts.plan_layouts(
                     storyboard_data, level=dynamism, blender_shots=_blender_max,

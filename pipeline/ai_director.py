@@ -24,7 +24,7 @@ from pipeline import segment_layouts as _sl
 
 load_project_env()
 
-AI_LAYOUTS = ("full", "split", "reveal", "punch_in", "triptych")
+AI_LAYOUTS = ("full", "split", "reveal", "punch_in", "triptych", "blender_3d")
 _MAX_NARRATION = 220
 _MAX_VISUAL = 140
 
@@ -40,7 +40,7 @@ Composiciones posibles (elige UNA por escena):
 - reveal: una segunda imagen entra sobre la primera (un giro o una revelacion).
 - punch_in: cortes que se acercan a una sola imagen (climax, accion, momento intenso).
 - triptych: tres paneles (enumeraciones: "tres causas", "varias", "primero/segundo/tercero").
-
+{blender_line}
 Reglas:
 - La primera y la ultima escena van SIEMPRE a full.
 - No uses la misma composicion (que no sea full) en dos escenas consecutivas.
@@ -173,10 +173,12 @@ def _parse_plan(raw: Any, count: int) -> Dict[int, str]:
 
 
 def _apply_plan(storyboard: MutableMapping[str, Any], segments: Sequence[Any],
-                plan: Dict[int, str], allowed: int, level: str) -> Dict[str, int]:
+                plan: Dict[int, str], allowed: int, level: str, *,
+                blender_shots: int = 0, environment: Any = "auto") -> Dict[str, int]:
     """Escribe `layout_plan` en cada escena respetando reglas y presupuesto."""
     count = len(segments)
     chosen = 0
+    blender_used = 0
     prev_layout = ""
     counts: Dict[str, int] = {"full": 0}
 
@@ -196,6 +198,17 @@ def _apply_plan(storyboard: MutableMapping[str, Any], segments: Sequence[Any],
                 or _sl._segment_duration(segment) < _sl.MIN_LAYOUT_SECONDS:
             ai_layout = "full"
             reason = "boundary" if index in (0, count - 1) else "short"
+        elif ai_layout == "blender_3d":
+            # Toma 3D: respeta el cupo de Blender y pide una duracion minima.
+            if blender_used >= blender_shots:
+                ai_layout = "full"
+                reason = "blender_budget"
+            elif _sl._segment_duration(segment) < _sl.MIN_BLENDER_SECONDS:
+                ai_layout = "full"
+                reason = "blender_short"
+            else:
+                blender_used += 1
+                chosen += 1
         # Presupuesto: sin cupo, todo lo que no sea full vuelve a full.
         elif ai_layout != "full" and chosen >= allowed:
             ai_layout = "full"
@@ -215,6 +228,11 @@ def _apply_plan(storyboard: MutableMapping[str, Any], segments: Sequence[Any],
             "locked": locked,
             "ai": True,
         }
+        if ai_layout == "blender_3d":
+            plan_dict["environment"] = _sl.choose_environment(
+                segment.get("narration_text") or segment.get("text"),
+                _sl.is_video_path(segment.get("video_path")), environment,
+            )
         # La media extra elegida a mano sobrevive.
         if isinstance(current, dict) and current.get("extra_media"):
             plan_dict["extra_media"] = list(current["extra_media"])
@@ -231,10 +249,14 @@ def direct_layouts_with_ai(
     level: Any = "ai",
     log: Any = print,
     client: Any = None,
+    blender_shots: int = 0,
+    environment: Any = "auto",
 ) -> Dict[str, Any]:
     """Composicion por escena con LLM; cae a `plan_layouts` si algo falla.
 
     `client` permite inyectar el LLM en tests. Por defecto usa `DeepSeekClient`.
+    `blender_shots` reserva ese cupo de tomas 3D para momentos heroicos (igual que
+    `plan_layouts`); el ambiente de cada toma lo decide `choose_environment`.
     """
     segments = storyboard.get("segments") or []
     count = len(segments)
@@ -242,7 +264,8 @@ def direct_layouts_with_ai(
     # Sin DeepSeek configurado: las reglas (mismo presupuesto que 'ai').
     if client is None and not os.getenv("DEEPSEEK_API_KEY"):
         log("   [Director IA] sin DEEPSEEK_API_KEY: uso las reglas.")
-        return _sl.plan_layouts(storyboard, level=level)
+        return _sl.plan_layouts(storyboard, level=level, blender_shots=blender_shots,
+                                environment=environment)
 
     try:
         if client is None:
@@ -252,12 +275,18 @@ def direct_layouts_with_ai(
         # La primera y la ultima no cuentan para el presupuesto de composicion.
         eligible = max(0, count - 2)
         allowed = max(0, int(round(eligible * budget)))
+        blender_line = (
+            f"- blender_3d: toma 3D de Blender (un momento heroico: climax o giro). "
+            f"Maximo {blender_shots} escena(s)."
+            if blender_shots > 0 else ""
+        )
         # Ojos (Gemini vision): que ve cada imagen/cuadro antes de dirigir.
         descriptions = _describe_media(segments, log)
         prompt = _PROMPT.format(
             segments=_segment_lines(segments, descriptions) or "(sin escenas)",
             allowed=allowed,
             count=count,
+            blender_line=blender_line,
         )
         raw = client._generate(prompt, max_tokens=8000, task_type="script_quality", json_mode=True,
                                model="deepseek-chat")
@@ -266,9 +295,11 @@ def direct_layouts_with_ai(
         plan = _parse_plan(raw, count)
     except Exception as exc:
         log(f"   [Director IA] no disponible ({' '.join(str(exc).split())[:140]}): uso las reglas.")
-        return _sl.plan_layouts(storyboard, level=level)
+        return _sl.plan_layouts(storyboard, level=level, blender_shots=blender_shots,
+                                environment=environment)
 
-    counts = _apply_plan(storyboard, segments, plan, allowed, str(level))
+    counts = _apply_plan(storyboard, segments, plan, allowed, str(level),
+                         blender_shots=blender_shots, environment=environment)
     summary = {
         "version": _sl.LAYOUT_VERSION,
         "level": str(level),

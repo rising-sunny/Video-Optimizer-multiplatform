@@ -135,6 +135,29 @@ class TestAiDirector(unittest.TestCase):
         self.assertNotIn("pip", ai_director.AI_LAYOUTS)
         self.assertNotIn("retrato flotante", ai_director._PROMPT)
 
+    def test_blender_shots_are_capped_and_get_an_environment(self):
+        client = FakeClient(plan={"scenes": [
+            {"scene": i, "layout": "blender_3d"} for i in range(1, len(TEXTS) + 1)
+        ]})
+        sb = _storyboard(TEXTS)
+        ai_director.direct_layouts_with_ai(sb, level="ai", log=lambda m: None, client=client,
+                                           blender_shots=1)
+        layouts = [s["layout_plan"]["layout"] for s in sb["segments"]]
+        self.assertEqual(layouts.count("blender_3d"), 1)
+        for seg in sb["segments"]:
+            if seg["layout_plan"]["layout"] == "blender_3d":
+                self.assertIn("environment", seg["layout_plan"])
+
+    def test_no_blender_when_blender_shots_is_zero(self):
+        client = FakeClient(plan={"scenes": [
+            {"scene": i, "layout": "blender_3d"} for i in range(1, len(TEXTS) + 1)
+        ]})
+        sb = _storyboard(TEXTS)
+        ai_director.direct_layouts_with_ai(sb, level="ai", log=lambda m: None, client=client,
+                                           blender_shots=0)
+        layouts = [s["layout_plan"]["layout"] for s in sb["segments"]]
+        self.assertNotIn("blender_3d", layouts)
+
 
 class TestAiDirectorVision(unittest.TestCase):
     def _with_image(self, sb):
