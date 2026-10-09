@@ -141,6 +141,8 @@ def _describe_media(segments: Sequence[Any], log: Any) -> Dict[int, str]:
             desc = _clean(item.get("description") if isinstance(item, dict) else item)
             if desc:
                 out[chunk[j][0]] = desc
+    if out:
+        log(f"   [Director IA] vision OK: {len(out)} escena(s) descritas por Gemini.")
     return out
 
 
