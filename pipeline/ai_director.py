@@ -119,11 +119,20 @@ def _describe_media(segments: Sequence[Any], log: Any) -> Dict[int, str]:
     out: Dict[int, str] = {}
     for k in range(0, len(entries), _VISION_CHUNK):
         chunk = entries[k:k + _VISION_CHUNK]
-        try:
-            raw = ask_images(_VISION_PROMPT, [b for _, b in chunk], json_mode=True, timeout=180)
-            data = json.loads(raw)
-        except Exception as exc:
-            log(f"   [Director IA] vision no disponible ({' '.join(str(exc).split())[:120]}): sigo sin ver.")
+        # Se prueban varios modelos: si uno esta saturado (503) o sin cuota (429),
+        # se pasa al siguiente antes de rendirse. ask_images ya reintenta cada uno.
+        data = None
+        for vision_model in ("gemini-2.5-flash", "gemini-3.5-flash"):
+            try:
+                raw = ask_images(_VISION_PROMPT, [b for _, b in chunk], model=vision_model,
+                                 json_mode=True, timeout=180)
+                data = json.loads(raw)
+                break
+            except Exception as exc:
+                log(f"   [Director IA] vision con {vision_model} no disponible "
+                    f"({' '.join(str(exc).split())[:100]}); pruebo otro modelo.")
+        if data is None:
+            log("   [Director IA] vision no disponible (ningun modelo respondio): sigo sin ver.")
             break
         items = data.get("images") or data.get("descriptions") or []
         for j, item in enumerate(items):

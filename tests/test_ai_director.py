@@ -165,6 +165,24 @@ class TestAiDirectorVision(unittest.TestCase):
         self.assertIn("layout_plan", sb["segments"][0])
         self.assertNotIn("visto:", client.prompt)   # siguio solo con texto
 
+    def test_vision_falls_back_to_second_model(self):
+        sb = _storyboard(TEXTS)
+        self._with_image(sb)
+        client = FakeClient(plan={"scenes": [{"scene": i, "layout": "full"} for i in range(1, 8)]})
+        calls = []
+
+        def fake_ask(prompt, images, model=None, **kwargs):
+            calls.append(model)
+            if model == "gemini-2.5-flash":
+                raise RuntimeError("Gemini HTTP 503: high demand")
+            return json.dumps({"images": [{"description": "a red square"} for _ in images]})
+
+        with mock.patch.dict(os.environ, {"GEMINI_API_KEY": "g"}), \
+                mock.patch("ai.gemini_vision.ask_images", side_effect=fake_ask):
+            ai_director.direct_layouts_with_ai(sb, level="ai", log=lambda m: None, client=client)
+        self.assertEqual(calls, ["gemini-2.5-flash", "gemini-3.5-flash"])
+        self.assertIn("visto: a red square", client.prompt)
+
     def test_no_vision_without_gemini_key(self):
         sb = _storyboard(TEXTS)
         self._with_image(sb)

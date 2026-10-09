@@ -21,6 +21,26 @@ from typing import Iterable, Optional
 API_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 DEFAULT_MODEL = os.getenv("GEMINI_VISION_MODEL", "gemini-2.5-flash")
 
+# Errores transitorios: alta demanda (503), cuota momentanea (429), 5xx del servicio.
+_RETRY_STATUSES = (429, 500, 502, 503, 504)
+
+
+def _post_with_retry(url: str, headers: dict, body: str, timeout: int, retries: int = 2):
+    """POST a Gemini con reintento corto en errores transitorios. Lanza RuntimeError."""
+    import time
+    import requests
+    last_status, last_text = 0, ""
+    for attempt in range(retries + 1):
+        r = requests.post(url, headers=headers, data=body, timeout=timeout)
+        if r.status_code < 400:
+            return r
+        last_status, last_text = r.status_code, r.text[:200]
+        if r.status_code in _RETRY_STATUSES and attempt < retries:
+            time.sleep(1.5 * (attempt + 1))
+            continue
+        break
+    raise RuntimeError(f"Gemini HTTP {last_status}: {last_text}")
+
 
 def available() -> bool:
     return bool(os.getenv("GEMINI_API_KEY"))
@@ -53,12 +73,9 @@ def ask_images(prompt: str, images: Iterable, *, model: Optional[str] = None, js
     config = {"temperature": temperature}
     if json_mode:
         config["responseMimeType"] = "application/json"
-    r = requests.post(API_URL.format(model=model or DEFAULT_MODEL),
-                      headers={"x-goog-api-key": key, "Content-Type": "application/json"},
-                      data=json.dumps({"contents": [{"parts": parts}], "generationConfig": config}),
-                      timeout=timeout)
-    if r.status_code >= 400:
-        raise RuntimeError(f"Gemini HTTP {r.status_code}: {r.text[:200]}")
+    headers = {"x-goog-api-key": key, "Content-Type": "application/json"}
+    body = json.dumps({"contents": [{"parts": parts}], "generationConfig": config})
+    r = _post_with_retry(API_URL.format(model=model or DEFAULT_MODEL), headers, body, timeout)
     data = r.json()
     try:
         return "".join(p.get("text", "") for p in data["candidates"][0]["content"]["parts"]).strip()
@@ -81,11 +98,8 @@ def ask_grounded(prompt: str, *, model: Optional[str] = None, timeout: int = 150
     body = {"contents": [{"parts": [{"text": prompt}]}],
             "tools": [{"google_search": {}}],
             "generationConfig": {"temperature": 0}}
-    r = requests.post(API_URL.format(model=model or DEFAULT_MODEL),
-                      headers={"x-goog-api-key": key, "Content-Type": "application/json"},
-                      data=json.dumps(body), timeout=timeout)
-    if r.status_code >= 400:
-        raise RuntimeError(f"Gemini HTTP {r.status_code}: {r.text[:200]}")
+    headers = {"x-goog-api-key": key, "Content-Type": "application/json"}
+    r = _post_with_retry(API_URL.format(model=model or DEFAULT_MODEL), headers, json.dumps(body), timeout)
     data = r.json()
     try:
         cand = data["candidates"][0]
