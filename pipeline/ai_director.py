@@ -25,6 +25,8 @@ from pipeline import segment_layouts as _sl
 load_project_env()
 
 AI_LAYOUTS = ("full", "split", "reveal", "punch_in", "triptych", "blender_3d")
+# Ambientes 3D que el Director IA puede elegir (sin "auto", que es "la regla decide").
+_ENVIRONMENTS = tuple(k for k in _sl.BLENDER_ENVIRONMENTS if k != "auto")
 _MAX_NARRATION = 220
 _MAX_VISUAL = 140
 
@@ -49,7 +51,8 @@ Reglas:
 
 Responde SOLO con un JSON valido, sin markdown:
 {{"scenes": [{{"scene": 1, "layout": "split", "reason": "contraste entre dos bandos"}}]}}
-Incluye UNA entrada por cada escena (1..{count})."""
+Incluye UNA entrada por cada escena (1..{count}). Para una escena "blender_3d" agrega
+tambien el campo "environment" (uno de los ambientes listados)."""
 
 
 def _clean(value: Any) -> str:
@@ -145,8 +148,8 @@ def _describe_media(segments: Sequence[Any], log: Any) -> Dict[int, str]:
     return out
 
 
-def _parse_plan(raw: Any, count: int) -> Dict[int, str]:
-    """Del JSON del modelo a {indice_0: layout}. Tira si no se puede leer."""
+def _parse_plan(raw: Any, count: int) -> Dict[int, Dict[str, str]]:
+    """Del JSON del modelo a {indice_0: {"layout": ..., "environment": ...}}."""
     if isinstance(raw, str):
         raw = raw.strip()
         raw = raw[raw.find("{"): raw.rfind("}") + 1]
@@ -156,7 +159,7 @@ def _parse_plan(raw: Any, count: int) -> Dict[int, str]:
     scenes = raw.get("scenes") or raw.get("segments")
     if not isinstance(scenes, list):
         raise ValueError("falta la lista 'scenes'")
-    out: Dict[int, str] = {}
+    out: Dict[int, Dict[str, str]] = {}
     for item in scenes:
         if not isinstance(item, dict):
             continue
@@ -166,14 +169,18 @@ def _parse_plan(raw: Any, count: int) -> Dict[int, str]:
             continue
         layout = _sl.normalize_layout(item.get("layout"))
         if 0 <= index < count and layout in AI_LAYOUTS:
-            out[index] = layout
+            entry = {"layout": layout}
+            env = _clean(item.get("environment")).lower()
+            if env in _ENVIRONMENTS:
+                entry["environment"] = env
+            out[index] = entry
     if not out:
         raise ValueError("no se pudo leer ninguna escena del plan")
     return out
 
 
 def _apply_plan(storyboard: MutableMapping[str, Any], segments: Sequence[Any],
-                plan: Dict[int, str], allowed: int, level: str, *,
+                plan: Dict[int, Dict[str, str]], allowed: int, level: str, *,
                 blender_shots: int = 0, environment: Any = "auto") -> Dict[str, int]:
     """Escribe `layout_plan` en cada escena respetando reglas y presupuesto."""
     count = len(segments)
@@ -187,7 +194,9 @@ def _apply_plan(storyboard: MutableMapping[str, Any], segments: Sequence[Any],
             continue
         current = segment.get("layout_plan")
         locked = bool(isinstance(current, dict) and current.get("locked"))
-        ai_layout = plan.get(index, "full")
+        entry = plan.get(index) or {}
+        ai_layout = entry.get("layout", "full")
+        ai_environment = entry.get("environment")
         reason = "ai_director"
 
         # Primera/ultima, muy cortas o bloqueadas: pantalla completa (o lo fijado a mano).
@@ -229,7 +238,8 @@ def _apply_plan(storyboard: MutableMapping[str, Any], segments: Sequence[Any],
             "ai": True,
         }
         if ai_layout == "blender_3d":
-            plan_dict["environment"] = _sl.choose_environment(
+            # El ambiente lo elige la IA; si no lo dijo (o no es valido), la regla.
+            plan_dict["environment"] = ai_environment or _sl.choose_environment(
                 segment.get("narration_text") or segment.get("text"),
                 _sl.is_video_path(segment.get("video_path")), environment,
             )
@@ -277,7 +287,8 @@ def direct_layouts_with_ai(
         allowed = max(0, int(round(eligible * budget)))
         blender_line = (
             f"- blender_3d: toma 3D de Blender (un momento heroico: climax o giro). "
-            f"Maximo {blender_shots} escena(s)."
+            f"Maximo {blender_shots} escena(s). Para estas, elige el ambiente que mejor "
+            f"cuente la escena: {', '.join(_ENVIRONMENTS)}."
             if blender_shots > 0 else ""
         )
         # Ojos (Gemini vision): que ve cada imagen/cuadro antes de dirigir.

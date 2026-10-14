@@ -228,6 +228,47 @@ def action_fcurves(obj):
         return curves
 
 
+def orbit_keys(frames, center, radius=2.2, height=1.4, phases=0.5, start_angle=-0.6):
+    """Camara que orbita alrededor de `center` (media vuelta por defecto), mirandolo siempre."""
+    keys = []
+    steps = 10
+    for k in range(steps + 1):
+        frame = 1 + round((frames - 1) * k / steps)
+        t = k / steps
+        ang = start_angle + 2 * math.pi * phases * t
+        x = center[0] + radius * math.cos(ang)
+        y = center[1] + radius * math.sin(ang)
+        z = center[2] + height
+        keys.append((frame, (x, y, z), center))
+    keys[-1] = (frames, keys[-1][1], center)
+    return keys
+
+
+def crane_keys(frames, center, radius=1.9, height_start=0.9, height_end=2.2, start_angle=-0.5):
+    """Camara que sube (crane) mientras se acerca un poco, mirando `center`."""
+    keys = []
+    steps = 10
+    for k in range(steps + 1):
+        frame = 1 + round((frames - 1) * k / steps)
+        t = k / steps
+        shrink = 1.0 - 0.35 * t
+        x = center[0] + radius * math.cos(start_angle) * shrink
+        y = center[1] + radius * math.sin(start_angle) * shrink
+        z = center[2] + height_start + (height_end - height_start) * t
+        keys.append((frame, (x, y, z), center))
+    keys[-1] = (frames, keys[-1][1], center)
+    return keys
+
+
+def motion_keys(motion, frames, center, push_keys):
+    """Las keys de camara para `motion`: 'push' (las de siempre), 'orbit' o 'crane'."""
+    if motion == "orbit":
+        return orbit_keys(frames, center)
+    if motion == "crane":
+        return crane_keys(frames, center)
+    return push_keys
+
+
 def render():
     t0 = time.time()
     bpy.ops.render.render(animation=True)

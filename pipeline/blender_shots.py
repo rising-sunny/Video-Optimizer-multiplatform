@@ -41,6 +41,16 @@ MAX_SHOTS = {"vertical": 1, "horizontal": 2}
 TAIL_SECONDS = 0.4          # margen para que el ensamblador no tenga que estirar el clip
 COMPILE_SECONDS = 20        # compilacion de shaders al arrancar Blender
 
+# Movimientos de camara de las tomas 3D. 'push' es el clasico (acercarse);
+# 'orbit' da la vuelta alrededor del objeto; 'crane' sube la camara.
+MOTIONS = ("push", "orbit", "crane")
+DEFAULT_MOTION = "push"
+
+
+def normalize_motion(value: Any) -> str:
+    key = str(value or "").strip().lower()
+    return key if key in MOTIONS else DEFAULT_MOTION
+
 
 def normalize_quality(value: Any) -> str:
     key = str(value or "").strip().lower()
@@ -89,6 +99,13 @@ ENVIRONMENTS = {
                "s_per_frame": {"draft": 1.5, "normal": 3.0, "high": 7.5}},
     "newspaper": {"template": "newspaper.py", "min_quality": None,
                   "s_per_frame": {"draft": 2.5, "normal": 4.5, "high": 10.0}},
+    "map": {"template": "map_old.py", "min_quality": None,
+            "s_per_frame": {"draft": 1.8, "normal": 3.4, "high": 8.5}},
+    "war_room": {"template": "war_room.py", "min_quality": None,
+                 "s_per_frame": {"draft": 2.2, "normal": 4.0, "high": 10.0}},
+    "timeline": {"template": "timeline.py", "min_quality": None,
+                 "s_per_frame": {"draft": 1.7, "normal": 3.2, "high": 8.0}},
+
 }
 
 
@@ -122,7 +139,8 @@ def estimate_seconds(duration: float, fps: float, quality: str = DEFAULT_QUALITY
 
 
 def build_params(images: Sequence[str], duration: float, size: Sequence[int], fps: float,
-                 quality: str, out_dir: str, seed: int = 7, environment: str = "desk") -> Dict[str, Any]:
+                 quality: str, out_dir: str, seed: int = 7, environment: str = "desk",
+                 motion: str = DEFAULT_MOTION) -> Dict[str, Any]:
     env = normalize_environment(environment)
     spec = dict(QUALITY_PRESETS[effective_quality(env, quality)])
     for key, minimum in (ENVIRONMENTS[env].get("overrides") or {}).items():
@@ -139,6 +157,7 @@ def build_params(images: Sequence[str], duration: float, size: Sequence[int], fp
         "shadow_scale": spec["shadow_scale"],
         "out_dir": os.path.abspath(out_dir),
         "seed": int(seed),
+        "motion": normalize_motion(motion),
     }
 
 
@@ -205,9 +224,11 @@ def render_shot(
     log: Callable[[str], None] = print,
     timeout_s: float = 3600,
     seed: int = 7,
+    motion: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Renderiza una toma 3D del `environment` (ver ENVIRONMENTS) con `images[0]` de protagonista.
 
+    `motion` = 'push'|'orbit'|'crane'; None elige segun el seed (variedad entre tomas).
     Devuelve {'ok', 'path', 'seconds', 'cached', 'error', 'quality'}. Nunca lanza:
     un error vuelve con ok=False para que el ensamblaje siga con FFmpeg.
     """
@@ -226,8 +247,10 @@ def render_shot(
     ffmpeg_exe = ffmpeg_exe or shutil.which("ffmpeg") or "ffmpeg"
     os.makedirs(cache_dir, exist_ok=True)
 
+    if motion is None:
+        motion = MOTIONS[int(seed) % len(MOTIONS)]
     work = tempfile.mkdtemp(prefix="blender_shot_")
-    params = build_params(images, duration, size, fps, quality, os.path.join(work, "frames"), seed, env)
+    params = build_params(images, duration, size, fps, quality, os.path.join(work, "frames"), seed, env, motion)
     os.makedirs(params["out_dir"], exist_ok=True)
     template = template_path(env)
     out_path = os.path.join(cache_dir, f"{env}_{cache_key(params, template)}.mp4")

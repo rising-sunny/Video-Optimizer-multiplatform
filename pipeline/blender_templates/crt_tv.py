@@ -13,7 +13,8 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bpy  # noqa: E402
 from _scene_common import (  # noqa: E402
-    camera_rig, flat, light, load_params, material, noisy, render, setup_scene, smooth,
+    camera_rig, flat, light, load_params, material, motion_keys, noisy, render, setup_scene,
+    smooth,
 )
 
 params = load_params()
@@ -148,8 +149,8 @@ for frame in range(1, FRAMES + 1, 3):
 light(scene, 'Lamp', 'POINT', 35, (1.0, 0.62, 0.30), (2.2, -0.6, 1.7), (0, 0, 0), size=0.2)
 light(scene, 'Rim', 'AREA', 20, (1.0, 0.75, 0.5), (-1.8, 1.0, 2.6), (0, 0.5, 1.1), size=1.0)
 
-camera_rig(scene, lens=35, fstop=2.2, keys=(
-    (1, (0.75, -3.4, 1.45), (0.0, 0.5, 1.0)),
-    (FRAMES, (SX, -0.95, SZ + 0.02), (SX, 0.14, SZ)),
-))
+center = (SX, 0.14, SZ)
+push = ((1, (0.75, -3.4, 1.45), (0.0, 0.5, 1.0)), (FRAMES, (SX, -0.95, SZ + 0.02), center))
+camera_rig(scene, lens=35, fstop=2.2,
+           keys=motion_keys(params.get("motion", "push"), FRAMES, center, push))
 render()

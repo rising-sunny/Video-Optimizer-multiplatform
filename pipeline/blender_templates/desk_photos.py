@@ -22,8 +22,8 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bpy  # noqa: E402
 from _scene_common import (  # noqa: E402
-    camera_rig, image_material, light, load_params, material, paper_material, photo_size,
-    plane, render, setup_scene, wood,
+    camera_rig, image_material, light, load_params, material, motion_keys, paper_material,
+    photo_size, plane, render, setup_scene, wood,
 )
 
 params = load_params()
@@ -59,8 +59,7 @@ light(scene, 'Fill', 'AREA', 40, (0.55, 0.65, 1.0), (2.5, -2.0, 3.0), (0.0, 0.0,
 
 # Arranca abierta, mirando las fotos de arriba, y baja hasta encuadrar a la protagonista.
 end = ((0.05, 1.28, 1.50), (0.0, 0.02, 0.0)) if VERTICAL else ((0.05, 1.25, 1.45), (0.0, 0.02, 0.0))
-camera_rig(scene, lens=40 if VERTICAL else 32, fstop=1.6, keys=(
-    (1, (0.15, 2.95, 2.35), (0.05, 1.05, 0.0)),
-    (FRAMES, end[0], end[1]),
-))
+push = ((1, (0.15, 2.95, 2.35), (0.05, 1.05, 0.0)), (FRAMES, end[0], end[1]))
+camera_rig(scene, lens=40 if VERTICAL else 32, fstop=1.6,
+           keys=motion_keys(params.get("motion", "push"), FRAMES, end[1], push))
 render()

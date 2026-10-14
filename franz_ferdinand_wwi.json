@@ -1,0 +1,36 @@
+{
+  "title": "One Shot. One War. — Franz Ferdinand, Sarajevo 1914",
+  "seconds": 44,
+  "images": [
+    {"file": "archduke_00_Archduke_Franz_Ferdinand_of_Austria_-_b_w.jpg", "focus": [0.45, 0.38], "zoom": 1.35},
+    {"file": "car_guildhall.jpg", "focus": [0.5, 0.5], "zoom": 1.15},
+    {"file": "assassination_scene.jpg", "focus": [0.5, 0.5], "zoom": 1.15},
+    {"file": "gavrilo_01_Gavrilo_Princip__cell__headshot__bw__cropped_.jpg", "focus": [0.45, 0.38], "zoom": 1.3},
+    {"file": "assassination_00_Assassination_of_Archduke_Franz_Ferdinand_1914.jpg", "focus": [0.5, 0.5], "zoom": 1.15},
+    {"file": "princip_arrest.jpg", "focus": [0.5, 0.5], "zoom": 1.2},
+    {"file": "petit_journal_1914.jpg", "focus": [0.5, 0.5], "zoom": 1.0},
+    {"file": "world_00_British_artillery_in_action__World_War_I.JPEG", "focus": [0.5, 0.5], "zoom": 1.15},
+    {"file": "ww1_footage.mp4", "in": 15.0, "focus": [0.5, 0.5], "zoom": 1.0, "audio": false},
+    {"file": "trench_somme.jpg", "focus": [0.5, 0.5], "zoom": 1.2},
+    {"file": "soldiers_ginchy.jpg", "focus": [0.5, 0.5], "zoom": 1.15},
+    {"file": "ww1_footage.mp4", "in": 45.0, "focus": [0.5, 0.5], "zoom": 1.0, "audio": false},
+    {"file": "gas_attack_1916.JPG", "focus": [0.5, 0.5], "zoom": 1.15},
+    {"file": "assassination_01_Batiste_handkerchief_with_blood_of_Franz_Ferdinand_d_Este_01.jpg", "focus": [0.5, 0.5], "zoom": 1.2},
+    {"file": "gavrilo_00_Gavrilo_Princip__1914.png", "focus": [0.45, 0.38], "zoom": 1.3}
+  ],
+  "opening": "Who fired the shot?",
+  "lines": [
+    "June 28, 1914. Sarajevo.",
+    "One wrong turn.",
+    "Nineteen years old.",
+    "A pistol. Two shots.",
+    "The heir to an empire falls.",
+    "Thirty days of ultimatums.",
+    "Alliances snapped into war.",
+    "Millions marched to the guns.",
+    "The world went dark."
+  ],
+  "climax": ["ONE", "DEATH", "WAR"],
+  "final": ["The Great War", "had begun."],
+  "end": "Assassination of Archduke Franz Ferdinand — Sarajevo, June 28, 1914"
+}

@@ -16,8 +16,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bpy  # noqa: E402
 from mathutils import Vector  # noqa: E402
 from _scene_common import (  # noqa: E402
-    camera_rig, flat, image_material, light, load_params, material, paper_material, photo_size,
-    plane, render, set_inputs, setup_scene, smooth,
+    camera_rig, flat, image_material, light, load_params, material, motion_keys,
+    paper_material, photo_size, plane, render, set_inputs, setup_scene, smooth,
 )
 
 params = load_params()
@@ -227,8 +227,9 @@ light(scene, 'Fill', 'AREA', 40, (0.55, 0.65, 1.0), (2.5, -2.5, 3.5), (0.0, 0.0,
 
 start = pins[2] if len(pins) > 2 else (pins[-1] if pins else Vector((0, 0, 0)))
 hero = SLOTS[0]
-camera_rig(scene, lens=42 if VERTICAL else 34, fstop=2.0, keys=(
-    (1, (start.x + 0.2, start.y + 0.9, 1.25), (start.x, start.y - 0.25, 0.0)),
-    (FRAMES, (hero[0] + 0.05, hero[1] + 1.35, 2.05), (hero[0], hero[1] - 0.05, 0.0)),
-))
+center = (hero[0], hero[1] - 0.05, 0.0)
+push = ((1, (start.x + 0.2, start.y + 0.9, 1.25), (start.x, start.y - 0.25, 0.0)),
+        (FRAMES, (hero[0] + 0.05, hero[1] + 1.35, 2.05), center))
+camera_rig(scene, lens=42 if VERTICAL else 34, fstop=2.0,
+           keys=motion_keys(params.get("motion", "push"), FRAMES, center, push))
 render()

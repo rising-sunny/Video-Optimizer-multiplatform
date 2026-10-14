@@ -158,6 +158,20 @@ class TestAiDirector(unittest.TestCase):
         layouts = [s["layout_plan"]["layout"] for s in sb["segments"]]
         self.assertNotIn("blender_3d", layouts)
 
+    def test_ai_chooses_blender_environment_with_rule_fallback(self):
+        client = FakeClient(plan={"scenes": [
+            {"scene": 2, "layout": "blender_3d", "environment": "newspaper"},
+            {"scene": 4, "layout": "blender_3d"},  # sin ambiente -> la regla decide
+        ]})
+        sb = _storyboard(TEXTS)
+        ai_director.direct_layouts_with_ai(sb, level="ai", log=lambda m: None, client=client,
+                                           blender_shots=2)
+        # Escena 2: el ambiente lo eligio la IA (distinto del de la regla).
+        self.assertEqual(sb["segments"][1]["layout_plan"]["environment"], "newspaper")
+        # Escena 4 ("Three conspirators...") sin ambiente de la IA -> la regla
+        # elige corkboard (el stem 'conspira' la marca como tablero de evidencias).
+        self.assertEqual(sb["segments"][3]["layout_plan"]["environment"], "corkboard")
+
 
 class TestAiDirectorVision(unittest.TestCase):
     def _with_image(self, sb):

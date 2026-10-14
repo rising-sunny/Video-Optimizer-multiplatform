@@ -10,8 +10,8 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bpy  # noqa: E402
 from _scene_common import (  # noqa: E402
-    action_fcurves, camera_rig, image_material, light, load_params, material, render,
-    setup_scene, wood,
+    action_fcurves, camera_rig, image_material, light, load_params, material, motion_keys,
+    render, setup_scene, wood,
 )
 
 params = load_params()
@@ -61,9 +61,9 @@ light(scene, 'Fill', 'AREA', 30, (0.6, 0.7, 1.0), (2.0, -2.0, 3.0), (0, 0, 0), s
 # Quieta mientras gira; despues se acerca al titular (arriba de la hoja = -Y).
 headline_y = -PH * 0.22
 wide = (0.0, 0.70, 3.55) if VERTICAL else (0.0, 0.55, 2.55)
-camera_rig(scene, lens=40 if VERTICAL else 35, fstop=2.8, keys=(
-    (1, wide, (0.0, 0.0, 0.0)),
-    (land, wide, (0.0, 0.0, 0.0)),
-    (FRAMES, (0.0, headline_y + 0.55, 1.75 if VERTICAL else 1.45), (0.0, headline_y, 0.0)),
-))
+center = (0.0, headline_y, 0.0)
+push = ((1, wide, (0.0, 0.0, 0.0)), (land, wide, (0.0, 0.0, 0.0)),
+        (FRAMES, (0.0, headline_y + 0.55, 1.75 if VERTICAL else 1.45), center))
+camera_rig(scene, lens=40 if VERTICAL else 35, fstop=2.8,
+           keys=motion_keys(params.get("motion", "push"), FRAMES, center, push))
 render()

@@ -48,6 +48,9 @@ BLENDER_ENVIRONMENTS = {
     "corkboard": "Tablero de evidencias",
     "crt_tv": "TV de tubo",
     "newspaper": "Periodico que gira",
+    "map": "Mapa antiguo",
+    "war_room": "Sala de guerra",
+    "timeline": "Linea de tiempo",
 }
 _MYSTERY_STEMS = (
     "myster", "disappear", "vanish", "secret", "conspira", "murder", "killer", "suspect",
@@ -57,6 +60,20 @@ _MYSTERY_STEMS = (
 _NEWS_STEMS = (
     "announc", "declared", "headline", "newspaper", "news", "treaty", "signed",
     "assassinated", "anunci", "declaro", "titular", "periodico", "noticia", "tratado", "firmo",
+)
+_WAR_STEMS = (
+    "war", "battle", "invasion", "attack", "siege", "assault", "military", "army", "armies",
+    "soldier", "soldiers", "guerra", "batalla", "invasion", "ataque", "asedio", "militar",
+    "ejercito", "soldado", "soldados", "conquest", "conquista",
+)
+_GEO_STEMS = (
+    "map", "empire", "territory", "border", "route", "expedition", "voyage", "continent",
+    "geograph", "mapa", "imperio", "territorio", "frontera", "ruta", "expedicion", "viaje",
+    "continente", "geograf",
+)
+_TIME_STEMS = (
+    "timeline", "era", "century", "decade", "year", "dates", "chronolog",
+    "linea de tiempo", "siglo", "decada", "ano", "fecha", "cronolog",
 )
 
 
@@ -69,7 +86,8 @@ def choose_environment(text: Any, is_video: bool = False, preferred: Any = "auto
     """Ambiente 3D para una escena: el elegido a mano, o por reglas sobre el texto.
 
     Escena de video -> TV de tubo (es el unico ambiente que la reproduce);
-    misterio o crimen -> tablero de evidencias; anuncio o noticia -> periodico;
+    misterio/crimen -> tablero; noticia -> periodico; guerra/batalla -> sala de
+    guerra; geografia/rutas -> mapa; fechas/eras -> linea de tiempo;
     el resto -> la mesa con fotos.
     """
     key = str(preferred or "auto").strip().lower()
@@ -82,6 +100,12 @@ def choose_environment(text: Any, is_video: bool = False, preferred: Any = "auto
         return "corkboard"
     if any(tok.startswith(stem) for tok in tokens for stem in _NEWS_STEMS):
         return "newspaper"
+    if any(tok.startswith(stem) for tok in tokens for stem in _WAR_STEMS):
+        return "war_room"
+    if any(tok.startswith(stem) for tok in tokens for stem in _GEO_STEMS):
+        return "map"
+    if any(tok.startswith(stem) for tok in tokens for stem in _TIME_STEMS):
+        return "timeline"
     return "desk"
 
 DYNAMISM_SPECS = {
