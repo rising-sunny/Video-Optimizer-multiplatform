@@ -304,6 +304,15 @@ concreta + sujeto nombrado**, duración corta. Ej: "72 Seconds: The Wow! Signal"
 
 ## Changelog
 
+- **2026-10-17** — **Documentales 16:9 de archivo y Shorts Catarsis con archivo real** (`archival_projects/`).
+  Recetas (solo código, guion, SRT y capítulos; el material se baja de archive.org/LoC/NSArchive):
+  `northwoods/doc` y `tonkin` (Stunning Revelations, ~9 min) → `doc.py sheet|audio|video|all` arma narración,
+  planos de archivo con push/grano/viñeta, páginas desclasificadas con resaltado animado (por rangos de
+  línea o por frase vía OCR `tesseract … tsv`), sellos, tarjetas de capítulo con glitch, música ad hoc con
+  ducking, SRT y capítulos; créditos y "illustrative" en pantalla. `yamaguchi_short` y `onoda_short`
+  (Stunning Facts of History) usan `catharsis_editor` + música sintetizada en escala *in*. Voz: Edge TTS
+  (`tts.py`); si devuelve 403 desde el servidor, `tonkin/tts_piper.py` (Piper en_US-ryan-high, offline).
+  Videos >30 MiB se entregan partidos (`-f segment`) + `lista.txt` para `ffmpeg -f concat`.
 - **2026-10-07** — **Filtro de normas de TikTok** (`publish/tiktok_filter.py`). TikTok retiró el Short
   de Operation Northwoods por "Normas de la comunidad" el día que se publicó (texto con #FalseFlag,
   #Conspiracy, "terror campaign", "staged airliner shootdown"); el carrusel del mismo tema, sin
