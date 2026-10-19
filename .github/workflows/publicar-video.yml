@@ -1,0 +1,40 @@
+# Une las partes de un video subidas a una rama videos/<nombre> y las publica como release borrador
+# (privado: solo lo ven quienes tienen acceso al repo). Las partes se cortan por bytes con `split`, asi que
+# `cat` devuelve el archivo original exacto; SHA256 lo comprueba antes de publicar.
+name: Publicar video unido
+
+on:
+  push:
+    branches: ["videos/**"]
+    paths: ["partes/SHA256"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Unir partes y verificar
+        run: |
+          set -euo pipefail
+          for name in $(ls partes/*.part* | sed 's/\.part[0-9]*$//' | sort -u); do
+            cat "$name".part* > "$(basename "$name")"
+          done
+          sha256sum -c partes/SHA256
+          ls -la *.mp4
+
+      - name: Crear release borrador
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="video-${GITHUB_REF_NAME#videos/}"
+          gh release delete "$TAG" --yes 2>/dev/null || true
+          gh release create "$TAG" --draft --target "$GITHUB_SHA" \
+            --title "Video: ${GITHUB_REF_NAME#videos/}" \
+            --notes-file assets/youtube_metadata.txt \
+            *.mp4 assets/*
