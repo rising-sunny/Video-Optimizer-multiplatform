@@ -1,0 +1,15 @@
+[Unit]
+Description=Publish approved daily Catarsis shorts when due
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=videoagent
+Group=videoagent
+WorkingDirectory=/home/videoagent/video-automation
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/home/videoagent/Video-Optimizer-multiplatform/.venv/bin/python /home/videoagent/video-automation/runner.py publish-due
+TimeoutStartSec=45min
+Nice=10
+CPUQuota=200%

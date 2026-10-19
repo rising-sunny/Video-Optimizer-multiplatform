@@ -1,0 +1,12 @@
+[Unit]
+Description=Check approved shorts during the Santiago publication window
+
+[Timer]
+OnCalendar=2026-10-20..31 19,20,21:00/5:00 America/Santiago
+OnCalendar=2026-11-01..14 19,20,21:00/5:00 America/Santiago
+Persistent=false
+AccuracySec=30s
+Unit=video-shorts-publish.service
+
+[Install]
+WantedBy=timers.target

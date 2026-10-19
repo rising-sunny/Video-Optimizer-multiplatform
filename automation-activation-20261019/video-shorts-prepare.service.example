@@ -1,0 +1,15 @@
+[Unit]
+Description=Prepare daily Catarsis shorts
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=videoagent
+Group=videoagent
+WorkingDirectory=/home/videoagent/video-automation
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/home/videoagent/Video-Optimizer-multiplatform/.venv/bin/python /home/videoagent/video-automation/runner.py prepare
+TimeoutStartSec=4h
+Nice=10
+CPUQuota=200%

@@ -1,0 +1,47 @@
+{
+  "timezone": "America/Santiago",
+  "start_date": "2026-10-20",
+  "end_date": "2026-11-14",
+  "mode": "autonomous",
+  "format": "catarsis",
+  "language": "en",
+  "narration": false,
+  "dimensions": [
+    1080,
+    1920
+  ],
+  "fps": 30,
+  "duration_seconds": [
+    50,
+    59
+  ],
+  "daily_target_per_channel": 1,
+  "platforms": [
+    "youtube",
+    "facebook",
+    "instagram"
+  ],
+  "prepare_at": "12:00",
+  "publish_at": {
+    "stunning-facts-of-history": "19:00",
+    "stunning-revelations": "19:30"
+  },
+  "date_overrides": {
+    "2026-10-26": {
+      "stunning-revelations": "20:30"
+    }
+  },
+  "publication_window_end": "21:30",
+  "catch_up": false,
+  "concurrent_renders": 1,
+  "render_threads": 2,
+  "on_missing_quality": "block_and_report",
+  "on_ambiguous_remote_result": "reconcile_before_retry",
+  "protected_remote_videos": {
+    "youtube": [
+      "COIdhPZtR10"
+    ]
+  },
+  "schedule_status": "authorized_by_user_pending_vps_implementation",
+  "schedule_authorization": "User confirmed: Sí, usar esos horarios"
+}

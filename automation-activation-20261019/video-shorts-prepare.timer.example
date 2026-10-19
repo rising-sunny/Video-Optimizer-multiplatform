@@ -1,0 +1,12 @@
+[Unit]
+Description=Prepare daily shorts at noon Santiago during the initial calendar
+
+[Timer]
+OnCalendar=2026-10-20..31 12:00:00 America/Santiago
+OnCalendar=2026-11-01..14 12:00:00 America/Santiago
+Persistent=false
+AccuracySec=30s
+Unit=video-shorts-prepare.service
+
+[Install]
+WantedBy=timers.target
