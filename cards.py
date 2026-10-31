@@ -1,0 +1,28 @@
+GU = {"opening": "The war ended at 11:00. He fell at 10:59.",
+      "lines": ["Henry Gunther, 23. A bank clerk from Baltimore.", "Drafted in 1917. 313th Infantry.",
+                "He wrote home: the front was miserable.", "The censor read it. He was demoted.",
+                "November 11, 1918. Before dawn: armistice signed.", "Ceasefire set for 11:00 a.m.",
+                "The fighting went on all morning.", "10:59. He charged a German machine gun.",
+                "The Germans waved him back. He kept going.", "One burst. Sixty seconds before peace."],
+      "climax": ["10:59", "11:00", "PEACE"],
+      "final": ["That last morning: nearly 11,000 casualties.", "Pershing named him the last American to fall."],
+      "end": "Sgt. Henry Gunther, 1895–1918"}
+SS = {"opening": "1950. The Navy sprayed bacteria over San Francisco.",
+      "lines": ["September 20, 1950. A ship off the coast.", "A secret test: Operation Sea-Spray.",
+                "Two bacteria, sprayed toward the city.", "For seven days.", "43 stations tracked the cloud.",
+                "Almost all 800,000 residents breathed it in.", "No one was told.",
+                "Weeks later: 11 rare infections at Stanford.", "Edward Nevin did not survive.",
+                "The Army called it a coincidence."],
+      "climax": ["SECRET", "SPRAYED", "800,000"],
+      "final": ["It stayed secret until 1976.", "In 1977, the Army disclosed 239 open-air tests."],
+      "end": "Operation Sea-Spray · San Francisco, 1950"}
+GU["direction"] = {"speaker": "Narrador externo; sujeto focal: Henry Gunther, soldado del 313 de Infanteria",
+                   "moment": "Manana del 11 de noviembre de 1918, Chaumont-devant-Damvillers, Francia",
+                   "conflict": "Degradado por una carta censurada, sigue en combate aunque el armisticio ya esta firmado",
+                   "turn": "Carga contra una ametralladora a las 10:59, un minuto antes del alto el fuego",
+                   "payoff": "Pershing lo nombra el ultimo estadounidense caido; ese dia hubo cerca de 11.000 bajas"}
+SS["direction"] = {"speaker": "Narrador externo; sujeto focal: la Marina y el Ejercito de EE.UU. y los vecinos de San Francisco",
+                   "moment": "20 al 27 de septiembre de 1950, bahia de San Francisco; revelado en 1976-1977",
+                   "conflict": "Un barco rocia bacterias sobre la ciudad sin avisar a nadie",
+                   "turn": "11 infecciones raras en Stanford y la muerte de Edward Nevin; el Ejercito lo llama coincidencia",
+                   "payoff": "En 1977 el Ejercito revela 239 pruebas al aire libre"}
