@@ -1141,8 +1141,19 @@ class CatharsisTab(QWidget):
             self.log(f"  Revision narrativa: {issue}")
         for f in check.get("remaining", []):
             self.log(f"  Revisar: \"{f.get('quote')}\" ({f.get('verdict')}). Dato documentado: {f.get('correction')}")
+        self._tiktok_check()
         self._changed()
         self._auto_save()
+
+    def _tiktok_check(self, project: "dict | None" = None):
+        """Tarjetas en pantalla contra las normas de TikTok (TikTok las lee con OCR). Solo avisa:
+        el mismo video sirve para YouTube, que tolera mejor la historia documental."""
+        try:
+            from publish.tiktok_filter import report, review_project
+        except ImportError:
+            return
+        for line in report(review_project(project or self.project())):
+            self.log(f"TikTok: {line}")
 
     # ------------------------------------------------------------ secuencia
     def _auto_sequence(self):
@@ -1435,6 +1446,7 @@ class CatharsisTab(QWidget):
         else:
             from infra.output_naming import build_video_filename
             out = OUTPUT_DIR / build_video_filename("catarsis", project.get("topic") or "catarsis")
+            self._tiktok_check(project)
         self._busy(True)
         self.progress.setValue(0)
         self._worker = _RenderWorker(project, out, preview, self.guides.isChecked())

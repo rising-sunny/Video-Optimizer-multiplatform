@@ -104,6 +104,31 @@ class ProjectAndSequenceTest(unittest.TestCase):
     def tearDownClass(cls):
         shutil.rmtree(cls.tmp, ignore_errors=True)
 
+    def test_un_noticiero_mpeg2_entrelazado_y_anamorfico(self):
+        """Noticieros de archivo (Universal): 720x480 con pixeles 8:9 y entrelazados. Se leen a 640x480
+        de pantalla (antes salian estirados un 12 %) y desentrelazados (antes, peine en el movimiento)."""
+        clip = self.tmp / "newsreel.mpeg"
+        try:
+            subprocess.run([ce._ffmpeg(), "-loglevel", "error", "-y", "-f", "lavfi", "-i",
+                            "testsrc2=size=720x480:rate=30000/1001:duration=1", "-vf", "setsar=8/9,setfield=bff",
+                            "-c:v", "mpeg2video", "-flags", "+ilme+ildct", "-top", "0", str(clip)], check=True)
+        except Exception as exc:
+            self.skipTest(f"sin FFmpeg: {exc}")
+        info = ce.media_info.__wrapped__(str(clip))
+        self.assertEqual((info["width"], info["height"]), (640, 480))
+        self.assertTrue(info["interlaced"])
+        frames = list(ce.iter_video_frames(clip, 0.2, 3, size=(270, 480)))
+        self.assertEqual([f.size for f in frames], [(270, 480)] * 3)
+
+    def test_un_escaneo_justo_en_un_eje_no_rompe_el_recorte(self):
+        """Paginas escaneadas y fotos en TIFF: cuando la imagen cabe justa en un eje, el redondeo daba un
+        desplazamiento de -1e-13 y PIL fallaba con 'box offset can't be negative'."""
+        for size in ((1720, 2215), (5303, 3582), (1696, 2200)):
+            page = self.tmp / f"scan_{size[0]}.png"
+            Image.new("L", size, 200).save(page)
+            for focus in ((0.5, 0.0), (0.5, 1.0), (0.0, 0.5), (1.0, 0.5)):
+                self.assertEqual(ce.frame_image(page, focus, 1.0).size, (ce.W, ce.H))
+
     def test_un_guion_viejo_se_convierte_en_proyecto(self):
         p = ce.normalize_project(SCRIPT, self.tmp, 30)
         self.assertEqual(p["seconds"], 30.0)

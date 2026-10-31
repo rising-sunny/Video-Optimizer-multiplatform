@@ -154,6 +154,15 @@ obligatorio con número/fecha en el cap. 1) → prompts visuales → TTS → sto
   de TikTok y manda título y descripción por Telegram (`telegram_notify`); el usuario lo termina
   y publica desde la app. Es la única vía oficial sin auditoría (ver Changelog 2026-09-26).
   Videos de hasta 10 min: los documentales largos no entran.
+- **Filtro de normas de TikTok (desde 2026-10-07, SIEMPRE):** TikTok modera con clasificadores
+  que leen título, descripción, hashtags, texto en pantalla y audio. Antes de entregar o subir
+  cualquier texto o tarjeta para TikTok —también si el usuario lo sube a mano— pasalo por
+  `python -m publish.tiktok_filter --texto "..."` (o `--proyecto catarsis.json`, `--metadata`).
+  `BLOQUEA` = lo prohíben las normas: reescribir antes de entregar. `AVISO` = suele salir del
+  feed Para ti: corregir si se puede. El uploader ya lo aplica solo (`TIKTOK_FILTRO=bloquear`
+  por defecto; `--forzar` sube y avisa) y la pestaña Catarsis lo anota en el registro.
+  Nunca "false flag"/#FalseFlag; no juntar #Conspiracy con violencia; no "staged/fake" + acto
+  violento en la misma frase; las citas violentas, atribuidas y dentro del video.
 - Editar metadata de un video ya subido = modificar contenido público → **confirmá primero**.
 - **Dónde está el video (desde 2026-09-15):** cada render existe UNA sola vez, en
   `auto_videos/output/<plataforma>_<fecha>_<tema>.mp4` (Drive). La carpeta del proyecto/draft
@@ -328,6 +337,7 @@ concreta + sujeto nombrado**, duración corta. Ej: "72 Seconds: The Wow! Signal"
 | `facebook_metadata.py` | Título, arranque de la descripción y hashtags de Facebook e Instagram con la investigación de YouTube |
 | `tiktok_uploader.py` | Borrador a la bandeja de TikTok (sandbox, `video.upload`); `--setup` guarda credenciales y conecta; `--auth` reutiliza las guardadas; `--check`, `--upload` |
 | `telegram_notify.py` | Título y descripción del borrador de TikTok al celular, copiables con un toque; `--setup`, `--test` |
+| `tiktok_filter.py` | Filtro de normas de TikTok: `BLOQUEA`/`AVISO` por regla, con la norma y cómo corregir; lo usan el uploader y la pestaña Catarsis |
 | `build_derinkuyu_long.py` | Ejemplo one-off de documental (referencia; hardcodeado) |
 | `catharsis_editor.py` + `catharsis_tab.py` | Formato Catarsis: Short vertical sin voz, tarjetas + imágenes/videos + música con cortes al ritmo, efectos y diseño sonoro; pestaña "Catarsis" de la app |
 
@@ -429,6 +439,36 @@ concreta + sujeto nombrado**, duración corta. Ej: "72 Seconds: The Wow! Signal"
     de clip, las entradas frenan al final). Umbral: `cinematic_director.MAX_JUDDER_RATIO` (8%).
   - Guardas: `test_audio_mix_sync_guards.TestMotionRunsAtVideoFps` (5 tests). Verificado que fallan con el
     código viejo: todas las ramas sin fps, 10-11 repetidos sueltos de 60, y un clip de 0.7 s con 20 cuadros.
+- **2026-10-17** — **Documentales 16:9 de archivo y Shorts Catarsis con archivo real** (`archival_projects/`).
+  Recetas (solo código, guion, SRT y capítulos; el material se baja de archive.org/LoC/NSArchive):
+  `northwoods/doc` y `tonkin` (Stunning Revelations, ~9 min) → `doc.py sheet|audio|video|all` arma narración,
+  planos de archivo con push/grano/viñeta, páginas desclasificadas con resaltado animado (por rangos de
+  línea o por frase vía OCR `tesseract … tsv`), sellos, tarjetas de capítulo con glitch, música ad hoc con
+  ducking, SRT y capítulos; créditos y "illustrative" en pantalla. `yamaguchi_short` y `onoda_short`
+  (Stunning Facts of History) usan `catharsis_editor` + música sintetizada en escala *in*. Voz: Edge TTS
+  (`tts.py`); si devuelve 403 desde el servidor, `tonkin/tts_piper.py` (Piper en_US-ryan-high, offline).
+  Videos >30 MiB se entregan partidos (`-f segment`) + `lista.txt` para `ffmpeg -f concat`.
+- **2026-10-07** — **Filtro de normas de TikTok** (`publish/tiktok_filter.py`). TikTok retiró el Short
+  de Operation Northwoods por "Normas de la comunidad" el día que se publicó (texto con #FalseFlag,
+  #Conspiracy, "terror campaign", "staged airliner shootdown"); el carrusel del mismo tema, sin
+  #FalseFlag, siguió arriba. Reglas según las Normas de la comunidad (versión del 24-09-2026):
+  **bloquea** "false flag" (etiqueta de las teorías que niegan hechos violentos), marco conspirativo
+  + violencia, y "staged/fake" + acto violento en la misma frase; **avisa** #Conspiracy solo, lenguaje
+  violento acumulado, crisis en curso (WW3, armas nucleares), nombres extremistas, contenido
+  explícito, suicidio ("he jumped") y drogas (LSD). Una palabra violenta sola no avisa: la historia
+  de guerras es lo normal en #HistoryTok. El uploader no manda el borrador si bloquea
+  (`TIKTOK_FILTRO=avisar` o `--forzar` para subir igual) y suma los avisos al mensaje de Telegram;
+  la pestaña Catarsis revisa las tarjetas al generarlas y antes del render final.
+- **2026-10-07** — **Catarsis acepta escaneos y TIFF que calzan justo en un eje**: `frame_image` fallaba con
+  "box offset can't be negative" cuando la imagen llenaba exacto el alto o el ancho (paginas escaneadas de
+  documentos desclasificados, TIFF maestros de la Biblioteca del Congreso): el redondeo dejaba el recorte en
+  -1e-13. Ahora el recorte se acota a la imagen. Probado con un Short de Operation Northwoods (memo del Estado
+  Mayor Conjunto de 1962) para Stunning Revelations; 35 tests.
+- **2026-10-04** — **Catarsis lee bien los noticieros de archivo** (Universal Newsreel en MPEG2, Internet Archive):
+  vienen a 720x480 con píxeles 8:9 y entrelazados. `media_info` ahora da el ancho de pantalla (640) y
+  `interlaced`, e `iter_video_frames` desentrelaza con `yadif` (solo los cuadros marcados). Antes salían
+  estirados un 12 % y con peine en el movimiento. Probado con un Short de Sputnik (noticieros de 1957-58 y
+  el despegue del Apolo 11 de la NASA). Guardas: `tests/test_catharsis_editor.py` (34).
 - **2026-09-29** — **Catarsis acepta material de archivo `.mpg`, `.mpeg`, `.ogv` y `.wmv`** (Internet Archive y Wikimedia
   lo entregan así; antes se tomaban como imágenes y fallaban, y el diálogo de la pestaña no dejaba elegirlos).
   Probado con un Short del Hindenburg (noticiero de Universal de 1937, dominio público).
