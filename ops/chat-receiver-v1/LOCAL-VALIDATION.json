@@ -1,0 +1,11 @@
+{
+  "extended_local_tests": 40,
+  "installer_transaction_tests": 3,
+  "production_media_generated_or_published": false,
+  "real_local_decode_duration_seconds": 53.066667,
+  "receiver_sources_sha256": {
+    "chat_bridge_patch.py": "8f52a72cf7a840b5f87023962be2aa65e7fab16bbdc31794859ac61263325133",
+    "chat_package.py": "30d4e23b464144600a2c6436873d83a6e5d0bf77a8c28cf901389193ae6f13dc",
+    "chat_receiver.py": "9866c03b8e86eb2f7111733ed7885bea03e406d025b6c517b169eb34c23846f3"
+  }
+}

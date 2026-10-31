@@ -1,0 +1,9 @@
+{
+  "LOCAL-VALIDATION.json": "16b52bb51daf8cc7cab3659f57af6f305f4655687bdd3795ddb67be236d495df",
+  "README.md": "57ddbcb8067c053675fda12a13e21313351eecb54cbd08c8c62c29c0985a0ece",
+  "chat_bridge_patch.py": "8f52a72cf7a840b5f87023962be2aa65e7fab16bbdc31794859ac61263325133",
+  "chat_package.py": "30d4e23b464144600a2c6436873d83a6e5d0bf77a8c28cf901389193ae6f13dc",
+  "chat_receiver.py": "9866c03b8e86eb2f7111733ed7885bea03e406d025b6c517b169eb34c23846f3",
+  "install_chat_receiver.py": "a36856096d7a9e6106026f154c1825d5231d58a045ebbae4e2c1c5bde7d8b605",
+  "test_chat_smoke.py": "884cb87af189c45648e82b6159e05aff7cf9582bab01aaf7f873c288951c8b95"
+}

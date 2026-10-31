@@ -1,0 +1,9 @@
+{
+  "extended_receiver_tests": 40,
+  "installer_transaction_tests": 3,
+  "bootstrap_transfer_tests": 3,
+  "bootstrap_sha256": "dd437717eefbbcb717632e573dd738b4a1404192d4267096e71015bc76484314",
+  "kit_sha256": "fa7ce7baf3df3c761ad73c6d1b2097599dca0350c29cd8b62bc8902c69008245",
+  "kit_bytes": 14544,
+  "publication_invoked": false
+}
