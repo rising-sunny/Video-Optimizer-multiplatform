@@ -31,7 +31,8 @@
   Los lanzadores `RUN.bat` / `INSTALL_DEPS.bat` apuntan a `.venv`.
   - Invocación directa recomendada: `\.venv\Scripts\python.exe <script.py>`
 - **FFmpeg/ffprobe** en el PATH (`ffmpeg -version`).
-- **Secretos** en `.env` (gitignored). Claves relevantes: `GROQ_API_KEY` (guiones),
+- **Secretos** en `.env` (gitignored). Claves relevantes: `GROQ_API_KEY` o `DEEPSEEK_API_KEY` (guiones y
+  todo el texto IA; `TEXT_LLM_PROVIDER=auto|groq|deepseek` elige el orden, ver Changelog 2026-11-02),
   `FAL_KEY` (imágenes flux), `STABILITY_API_KEY`, `GOOGLE_API_KEY` (YouTube Data API,
   lectura de canales), credenciales OAuth en `token.json` (subida/edición YouTube),
   `WHISPER_REMOTE_*` (subtítulos word-level via VPS), `TIKTOK_CLIENT_KEY`/`TIKTOK_CLIENT_SECRET`
@@ -350,6 +351,45 @@ concreta + sujeto nombrado**, duración corta. Ej: "72 Seconds: The Wow! Signal"
 
 ## Changelog
 
+- **2026-11-02c** — **Short Catarsis con material real + toma 3D rotulada** ("Great Molasses Flood", Stunning Revelations,
+  44 s). Receta (carpeta de proyecto FUERA del repo, p. ej. `~/video-projects/<tema>/`): hechos de Wikipedia/Puleo ->
+  tarjetas validadas (`_validate_generated_cards`) y verificadas (`_check_card_facts`, juez DeepSeek) -> fotos PD de
+  Wikimedia Commons (API `generator=search` en el espacio de archivos, filtrando `Public domain`) + video PD de Internet
+  Archive (FedFlix/NARA) -> tramos cortados con ffmpeg -> musica Epidemic bajada por `video-automation/music_provider.audio()`
+  (solo Stunning Revelations) -> toma 3D con `pipeline.blender_shots.render_shot('newspaper', [portada real])` (1080x1920,
+  Normal, ~16 min en la VPS) y rotulo "3D REPRESENTATION" quemado con `drawtext` en el propio clip (variante `base` y
+  `motion="hold"` para que los efectos no lo deformen) -> `auto_sequence` + plan frase->imagen -> `render` (1080x1920 en
+  ~2.5 min; vista previa `preview=True` en ~1.5 min). La toma 3D necesita un plano largo: se le quita tiempo a planos vecinos
+  para no mover el total ni el quiebre.
+  **Bug corregido:** `catharsis_editor.frame_image` fallaba con "box offset can't be negative" en fotos apaisadas (10026x7253,
+  3787x3090) por un redondeo de 1e-12; ahora acota la caja a la imagen. Guarda: `TestFrameImageRedondeo`.
+- **2026-11-02b** — **Blender en la VPS Linux (sin GPU, sin root)**. Blender 4.5.15 LTS descomprimido en
+  `/home/videoagent/apps/blender/` (fuera del repo) y `BLENDER_PATH` en `.env` apuntando a
+  `blender-xvfb.sh`, que lo corre con `xvfb-run` (EEVEE necesita un contexto OpenGL; lo da Mesa por software).
+  No hicieron falta libGLU ni libEGL. Medido (3 vCPU EPYC, 3.7 GB RAM): los 7 ambientes renderizan; ~2.3 s/cuadro en
+  Borrador a 540x960 (la PC con UHD 630 medio ~1.5 s); pico de RAM del sistema 3.4 de 3.8 GB (hay 4 GB de swap).
+  **Bug de `crt_tv` corregido (no era de la VPS):** con el `seed=7` por defecto toca la camara `orbit`, que da media
+  vuelta y sale del cuarto por detras de la pared (y=1.3) desde ~37 % de la toma: cuadros NEGROS (igual con Blender
+  4.5 y 5.1, en cualquier calidad; el reintento no lo arregla). Ahora `crt_tv.py` orbita solo por el frente
+  (`orbit_keys(..., phases=0.32, start_angle=-2.4)`). Verificado con 4.5.15 y 5.1.2. Pruebas reales:
+  `BLENDER_PATH=.../blender-xvfb.sh RUN_BLENDER_TESTS=1 python -m unittest tests.test_blender_shots` (20 OK).
+- **2026-11-02** — **DeepSeek como alternativa a Groq para todo el texto IA** (`ai/groq_client.py`).
+  `GroqAiClient` (usado en ~40 sitios: guion, metadata, titulos, miniaturas, tendencias) ahora enruta
+  por proveedor con `TEXT_LLM_PROVIDER` en `.env`: `auto` (defecto: Groq si hay clave, DeepSeek como
+  respaldo o en su lugar si no la hay), `deepseek` (DeepSeek primero, Groq de respaldo) o `groq` (solo
+  Groq). Con solo `DEEPSEEK_API_KEY` el pipeline de texto funciona sin Groq. DeepSeek usa el MISMO
+  system prompt que Groq (`system_prompt_for`) y la misma validacion de JSON; modelo `DEEPSEEK_MODEL`
+  (defecto `deepseek-chat`). `text_llm_available()` reemplaza los `if GROQ_API_KEY` que bloqueaban
+  (arte visual, reescritor de hechos). Nuevo `check_deepseek` en el dialogo de estado de APIs.
+  **Clave y presupuesto:** `DEEPSEEK_API_KEY_FILE` (en `.env`) lee la clave de un archivo privado
+  (`infra/env_loader.py`; en la VPS `~/.config/video-deepseek/api-key`, la misma que usa `/opt/video-agent-mcp`),
+  sin copiarla al `.env`. `DEEPSEEK_DAILY_BUDGET_USD` (defecto 1.00; 0 lo desactiva) topa el gasto ESTIMADO
+  por dia UTC con los tokens que devuelve la API (`DEEPSEEK_PRICE_IN_PER_M`/`_OUT_PER_M`, defecto conservador);
+  acumulado en `generated_media/deepseek_budget.json`. Agotado: DeepSeek devuelve None y, si hay clave,
+  `GroqAiClient` pasa a Groq. Es independiente del limite por video del sistema `/opt/video-agent-mcp`.
+  Guardas: `tests/test_text_llm_provider.py` (13) y `tests/test_deepseek_budget.py` (10). Sin `FAL_KEY`/`GEMINI_API_KEY` el pipeline degrada:
+  el Director IA con vision y los jueces Gemini se omiten. Pendiente: `media/music_recommender.py` sigue
+  usando Groq directo (sin Groq cae al analisis basico).
 - **2026-10-06e** — **Prueba de fuego: un Short real con dinamismo y Blender** ("The Radium Girls",
   Stunning Facts of History, 73.5 s, 9 escenas con fotos reales de dominio público de Wikimedia
   Commons; no se subió).
