@@ -13,7 +13,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bpy  # noqa: E402
 from _scene_common import (  # noqa: E402
-    camera_rig, flat, light, load_params, material, motion_keys, noisy, render, setup_scene,
+    camera_rig, flat, light, load_params, material, motion_keys, noisy, orbit_keys, render, setup_scene,
     smooth,
 )
 
@@ -151,6 +151,11 @@ light(scene, 'Rim', 'AREA', 20, (1.0, 0.75, 0.5), (-1.8, 1.0, 2.6), (0, 0.5, 1.1
 
 center = (SX, 0.14, SZ)
 push = ((1, (0.75, -3.4, 1.45), (0.0, 0.5, 1.0)), (FRAMES, (SX, -0.95, SZ + 0.02), center))
-camera_rig(scene, lens=35, fstop=2.2,
-           keys=motion_keys(params.get("motion", "push"), FRAMES, center, push))
+# La orbita por defecto de _scene_common (media vuelta, radio 2.2) saca la camara del cuarto por detras de la
+# pared (y=1.3) desde ~37 % de la toma y el resto sale NEGRO (visto el 2026-11-02 en la VPS, con Blender 4.5 y 5.1).
+# Aca orbita solo por el frente: de la izquierda a la derecha del televisor, siempre dentro del cuarto.
+motion = params.get("motion", "push")
+keys = (orbit_keys(FRAMES, center, radius=2.2, phases=0.32, start_angle=-2.4) if motion == "orbit"
+        else motion_keys(motion, FRAMES, center, push))
+camera_rig(scene, lens=35, fstop=2.2, keys=keys)
 render()
