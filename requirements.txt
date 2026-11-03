@@ -15,7 +15,7 @@ opencv-python-headless==4.10.0.84  # caras del retrato flotante; la 5.x quito lo
 # Audio Processing
 pydub==0.25.1
 gTTS==2.5.1
-edge-tts==7.2.7  # Microsoft Edge voices (GRATIS - muchas voces)
+edge-tts==7.3.1  # Microsoft Edge voices (GRATIS - muchas voces)
 librosa==0.10.2; python_version < "3.13"
 librosa>=0.11.0,<0.12; python_version >= "3.13"
 scipy==1.13.1; python_version < "3.13"
