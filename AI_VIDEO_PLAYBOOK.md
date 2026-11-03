@@ -267,6 +267,24 @@ Ahora el Studio tiene **Dinamismo** (Apagado / Moderado / Alto) y **Tomas 3D con
   `Video congelado corregido`; una composición que falla sale a pantalla completa (no en
   negro) y figura como `[FAIL]`.
 
+### 6d. Horas de monetizacion: por que los largos no rinden (2026-11-03)
+
+**Datos (YouTube Analytics, 365 dias):** Shorts 54.028 vistas / 605 h; **largos 683 vistas / 16,4 h**. Para el Programa de
+Socios solo cuentan las horas de **largos** (faltan ~4.000 h). Los largos no reciben **ni una vista de BROWSE** (inicio):
+solo suscriptores y relacionados. Curva tipica: se va el **41-55% en los primeros 30 s** y hay un **segundo derrumbe entre
+el 20% y el 30%**; rendimiento relativo vs videos similares 0,05-0,50 (0,5 = mediana).
+**El tema no es el problema:** Dyatlov tiene mediana de 195k vistas en busqueda (nuestro largo: 1 vista); en Sea Peoples un
+canal de 13,9k subs tiene 341k (el nuestro: 61). Fallan **empaque y apertura**.
+
+Reglas nuevas en el Bible (`long_form_rules`): 12-18 min, filtro de demanda, cold open con escena + pregunta + promesa (sin
+"This is the story of", sin contexto antes de 1:30), narracion por misterio y no cronologica, giro cada 60-90 s, titulo
+emocional (no "Tema: subtitulo"), 1 largo por semana, Short hermano enlazado como "Video relacionado".
+
+Herramienta (solo lectura): `long_form_research.py`
+- `demand "<tema>" ...` -> mediana de vistas y canales chicos con exito (~102 unidades de cuota por tema).
+- `retention <video_id> ...` -> curva de retencion + trafico de un largo propio (medir a las 48 h y a los 7 dias).
+- `summary` -> horas de Shorts vs largos en 365 dias.
+
 ---
 
 ## 7. El Channel Bible (Stunning Revelations)
@@ -350,6 +368,11 @@ concreta + sujeto nombrado**, duración corta. Ej: "72 Seconds: The Wow! Signal"
 ---
 
 ## Changelog
+
+- **2026-11-03** — **Campana de horas de monetizacion.** Diagnostico con YouTube Analytics (seccion 6d): los largos suman
+  16,4 h en 12 meses, sin trafico de inicio, y pierden la mitad del publico en 30 s. Nuevo `long_form_research.py`
+  (demanda de temas, retencion, resumen Shorts vs largos) y `long_form_rules` del Bible reescritas con esos datos
+  (12-18 min, filtro de demanda, cold open escena+pregunta+promesa, narracion por misterio, titulo emocional, 1 por semana).
 
 - **2026-11-02c** — **Short Catarsis con material real + toma 3D rotulada** ("Great Molasses Flood", Stunning Revelations,
   44 s). Receta (carpeta de proyecto FUERA del repo, p. ej. `~/video-projects/<tema>/`): hechos de Wikipedia/Puleo ->

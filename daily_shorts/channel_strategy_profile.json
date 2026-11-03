@@ -93,17 +93,30 @@
     "cadence_note": "1 short por dia. El canal anterior publicaba 2+/dia y sus mejores meses fueron justamente los de mas volumen (marzo: 66 subidas, mediana 80 views; abril: 58, mediana 113). Lo que si lo hundio fue el 20% de casi-duplicados y la caida de retencion a 39.4% en julio. La cadencia diaria solo es sostenible con: cero duplicados, el bloque de QA en verde, y series con continuidad."
   },
   "long_form_rules": {
-    "target_duration_min": 8,
-    "target_duration_max": 15,
+    "target_duration_min": 12,
+    "target_duration_max": 18,
     "avoid_duration_range": "2-5min",
-    "structure": [
-      "Cold open hook (same as short if possible)",
-      "3-5 chapters with timestamps",
-      "Evidence / rival theories",
-      "Human scale consequence",
-      "Open question close"
+    "evidence_2026_11": "12 meses: long-form = 683 vistas / 16,4 h (Shorts 54.106 vistas, no cuentan para YPP). 0 vistas de BROWSE. Retencion: se va el 41-55% en los primeros 30 s y hay un segundo derrumbe entre el 20% y el 30% del video. Rendimiento relativo vs videos similares 0,05-0,50. Los temas SI tienen demanda (Dyatlov mediana 195k, Sea Peoples: canal de 13,9k subs con 341k vistas); fallan empaque y apertura.",
+    "topic_gate": "Solo temas con demanda medida en busqueda de YouTube (videos 4-20 min desde 2024): mediana >10k vistas o al menos un canal <50k subs con >20k vistas. Herramienta: long_form_research.py demand "<tema>" (ver playbook 6d).",
+    "first_30_seconds": [
+      "Primera frase = una escena concreta con una persona, un lugar y un objeto real en pantalla; nada de 'This is the story of'.",
+      "Abrir una pregunta que solo se responde al final y prometer explicitamente ese pago ('by the end of this video...').",
+      "No revelar el desenlace en el cold open; nada de contexto/fechas de fondo antes del minuto 1:30."
     ],
-    "source": "Expand a validated A-tier short; do not invent orphan long-forms"
+    "structure": [
+      "Cold open 45-75 s: escena + pregunta + promesa (sin titulo animado largo)",
+      "Narracion por misterio/investigacion, no cronologica: cada capitulo abre con una pregunta y cierra con un gancho al siguiente",
+      "Una prueba o giro nuevo cada 60-90 s; interrupcion de patron al 25% y al 50% (cambio visual fuerte, dato inesperado)",
+      "Evidencia / teorias rivales con veredicto honesto",
+      "Pago de la pregunta del cold open en los ultimos 2 minutos, luego cierre corto + video siguiente en pantalla final"
+    ],
+    "packaging": [
+      "Titulo emocional/curiosidad (como los ganadores del nicho: 'The Most Agonizing Submarine Disaster in History'), no enciclopedico 'Tema: subtitulo'. Max ~60 caracteres.",
+      "Miniatura: un sujeto real + 1-3 palabras; no repetir el titulo.",
+      "El Short hermano debe enlazar el largo (Studio > Short > 'Video relacionado') y comentario fijado."
+    ],
+    "cadence": "1 documental por semana bien hecho; no 3 en 4 dias.",
+    "source": "Tema con demanda medida + Short del canal que ya funciono; no inventar long-forms huerfanos"
   },
   "narrative_structure": {
     "hook": {
