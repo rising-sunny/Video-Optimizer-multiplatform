@@ -190,9 +190,11 @@ def frame_image(path: Path, focus=(0.5, 0.5), zoom: float = 1.0) -> Image.Image:
     im = Image.open(path).convert("RGB")
     scale = max(W / im.width, H / im.height) * max(zoom, 1.0)
     cw, ch = W / scale, H / scale   # zona de la foto que llena el cuadro
-    left = min(max(focus[0] * im.width - cw / 2, 0), im.width - cw)
-    top = min(max(focus[1] * im.height - ch / 2, 0), im.height - ch)
-    return im.resize((W, H), Image.LANCZOS, box=(left, top, left + cw, top + ch))
+    # El redondeo puede dejar cw/ch una millonesima por encima del tamano real (visto con fotos de 10026x7253 y
+    # 3787x3090): PIL rechaza una caja negativa o que se pasa. Se acota a la imagen.
+    left = min(max(focus[0] * im.width - cw / 2, 0), max(im.width - cw, 0.0))
+    top = min(max(focus[1] * im.height - ch / 2, 0), max(im.height - ch, 0.0))
+    return im.resize((W, H), Image.LANCZOS, box=(left, top, min(left + cw, im.width), min(top + ch, im.height)))
 
 
 def iter_video_frames(path, start: float, count: int, focus=(0.5, 0.5), zoom: float = 1.0,

@@ -428,5 +428,20 @@ class LimitFlashesTest(unittest.TestCase):
         self.assertAlmostEqual(10.0 + snapped[0], 11.1, places=6)
 
 
+class TestFrameImageRedondeo(unittest.TestCase):
+    """2026-11-02: fotos apaisadas como 10026x7253 y 3787x3090 hacian fallar el recorte vertical con
+    'box offset can't be negative' (cw/ch quedaban 1e-12 por encima del tamano real)."""
+
+    def test_el_recorte_nunca_se_pasa_de_la_imagen(self):
+        d = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, d, True)
+        for w, h in ((202, 201), (209, 201), (230, 201), (300, 290)):
+            f = d / f"p_{w}x{h}.png"
+            Image.new("RGB", (w, h), (120, 90, 60)).save(f)
+            for focus, zoom in (((0.5, 0.5), 1.0), ((0.0, 0.0), 1.0), ((1.0, 1.0), 1.9)):
+                out = ce.frame_image(f, focus, zoom)
+                self.assertEqual(out.size, (ce.W, ce.H), (w, h, focus, zoom))
+
+
 if __name__ == "__main__":
     unittest.main()
