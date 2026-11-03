@@ -725,8 +725,8 @@ def default_rewriter(fallback: Optional[Callable[[str], Any]] = None,
                     log(f"   [Hechos] reescritura con {model} no disponible: {' '.join(str(exc).split())[:110]}")
         if fallback:
             return fallback(prompt)
-        if os.getenv("GROQ_API_KEY"):
-            from ai.groq_client import GroqAiClient
+        from ai.groq_client import GroqAiClient, text_llm_available
+        if text_llm_available():
             return GroqAiClient()._generate(prompt, max_tokens=8000, task_type="script_quality",
                                             json_mode=True)
         return None
@@ -1021,7 +1021,7 @@ def fact_check_scenes(scenes: Sequence, topic: str, *, language: str = "en",
         return scenes, report
     judges = list(judges if judges is not None else default_judges())
     if not judges:
-        log("   [Hechos] no hay juez disponible (faltan GEMINI_API_KEY y GROQ_API_KEY)")
+        log("   [Hechos] no hay juez disponible (faltan DEEPSEEK_API_KEY, GEMINI_API_KEY y GROQ_API_KEY)")
         return scenes, report
 
     docs: Dict[str, Any] = {}

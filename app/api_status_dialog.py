@@ -39,6 +39,7 @@ class APIStatusWorker(QThread):
             "Wikimedia": "check_wikimedia",
             "Google Gemini": "check_gemini",
             "Groq": "check_groq",
+            "DeepSeek": "check_deepseek",
             "Perplexity": "check_perplexity",
             "OpenAI": "check_openai",
             "xAI Grok": "check_grok",

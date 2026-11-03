@@ -433,8 +433,8 @@ def default_llm(log: Callable = print) -> Callable[[str], Any]:
                             _UNAVAILABLE[name] = time.time()
                         log(f"   [Arte] {model} no disponible: {' '.join(text.split())[:100]}")
                         break
-        if os.getenv("GROQ_API_KEY"):
-            from ai.groq_client import GroqAiClient
+        from ai.groq_client import GroqAiClient, text_llm_available
+        if text_llm_available():
             return GroqAiClient()._generate(prompt, max_tokens=6000, task_type="script_quality", json_mode=True)
         return None
     return ask

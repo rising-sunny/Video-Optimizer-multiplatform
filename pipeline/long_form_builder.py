@@ -305,7 +305,7 @@ def build_long_form(
     from ai.groq_client import GroqAiClient
     client = GroqAiClient()
     if not getattr(client, "client", None):
-        raise RuntimeError("Groq client not available (check GROQ_API_KEY)")
+        raise RuntimeError("No text LLM available (set GROQ_API_KEY or DEEPSEEK_API_KEY)")
 
     tone = get_narration_tone() or {}
     tone_line = ", ".join(tone.get("style", ["documentary", "mysterious", "sober"]))

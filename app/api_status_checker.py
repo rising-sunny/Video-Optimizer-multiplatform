@@ -104,6 +104,29 @@ class APIStatusChecker:
                 "account": None
             }
     
+    def check_deepseek(self) -> Dict[str, Any]:
+        """Verifica DeepSeek (alternativa a Groq para el texto). Consulta el saldo si la clave responde."""
+        api_key = os.getenv("DEEPSEEK_API_KEY")
+        if not api_key:
+            return {"status": "not_configured", "message": "API Key no configurada",
+                    "credits": None, "usage": None, "account": None}
+        try:
+            import requests
+            base = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com").rstrip("/")
+            resp = requests.get(f"{base}/user/balance", headers={"Authorization": f"Bearer {api_key}"}, timeout=15)
+            if resp.status_code == 401:
+                return {"status": "error", "message": "API Key invalida", "credits": None, "usage": None, "account": None}
+            if resp.status_code != 200:
+                return {"status": "error", "message": f"HTTP {resp.status_code}", "credits": None, "usage": None, "account": None}
+            data = resp.json() or {}
+            balances = ", ".join(f"{b.get('total_balance')} {b.get('currency')}" for b in data.get("balance_infos", []))
+            return {"status": "working" if data.get("is_available", True) else "error",
+                    "message": "API funcionando" if data.get("is_available", True) else "Saldo insuficiente",
+                    "credits": balances or "No disponible", "usage": "No disponible en API", "account": "No disponible"}
+        except Exception as e:
+            return {"status": "error", "message": f"{type(e).__name__}: {str(e)[:80]}",
+                    "credits": None, "usage": None, "account": None}
+
     def check_groq(self) -> Dict[str, Any]:
         """Verifica estado de Groq"""
         api_key = os.getenv("GROQ_API_KEY")

@@ -19,6 +19,53 @@ except ImportError:
 # Cargar API Key (DESPUÉS de load_dotenv)
 GROQ_API_KEY = None
 
+
+def text_llm_provider() -> str:
+    """Proveedor de texto elegido en el .env: TEXT_LLM_PROVIDER = auto | groq | deepseek.
+
+    auto (por defecto): Groq si tiene clave (el comportamiento de siempre) y DeepSeek como respaldo,
+    o DeepSeek solo cuando no hay clave de Groq. deepseek: DeepSeek primero. groq: solo Groq.
+    """
+    value = str(os.getenv("TEXT_LLM_PROVIDER") or "auto").strip().lower()
+    return value if value in ("auto", "groq", "deepseek") else "auto"
+
+
+def text_llm_available() -> bool:
+    """Hay algun proveedor de texto con clave (Groq o DeepSeek) segun TEXT_LLM_PROVIDER."""
+    pref = text_llm_provider()
+    groq = bool(os.getenv("GROQ_API_KEY"))
+    deepseek = bool(os.getenv("DEEPSEEK_API_KEY"))
+    return groq if pref == "groq" else (groq or deepseek)
+
+
+def system_prompt_for(task_key: str, json_mode: bool = False) -> str:
+    """System prompt que usan TODOS los proveedores (Groq y DeepSeek) para que el tono no cambie."""
+    if json_mode:
+        return (
+            "Return exactly one complete, valid JSON object matching the requested structure. "
+            "No markdown or narration outside the JSON. Follow the requested historical accuracy "
+            "and uncertainty rules; do not invent sources, events or quotes."
+        )
+    if str(task_key or "").lower() == "script_quality":
+        return (
+            # Neutral system prompt: tone/persona is fully controlled by the user prompt,
+            # which now carries a category-derived tone profile (documentary / dramatic_factual / mystery).
+            # Previously this system prompt hardcoded a mystery-channel persona, which overrode
+            # historical/scientific topics and caused fabricated content (curses, pseudohistory, fake conspiracies).
+            "You are an expert scriptwriter for video documentaries. "
+            "Follow the tone, persona and content rules given in the user prompt EXACTLY — "
+            "if the user prompt forbids paranormal/conspiracy framing, do NOT add it. "
+            "If the user prompt requests strict factual/historical content, do NOT invent events, names, dates, organizations or quotes. "
+            "When documented material does not fill the requested duration, produce a SHORTER script rather than fabricating filler. "
+            "Never refuse a historical documentary narration. If a proper name is unfamiliar, use the aliases and outline in the user prompt. "
+            "Do not reply with apologies or 'I can't fulfill that request' — output narration only. "
+            "Output only the requested content without conversational filler or meta-commentary."
+        )
+    return (
+        "You are a helpful assistant for video production. "
+        "Output only the requested content without conversational filler. Be concise and accurate."
+    )
+
 class GroqAiClient:
     """
     Cliente para interactuar con la API de Groq Cloud Console como respaldo.
@@ -51,14 +98,28 @@ class GroqAiClient:
         self.model_cursors = {"general": 0, "script_quality": 0}
         self.models = self.general_models[:]  # compatibilidad con código legacy
         self.model_index = 0
-        
+
+        # Proveedor de texto (TEXT_LLM_PROVIDER = auto | groq | deepseek). Ver _provider_order().
+        # `client` sigue siendo lo que el resto del codigo comprueba (`if x.client:`): es verdadero
+        # si hay AL MENOS un proveedor listo (Groq o DeepSeek).
+        self.groq_ready = False
+        self.deepseek = None
+        self.provider_pref = text_llm_provider()
+
+        self._init_groq()
+        self._init_deepseek()
+        if not self.client and self.deepseek is not None:
+            self.client = self.deepseek
+
+    def _init_groq(self):
         if not GROQ_LIB_OK:
             return
 
         if not self.api_key:
-            print("[WARN] GROQ_API_KEY no encontrada en .env o .env.txt")
+            if self.provider_pref == "groq":
+                print("[WARN] GROQ_API_KEY no encontrada en .env o .env.txt")
             return
-        
+
         # Limpiar env vars de proxies si interfieren
         os.environ.pop('HTTP_PROXY', None)
         os.environ.pop('HTTPS_PROXY', None)
@@ -68,10 +129,36 @@ class GroqAiClient:
             self.client = Groq(
                 api_key=self.api_key,
             )
+            self.groq_ready = True
             self._refresh_available_models()
             print(f"[OK] Cliente Groq inicializado. Modelo: {self.model}")
         except Exception as e:
             print(f"[ERROR] Error al inicializar Groq: {e}")
+
+    def _init_deepseek(self):
+        """DeepSeek como alternativa (o respaldo) de Groq. Sin DEEPSEEK_API_KEY no hace nada."""
+        if self.provider_pref == "groq" or not os.getenv("DEEPSEEK_API_KEY"):
+            return
+        try:
+            from ai.deepseek_client import DeepSeekClient
+            candidate = DeepSeekClient()
+            if candidate.api_key:
+                self.deepseek = candidate
+        except Exception as e:
+            print(f"[ERROR] Error al inicializar DeepSeek: {e}")
+
+    def _provider_order(self):
+        """Proveedores a probar, en orden. `auto`: Groq si esta configurado (como siempre), DeepSeek despues
+        o en su lugar. `deepseek`: DeepSeek primero y Groq como respaldo si hay clave. `groq`: solo Groq."""
+        pref = getattr(self, "provider_pref", "auto")
+        # Sin `groq_ready` (instancia armada a mano, p. ej. en tests) `client` es el Groq de siempre.
+        ready = getattr(self, "groq_ready", None)
+        have_groq = bool(getattr(self, "client", None)) if ready is None else bool(ready)
+        have_ds = getattr(self, "deepseek", None) is not None
+        if pref == "groq":
+            return ["groq"] if have_groq else []
+        order = ["deepseek", "groq"] if pref == "deepseek" else ["groq", "deepseek"]
+        return [p for p in order if (p == "groq" and have_groq) or (p == "deepseek" and have_ds)]
 
     @property
     def model(self):
@@ -139,6 +226,42 @@ class GroqAiClient:
         return deduped
 
     def _generate(self, prompt_text, max_tokens=4096, task_type="general", json_mode=False):
+        """Genera texto con el primer proveedor que responda (Groq / DeepSeek, ver _provider_order)."""
+        order = self._provider_order()
+        if not order:
+            print("[ERROR] No hay proveedor de texto configurado (falta GROQ_API_KEY o DEEPSEEK_API_KEY).")
+            return None
+        for i, provider in enumerate(order):
+            if provider == "deepseek":
+                result = self._generate_deepseek(prompt_text, max_tokens, task_type, json_mode)
+            else:
+                result = self._generate_groq(prompt_text, max_tokens, task_type, json_mode)
+            if result:
+                return result
+            if i + 1 < len(order):
+                print(f"[WARN] {provider} no respondio; pruebo {order[i + 1]}.")
+        return None
+
+    def _generate_deepseek(self, prompt_text, max_tokens=4096, task_type="general", json_mode=False):
+        """DeepSeek con el mismo system prompt y la misma validacion de JSON que Groq."""
+        task_key = str(task_type or "general").lower()
+        try:
+            response = self.deepseek._generate(
+                prompt_text, max_tokens=max_tokens, task_type=task_key, json_mode=json_mode,
+                system=system_prompt_for(task_key, json_mode),
+            )
+            if response and json_mode:
+                import json
+                if not isinstance(json.loads(response), dict):
+                    raise ValueError('La respuesta JSON debe ser un objeto')
+            if response:
+                print("[OK] Respuesta generada por DeepSeek")
+            return response or None
+        except Exception as e:
+            print(f"[ERROR] DeepSeek fallo: {str(e)[:180]}")
+            return None
+
+    def _generate_groq(self, prompt_text, max_tokens=4096, task_type="general", json_mode=False):
         """Genera texto usando Groq, seleccionando modelo según tipo de tarea."""
         if not self.client:
             print("[ERROR] Groq no esta configurado.")
@@ -165,30 +288,7 @@ class GroqAiClient:
             try:
                 print(f"   [INFO] Consultando a Groq ({current_model}) [{task_key}]...")
 
-                system_content = (
-                    # Neutral system prompt: tone/persona is fully controlled by the user prompt,
-                    # which now carries a category-derived tone profile (documentary / dramatic_factual / mystery).
-                    # Previously this system prompt hardcoded a mystery-channel persona, which overrode
-                    # historical/scientific topics and caused fabricated content (curses, pseudohistory, fake conspiracies).
-                    "You are an expert scriptwriter for video documentaries. "
-                    "Follow the tone, persona and content rules given in the user prompt EXACTLY — "
-                    "if the user prompt forbids paranormal/conspiracy framing, do NOT add it. "
-                    "If the user prompt requests strict factual/historical content, do NOT invent events, names, dates, organizations or quotes. "
-                    "When documented material does not fill the requested duration, produce a SHORTER script rather than fabricating filler. "
-                    "Never refuse a historical documentary narration. If a proper name is unfamiliar, use the aliases and outline in the user prompt. "
-                    "Do not reply with apologies or 'I can't fulfill that request' — output narration only. "
-                    "Output only the requested content without conversational filler or meta-commentary."
-                ) if task_key == "script_quality" else (
-                    "You are a helpful assistant for video production. "
-                    "Output only the requested content without conversational filler. Be concise and accurate."
-                )
-
-                if json_mode:
-                    system_content = (
-                        "Return exactly one complete, valid JSON object matching the requested structure. "
-                        "No markdown or narration outside the JSON. Follow the requested historical accuracy "
-                        "and uncertainty rules; do not invent sources, events or quotes."
-                    )
+                system_content = system_prompt_for(task_key, json_mode)
                 chat_completion = self.client.chat.completions.create(
                     messages=[
                         {
