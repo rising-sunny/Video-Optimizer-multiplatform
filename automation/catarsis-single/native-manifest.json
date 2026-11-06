@@ -1,0 +1,14 @@
+{
+  "generation_service.py": {
+    "before": "7d11e992bed3de13f857e7be31165aa9380fce095691d7f0867b2481f2a7caf5",
+    "after": "5d697ede31a35a49fe03bf95cc85b6872e963f6c9929e88068cb7fdaf60ddb7b"
+  },
+  "generation_worker.py": {
+    "before": "24cdd6e83fc8e58a4ff8315eef5c10f003c21e3cba88c5e9c64d8bddcb3d23c3",
+    "after": "1cd3364c9baa2abddaf1ccdd44c67211152646922e03dd86f268d5f3d31e1011"
+  },
+  "documentary_service.py": {
+    "before": "4d9a49d2c8e59ae8f0e7332bb6d6dfa9e7d681fcba0751e9d4349df0e7b71874",
+    "after": "d72767abde3475795539f75ccc5bd62bed73534208dbbd982f8ecf77d6b530f0"
+  }
+}
