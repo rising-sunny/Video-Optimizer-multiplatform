@@ -1,0 +1,254 @@
+{
+  "schema_version": 1,
+  "release": "workflow-consolidated-v47-20261106",
+  "recorded_at": "2026-11-06",
+  "evidence": "User-provided installation logs, delivered source snapshots and final publication readback; VPS receipt confirms local persistence separately.",
+  "releases": [
+    {
+      "version": "v23",
+      "release": "resumable-downloads-v23",
+      "correction": "Descargas reanudables y recibos de red",
+      "scope": "general_and_exact_job",
+      "commit": null
+    },
+    {
+      "version": "v24",
+      "release": "targeted-autocorrection-v24",
+      "correction": "Autocorrección editorial acotada",
+      "scope": "general_and_exact_job",
+      "commit": null
+    },
+    {
+      "version": "v25",
+      "release": "compact-autocorrection-v25",
+      "correction": "Correcciones compactas y reutilización de segmentos",
+      "scope": "general_and_exact_job",
+      "commit": null
+    },
+    {
+      "version": "v26",
+      "release": "archival-framing-v26",
+      "correction": "Encuadre de archivo",
+      "scope": "general_and_exact_job",
+      "commit": null
+    },
+    {
+      "version": "v27",
+      "release": "quota-visual-resume-v27",
+      "correction": "Un intento visual explícito tras recuperar cuota",
+      "scope": "exact_job_consumed",
+      "commit": null
+    },
+    {
+      "version": "v28.2",
+      "release": "epidemic-motion-documentary-v28.2",
+      "correction": "Clips, música con ducking, SFX y fotogramas enteros",
+      "scope": "general_and_exact_job",
+      "commit": null
+    },
+    {
+      "version": "v29",
+      "release": "clear-context-labels-v29",
+      "correction": "Rótulos de contexto y AAC conservado",
+      "scope": "general_and_exact_job",
+      "commit": null
+    },
+    {
+      "version": "v31",
+      "release": "documentary-catarsis-v31",
+      "correction": "Catarsis horizontal y SRT separado",
+      "scope": "general",
+      "commit": null
+    },
+    {
+      "version": "v32",
+      "release": "readable-media-resume-v32",
+      "correction": "Decodificación completa de imágenes y reanudación por planos",
+      "scope": "general_and_exact_job",
+      "commit": "46147cd357deaa4681c1e6890abecff3cf76777a"
+    },
+    {
+      "version": "v33",
+      "release": "short-context-captions-v33",
+      "correction": "Rótulos breves y fuentes pertinentes",
+      "scope": "general_and_exact_job",
+      "commit": "ef1bb8615b7ff8a5296d155fde31749539706ed3"
+    },
+    {
+      "version": "v34",
+      "release": "verified-shorts-media-v34",
+      "correction": "Catálogo de medios verificados antes de IA",
+      "scope": "general_and_exact_job",
+      "commit": "95861f5df89941214b0c02e16993f0b1fdf665d6"
+    },
+    {
+      "version": "v35",
+      "release": "catalog-context-v35",
+      "correction": "Catálogo conservado en contexto del editor",
+      "scope": "general_and_exact_job",
+      "commit": "f9d94c97a0dd9c860f7c8b572b7e9deca22bc8a9"
+    },
+    {
+      "version": "v36",
+      "release": "curated-plans-v36",
+      "correction": "Planes locales y validación nativa",
+      "scope": "general_and_exact_job",
+      "commit": null
+    },
+    {
+      "version": "v37",
+      "release": "curated-topic-binding-v37",
+      "correction": "Tema original completo",
+      "scope": "exact_job_consumed",
+      "commit": "088d8622bcc0e50615e9c53cf4ca6270d6f21f11"
+    },
+    {
+      "version": "v38.1",
+      "release": "saved-av-reviews-v38",
+      "correction": "MP4 sin pistas de datos, remux e inspección como propietario",
+      "scope": "general_and_exact_job",
+      "commit": "82cb2c908e0086b016e3cd5ce0ef9d288343d8aa"
+    },
+    {
+      "version": "v39",
+      "release": "verified-still-reviews-v39",
+      "correction": "Revisiones positivas vinculadas a entradas y fotos reales",
+      "scope": "exact_job_consumed",
+      "commit": "8de9cf95130f5c526aec545019137930a76222c7"
+    },
+    {
+      "version": "v40",
+      "release": "complete-history-partitions-v40",
+      "correction": "Cobertura de historial completo en particiones",
+      "scope": "general_and_exact_job",
+      "commit": "486cb73087780af9681093c423d8ef6fb19ef6f5"
+    },
+    {
+      "version": "v41",
+      "release": "verified-factual-reuse-v41",
+      "correction": "Fuentes factuales alternativas y snapshots reales",
+      "scope": "general_and_exact_job",
+      "commit": "93264a2475c4fbae607638b26ec504b8f599203a"
+    },
+    {
+      "version": "v42",
+      "release": "local-asset-format-v42",
+      "correction": "Normalización de recursos contra catálogo",
+      "scope": "general_and_exact_job",
+      "commit": "ae16d5ac5ff357a6f83979ba1acd981e93d919df"
+    },
+    {
+      "version": "v43",
+      "release": "documentary-epic-score-v43",
+      "correction": "Perfil musical de documental y revisión sólo de audio",
+      "scope": "general_and_exact_job",
+      "commit": "07d7591dfbae23347ccfa0275e2a39e11267d843"
+    },
+    {
+      "version": "v44.4",
+      "release": "saved-json-and-timing-v44",
+      "correction": "JSON acotado, tiempos nativos y permisos de fixtures",
+      "scope": "general_and_exact_job",
+      "commit": "921360d2a187fd029eac4e237a66c7f433ee11b2"
+    },
+    {
+      "version": "v45",
+      "release": "saved-excerpt-and-review-v45",
+      "correction": "Revisiones guardadas y movimiento en fuente antes de grano",
+      "scope": "general_and_exact_job",
+      "commit": "417bfe26b7365c8934a37482c6fce979aab187a4"
+    },
+    {
+      "version": "v46-v2",
+      "release": "finalization-source-reference-v46-v2",
+      "correction": "Listas JSON de créditos/encuadre y dependencias del render",
+      "scope": "source_reference_available",
+      "commit": null
+    },
+    {
+      "version": "chrome-dome-v1",
+      "release": "chrome-dome-verified-sources-20261106",
+      "correction": "Fuentes verificadas y recuperación de plan guardado",
+      "scope": "exact_job_consumed",
+      "commit": "3861fffeefa42802413bbb4679747bcf4a583444"
+    },
+    {
+      "version": "chrome-dome-v3",
+      "release": "verified-catalog-file-types-v3",
+      "correction": "Segmentos, referencias de assets y tipo de archivo",
+      "scope": "exact_job_consumed",
+      "commit": "47953df7d51f58f4f9f19ea91c08aa6e3621ad6d"
+    },
+    {
+      "version": "chrome-dome-v4",
+      "release": "music-evidence-before-review-v4",
+      "correction": "Recibos musicales reales antes de revisión textual",
+      "scope": "general_and_exact_job",
+      "commit": "ad33f2d1d7843c77fd6f92a51db4a5d06b692996"
+    },
+    {
+      "version": "chrome-dome-v5",
+      "release": "saved-clip-duration-and-archival-framing-v5",
+      "correction": "Duración/movimiento real y encuadre SD identificado",
+      "scope": "general_and_exact_job",
+      "commit": "e7ae45e251fdca94f9580c53a96aa950b77ad189"
+    },
+    {
+      "version": "chrome-dome-v6",
+      "release": "one-same-video-visual-retry-v6",
+      "correction": "Consulta de cuota real y un intento visual específico",
+      "scope": "exact_job_consumed",
+      "commit": "4e740881da1aa5bfdc729d7a5a1b3535060afbff"
+    },
+    {
+      "version": "youtube-v1",
+      "release": "approved-documentary-youtube-20261106",
+      "correction": "Carga privada reanudable, recibo y metadatos aprobados",
+      "scope": "superseded_by_youtube_v2",
+      "commit": "1128e1ea26bb75d51529f12ddf174083cf184c90"
+    },
+    {
+      "version": "youtube-v2",
+      "release": "caption-not-found-and-existing-video-resume",
+      "correction": "Captions asíncronos, ID conservado y readback público",
+      "scope": "generalized_in_v47",
+      "commit": "57f509775a8821907279f62a97ba89d3f0c4cecc"
+    }
+  ],
+  "last_verified_publication": {
+    "job_id": "d1da2fe6dfb746e09694bb2129ff6f80",
+    "channel": "stunning-revelations",
+    "video_id": "B8QPUmNCfCY",
+    "url": "https://www.youtube.com/watch?v=B8QPUmNCfCY",
+    "state": "published",
+    "thumbnail_set": true,
+    "english_subtitles": true
+  },
+  "validation": {
+    "offline_tests": 44,
+    "publisher_core": 25,
+    "generic_adapter": 11,
+    "archive": 8,
+    "generation_requests": 0,
+    "publication_requests": 0
+  },
+  "install_behavior": {
+    "changes_generation_runtime": false,
+    "enables_timers": false,
+    "runs_recoveries": false,
+    "snapshots_declared_python_sources": true,
+    "copies_runtime_credentials": false,
+    "permanent_publication_entrypoint": "/usr/local/sbin/video-documentary-youtube"
+  },
+  "policy": {
+    "preserve_paid_counters": true,
+    "preserve_remote_ids": true,
+    "source_of_truth_for_media_type": "verified_offered_file",
+    "music_evidence_before_text_review": true,
+    "preserve_srt_and_integer_frame_timing": true,
+    "generation_and_publication_separate": true,
+    "caption_not_found_only_is_empty_or_pending": true,
+    "publish_after_caption_serving_and_metadata_check": true,
+    "recovery_grants_are_job_specific": true
+  }
+}
