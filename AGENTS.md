@@ -13,3 +13,7 @@ The versioned sources and reusable publisher are in `automation/documentary/`.
 - Keep credentials, signed URLs and resumable session URIs out of commits and user-visible output.
 - Keep regression coverage for captionNotFound, asynchronous processing, known IDs, resumed transfers and publication readback.
 - Report repository persistence separately from VPS installation until an installation receipt confirms it.
+
+## Single-channel Catarsis (v48)
+
+For a request covering only one channel, read `automation/catarsis-single/README.md` and use `/opt/video-agent-mcp/single_catarsis_request.py`. Do not use the pair generation/publication tools for a one-channel request. Existing generation status can read single batches; the unselected channel is not_requested.
