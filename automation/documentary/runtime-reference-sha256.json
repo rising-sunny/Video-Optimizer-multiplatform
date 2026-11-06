@@ -1,0 +1,11 @@
+{
+  "documentary_ai.py": "bca259707ff90e51163bcf6b7621713920ab526a3383ce77827b0487dce36bb9",
+  "documentary_catalog.py": "32f98a61a4ced28379dba7063d3129caab94ee892e27fb9833a491010bcb4804",
+  "documentary_sources.py": "fcc60414fc9b146dacf7d77f398036616c7b4fbf1abae5ef0ef8eea7c007f5a6",
+  "deepseek_editor.py": "5f0784537695f1a576fb1d2fc22e19b940732ae5d1c07c1aeebd7accd9407543",
+  "documentary_worker.py": "3b81d258cb97a5640b7ff777b76f33b103cf12971213d825d4e983b1c56a606d",
+  "documentary_catarsis.py": "95bace7c64899d3c69ab66831deb07304f8aad6c58682f89ffbff94952677d57",
+  "documentary_catarsis_assets.py": "551163403cac98d58af07a23ee60438cafd6fdcc33cf28b96dd567b95b14e0dd",
+  "documentary_catarsis_render.py": "f2b0969342a51675fb6a4d3208ab753ce21f3e603c84c3b60ddbeecc7d99da59",
+  "documentary_visual_recovery.py": "99841ac61eac738b3b32f211a83a3681e0c6b4f4e02f64a2ee75a7cd56c0157e"
+}
