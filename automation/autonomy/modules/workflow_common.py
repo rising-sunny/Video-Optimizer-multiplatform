@@ -113,10 +113,14 @@ def diagnostics(kind,ident,channel=None,include_saved=False):
             value=read(job/name)
             reviews[name]=dict(approved=value.get('approved'),checks=value.get('checks'),
                 findings=clean(json.dumps(value.get('findings',[]),ensure_ascii=False),12000))
+    extra={}
+    if include_saved:
+        from workflow_inputs import resume_inputs
+        extra['resume_inputs']=resume_inputs(job)
     return dict(kind=kind,job_id=ident,channel=channel,state=status.get('state'),phase=row.get('state',status.get('phase')),
         error_code=row.get('error_code',status.get('error_code')),workflow=workflow,read_only=True,
         checked_at=datetime.now(timezone.utc).isoformat(),status_updated_at=status.get('updated_at'),reviews=reviews,
         ai_requests=0,counts=budget.get('counts'),limits=budget.get('limits'),estimated_usd=budget.get('estimated_usd'),
         request_pending=budget.get('pending') is not None,invalid_outputs=outputs,
-        files={n:dict(sha256=digest(job/n),bytes=(job/n).stat().st_size) for n in
+        **extra,files={n:dict(sha256=digest(job/n),bytes=(job/n).stat().st_size) for n in
             ('editorial-plan.json','metadata.json','project.json','qa.json','approval.json','video.mp4','thumbnail.jpg') if (job/n).is_file()})

@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "release_id": "saved-input-diagnostics-v49-1",
+  "files": [
+    {
+      "target": "workflow_common.py",
+      "source": "automation/autonomy/modules/workflow_common.py",
+      "sha256": "0b8e9ea2b1c3cdbbdadf127b2d73d7b4e3db34e18dc88cdd72e61f7c10817f71",
+      "expected_sha256": "585f730a0bd954ad28c4f67d90a06b7c933197369d1465bbc163ec9ae5a292b5"
+    },
+    {
+      "target": "workflow_inputs.py",
+      "source": "automation/autonomy/modules/workflow_inputs.py",
+      "sha256": "92813ca59cbb624479c22a9cef118067bbb689ac2d0fd30b1104fedf30901e43",
+      "expected_sha256": "absent"
+    }
+  ],
+  "tests": [
+    {
+      "source": "automation/autonomy/tests/test_saved_inputs.py",
+      "path": "test_saved_inputs.py",
+      "sha256": "db2da8baea7f5e67280e4d896e05309b1d70770ee1c1562592a0363df1b9c59a"
+    }
+  ]
+}
