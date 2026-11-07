@@ -105,5 +105,10 @@ def assessment_details(job):
                 messages.append(row['item'].get('text',''))
         result['provider_visual']=dict(completed=complete,failed=failed,events_sha256=c.digest(events),
             original_response=public_text(messages[-1],18000) if messages else None)
+    sheet=job/'style-entry-sheet-0.jpg'
+    if sheet.is_file() and not sheet.is_symlink() and sheet.stat().st_size<=400000:
+        import base64
+        result['actual_text_entry_sheet']=dict(mime_type='image/jpeg',image_base64=base64.b64encode(sheet.read_bytes()).decode(),
+            source='actual_final_mp4_entry_frames',video_sha256=c.digest(job/'video.mp4'),sha256=c.digest(sheet))
     return result
 

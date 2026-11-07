@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "release_id": "actual-entry-sheet-v50-3",
+  "files": [
+    {
+      "target": "workflow_inputs.py",
+      "source": "automation/autonomy/modules/workflow_inputs.py",
+      "sha256": "af73ce6f84697f9c35aaa7c04b1a0a49e521e046229a3f0ab5ef71e2834610ec",
+      "expected_sha256": "a445ef8a70365aea01397dba11edd8907a8f51de4bce9c3e9060068b4970a369"
+    }
+  ],
+  "tests": [
+    {
+      "source": "automation/autonomy/tests/test_review_details_v50.py",
+      "path": "test_review_details_v50.py",
+      "sha256": "8d371078469399dd7193b6a86c6e228865e1e4a69cc5fc8650f9ec2da638c115"
+    }
+  ]
+}
