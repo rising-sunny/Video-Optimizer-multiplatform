@@ -330,5 +330,31 @@ class InstallationTests(unittest.TestCase):
         self.assertIn('Supervisor', source)
 
 
+class AccountPreflightTests(unittest.TestCase):
+    def check(self, value):
+        reader = module('chrome_dome_codex_quota_20261106',
+            fetch_limits=lambda **kwargs: value, summarize=lambda data: data)
+        with patch.dict(sys.modules, {'chrome_dome_codex_quota_20261106': reader}):
+            return client.check_account()
+
+    def test_current_account_permission_allows_preflight(self):
+        self.assertTrue(self.check(dict(ordinary_usage_allowed=True,
+            limits=[dict(primary=dict(used_percent=13), secondary=dict(used_percent=18),
+                         spend_control_reached=False)])))
+
+    def test_explicit_account_denial_blocks_before_generation(self):
+        with self.assertRaisesRegex(RuntimeError, 'usage_not_available'):
+            self.check(dict(ordinary_usage_allowed=False, limits=[]))
+
+    def test_low_percentages_without_permission_are_not_assumed_available(self):
+        with self.assertRaisesRegex(RuntimeError, 'usage_not_available'):
+            self.check(dict(limits=[dict(primary=dict(used_percent=1))]))
+
+    def test_exhausted_window_or_spend_control_blocks_before_generation(self):
+        for limit in (dict(primary=dict(used_percent=100)), dict(spend_control_reached=True)):
+            with self.subTest(limit=limit), self.assertRaisesRegex(RuntimeError, 'usage_not_available'):
+                self.check(dict(ordinary_usage_allowed=True, limits=[limit]))
+
+
 if __name__ == '__main__':
     unittest.main()
