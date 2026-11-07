@@ -203,7 +203,7 @@ def main():
     base.command(['systemctl','enable','--now','video-workflow-recovery.service'])
     current=rpc('generation_status',batch_id=CURIE)
     if current.get('request_id')=='manual-facts-curie-ww1-20261106-v1' and current.get('state')=='blocked':
-        result=rpc('generation_workflow_resume',kind='catarsis',job_id=CURIE)
+        result=rpc('generation_workflow_resume',request_id='bootstrap-v49-curie-resume',kind='catarsis',job_id=CURIE)
         print(json.dumps(dict(curie_resume=result)),flush=True)
     print(json.dumps(dict(state='ready',maintenance='enabled',automatic_recovery='short_and_long',
         connector_refresh='refresh_tools_if_not_yet_visible',publication='not_requested')),flush=True)

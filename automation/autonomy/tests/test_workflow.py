@@ -190,8 +190,8 @@ class ServiceTests(unittest.TestCase):
                     def decorator(fn):self.tools[fn.__name__]=fn;return fn
                     return decorator
             server=Server();workflow_tools.register(server,lambda v:v)
-            server.tools['resume_video_generation']('catarsis','a'*32)
-            server.tools['resume_video_generation']('documentary','b'*32)
+            server.tools['resume_video_generation']('short-resume-v1','catarsis','a'*32)
+            server.tools['resume_video_generation']('long-resume-v1','documentary','b'*32)
         self.assertEqual([row[1]['kind'] for row in calls],['catarsis','documentary'])
         self.assertEqual(len(server.tools),7)
 
@@ -253,6 +253,32 @@ class CheckpointBoundaryTests(unittest.TestCase):
         with patch.dict(sys.modules,modules),self.assertRaisesRegex(RuntimeError,'qa_not_valid'):
             jobs.run_documentary(self.job,{},'a'*32,lambda:None)
         worker.quality.assert_not_called();worker.approve.assert_not_called()
+
+class ResumeIdempotencyTests(unittest.TestCase):
+    def setUp(self):
+        self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
+        self.root=Path(self.temp.name);self.ident='a'*32;self.state=self.root/'catarsis'/self.ident
+        self.state.mkdir(parents=True)
+        c.write(self.state/'status.json',dict(state='blocked'))
+        c.write(self.state/'workflow.json',dict(attempts=[],requests={},enabled=True))
+        self.broker=types.SimpleNamespace(active={},publication=None,launch=Mock(),
+            status=lambda ident:c.read(self.state/'status.json'))
+        self.fake_modules={'generation_service':module('generation_service',denied=lambda code:dict(state='blocked',error_code=code),safe_error=str),
+            'history_data':module('history_data',timestamp=lambda:'2026-11-07T00:00:00Z'),
+            'publication_service':module('publication_service',controls=lambda:())}
+        self.inspect=Mock(return_value=({},dict(state='blocked'),dict(request_sha256='hash',attempts=[],requests={}),{}))
+    def invoke(self):return jobs.start(self.broker,'catarsis',self.ident,request_id='transport-resume-v1')
+    def test_transport_repetition_never_launches_a_second_worker(self):
+        with patch.dict(sys.modules,self.fake_modules),patch.object(c,'STATE',self.root),patch.object(jobs,'inspect',self.inspect),patch.object(jobs,'frozen_sources',return_value={}):
+            first=self.invoke();second=self.invoke()
+        self.assertEqual(first,second);self.broker.launch.assert_called_once();self.inspect.assert_called_once()
+        self.assertEqual(len(c.read(self.state/'workflow.json')['attempts']),1)
+    def test_launch_failure_preserves_idempotency_and_releases_the_active_slot(self):
+        self.broker.launch.side_effect=RuntimeError('worker_launch_failed')
+        with patch.dict(sys.modules,self.fake_modules),patch.object(c,'STATE',self.root),patch.object(jobs,'inspect',self.inspect),patch.object(jobs,'frozen_sources',return_value={}):
+            self.assertEqual(self.invoke()['state'],'blocked');self.assertEqual(self.invoke()['state'],'blocked')
+        self.assertEqual(self.broker.active,{});self.broker.launch.assert_called_once()
+        self.assertEqual(len(c.read(self.state/'workflow.json')['attempts']),1)
 
 class MaintenanceTests(unittest.TestCase):
     def setUp(self):

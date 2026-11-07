@@ -5,6 +5,7 @@ from datetime import datetime,timezone
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import signal
 import shutil
@@ -130,12 +131,17 @@ def inspect(kind,ident):
     preflight()
     return task,status,enrollment,jobs
 
-def start(broker,kind,ident):
+def start(broker,kind,ident,request_id=None):
     from generation_service import denied,safe_error
     from history_data import timestamp
     state=c.STATE/kind/ident
     if not c.valid_id(ident):return denied('workflow_invalid_job')
     status=c.read(state/'status.json')
+    path=state/'workflow.json'
+    previous=c.read(path) if path.is_file() else {}
+    if request_id is None:request_id='auto-resume-'+str(len(previous.get('attempts',[]))+1)
+    if not isinstance(request_id,str) or not re.fullmatch(r'[a-zA-Z0-9_-]{8,80}',request_id):return denied('workflow_invalid_resume_request_id')
+    if request_id in previous.get('requests',{}):return broker.status(ident)
     if status.get('state') in ('ready','accepted','running'):
         observed=broker.status(ident)
         if observed.get('state')!='interrupted':return observed
@@ -151,12 +157,18 @@ def start(broker,kind,ident):
             sources=frozen_sources(),controls=controls(),jobs=jobs,publication_allowed=False)
         c.write(state/f'workflow-auth-{token}.json',auth)
         enrollment['attempts'].append(dict(number=attempt,created_at=timestamp(),state='queued'))
+        enrollment.setdefault('requests',{})[request_id]=attempt
         enrollment.update(state='resuming',next_at=0);c.write(state/'workflow.json',enrollment)
         status.update(state='accepted',error_code=None,repair_id='autonomous-workflow-v49',updated_at=timestamp())
         c.write(state/'status.json',status)
         broker.active[ident]=True
         launch=getattr(broker,'launch',None) or broker.parent.launch
-        launch(lambda:execute(broker,kind,ident,token))
+        try:launch(lambda:execute(broker,kind,ident,token))
+        except Exception:
+            broker.active.pop(ident,None)
+            status.update(state='blocked',error_code='workflow_resume_launch_failed');c.write(state/'status.json',status)
+            enrollment['state']='needs_attention';c.write(state/'workflow.json',enrollment)
+            raise
         return broker.status(ident)
     except Exception as exc:return denied(safe_error(exc))
 
@@ -303,7 +315,10 @@ def perform(kind,ident,token):
             ready=sum(row.get('state')=='ready' for row in status['channels'].values())
             status['state']='ready' if ready==len(selected(task)) else 'partial' if ready else 'blocked'
         c.write(state/'status.json',status)
-        enrollment=c.read(state/'workflow.json');enrollment.update(state='complete' if status['state']=='ready' else 'needs_attention')
+        enrollment=c.read(state/'workflow.json')
+        codes=[status.get('error_code')]+[row.get('error_code') for row in status.get('channels',{}).values()]
+        again=status['state']!='ready' and any(code in c.RETRY_CODES for code in codes) and len(enrollment['attempts'])<MAX_ATTEMPTS
+        enrollment.update(state='complete' if status['state']=='ready' else 'monitoring' if again else 'needs_attention',next_at=time.time()+min(60,5*2**int(token)) if again else 0)
         enrollment['attempts'][int(token)-1]['state']=status['state'];c.write(state/'workflow.json',enrollment)
 
 def poll(generation):
@@ -314,6 +329,7 @@ def poll(generation):
         for path in sorted((c.STATE/kind).glob('*/workflow.json')):
             enrollment=c.read(path)
             if not enrollment.get('enabled') or enrollment.get('state') in ('complete','needs_attention'):continue
+            if enrollment.get('next_at',0)>time.time():continue
             ident=enrollment['job_id'];status=c.read(path.parent/'status.json')
             target=generation if kind=='catarsis' else doc
             if status.get('state') in ('accepted','running') and target is not None and target.status(ident).get('state')=='interrupted':

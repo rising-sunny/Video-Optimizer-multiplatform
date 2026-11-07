@@ -5,7 +5,7 @@ import workflow_common as c
 
 SCHEMAS={
     'generation_workflow_diagnostics':{'operation','kind','job_id','channel','include_saved_response'},
-    'generation_workflow_resume':{'operation','kind','job_id'},
+    'generation_workflow_resume':{'operation','request_id','kind','job_id'},
     'generation_workflow_admin':{'operation','action','values'},
     'generation_workflow_poll':{'operation'},
     'generation_workflow_capabilities':{'operation'},
@@ -45,7 +45,7 @@ def install(cls,operations):
                 if kind not in ('catarsis','documentary') or not c.valid_id(ident):return denied('workflow_invalid_job')
                 doc=getattr(self,'workflow_documentary',None)
                 if self.active or (getattr(self,'publication',None) and self.publication.active) or (doc is not None and doc.active):return denied('another_manual_operation_is_running')
-                return start(self if kind=='catarsis' else doc,kind,ident) if kind=='catarsis' or doc is not None else denied('workflow_documentary_unavailable')
+                return start(self if kind=='catarsis' else doc,kind,ident,request_id=request['request_id']) if kind=='catarsis' or doc is not None else denied('workflow_documentary_unavailable')
         except Exception as exc:return denied(safe_error(exc))
     @functools.wraps(original_start)
     def start(self,request):

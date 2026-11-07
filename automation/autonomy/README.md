@@ -15,7 +15,8 @@ jobs only; it does not create daily topics or publish videos.
 - `video_generation_diagnostics`: current errors, budgets, artifacts and saved
   malformed provider responses, without relaying shell output.
 - `resume_video_generation`: same Short batch or documentary job, using saved
-  validated evidence and the original remaining budget.
+  validated evidence and the original remaining budget. Keep the same request ID
+  when repeating a transport call; a new deliberate repair uses a new request ID.
 - `video_workflow_inventory` and `read_video_workflow_source`: installed hashes
   and allowed Python source, with credentials/config paths excluded.
 - `deploy_video_workflow_release` and `video_workflow_deployment_status`:

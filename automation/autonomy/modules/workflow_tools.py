@@ -16,12 +16,12 @@ def register(server,links):
         Never infer approval from an existing MP4 or a successful installation."""
         return call('generation_workflow_diagnostics',kind=kind,job_id=job_id,channel=channel,include_saved_response=include_saved_response)
     @server.tool(annotations=dict(readOnlyHint=False,destructiveHint=False,idempotentHint=True,openWorldHint=True))
-    def resume_video_generation(kind:Literal['catarsis','documentary'],job_id:str)->dict:
+    def resume_video_generation(request_id:str,kind:Literal['catarsis','documentary'],job_id:str)->dict:
         """Continue the SAME user-authorized generation from saved validated evidence.
         Preserves original IDs, counters, claims, completed artifacts and quality gates.
         May consume the remaining original budget. Never starts a replacement job,
         increases limits, retries publication or authorizes publication."""
-        return links(call('generation_workflow_resume',kind=kind,job_id=job_id))
+        return links(call('generation_workflow_resume',request_id=request_id,kind=kind,job_id=job_id))
     @server.tool(annotations=dict(readOnlyHint=True,destructiveHint=False,idempotentHint=True,openWorldHint=False))
     def video_workflow_inventory()->dict:
         """Read installed generation module hashes, active maintenance and deployment
