@@ -149,8 +149,18 @@ def normalize(value,catalog,task):
             if type(s.get('asset')) is int:s['asset']=remap[s['asset']]
         if type(thumb) is int:result['thumbnail']['asset']=remap[thumb]
     offered={r['id']:r for r in catalog['items']}
+    # Observed transcription errors in the saved X-15 plan. Bind each repair to
+    # the actual offered work; never guess a new identity from a similar label.
+    corrections={
+        'M18e691f016cf7de2':('M18e691f016cf7de1','File:X-15 launch from B-52 mothership (E-4942).jpg'),
+        'M160020e83df7a42f':('M160020e83df7a42c','File:Joseph A Walker after X-15 flight -2-14-28 (EC68-1937).jpg'),
+    }
     for a in result['assets']:
         ids=a.get('media_ids',[])
+        if len(ids)==1 and ids[0] not in offered and ids[0] in corrections:
+            target,title=corrections[ids[0]]
+            if target in offered and offered[target]['title']==title:
+                ids=[target];a['media_ids']=ids
         if len(ids)==1 and ids[0] in offered:
             row=offered[ids[0]];a['type']=row['type']
             if row.get('evidence',{}).get('restored_copy'):

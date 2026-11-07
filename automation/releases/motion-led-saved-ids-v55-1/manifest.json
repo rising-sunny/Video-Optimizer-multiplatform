@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "release_id": "motion-led-saved-ids-v55-1",
+  "files": [
+    {
+      "target": "workflow_motion_documentary.py",
+      "source": "automation/documentary/motion-v55/modules/workflow_motion_documentary.py",
+      "sha256": "501015b450a3e7c2411c2a30b0bafddea6ed7e54c4e8236e22a5148cce55e35e",
+      "expected_sha256": "cb1410734b367595748ba661760fac296615a57e36e420f9fe8632f550940de4"
+    },
+    {
+      "target": "workflow_preparation.py",
+      "source": "automation/documentary/motion-v55/modules/workflow_preparation.py",
+      "sha256": "391063cd27af35b3d85bbefda653765f55003d9c860b7ef40fa96a77b915a050",
+      "expected_sha256": "10ae016bee91d6655a297b6663aa76d130cb317b4b9b958f12ebefff0ee251ea"
+    }
+  ],
+  "tests": [
+    {
+      "source": "automation/documentary/motion-v55/tests/test_motion_documentary_v55.py",
+      "path": "test_motion_documentary_v55.py",
+      "sha256": "7b6e3069ab4c415252bc235d7834b49380b1c3f80d6ad5e994afd265c8125f7e"
+    }
+  ]
+}

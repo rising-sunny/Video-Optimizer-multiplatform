@@ -36,6 +36,18 @@ class OfficialFilms(unittest.TestCase):
         self.assertEqual(motion.brief(dict(topic='Other')), '')
 
 class PlanNormalization(unittest.TestCase):
+    def test_observed_id_transcriptions_require_exact_offered_work_and_preserve_text(self):
+        task=dict(channel='stunning-revelations',topic='X-15: flight')
+        rows=[dict(id='M18e691f016cf7de1',type='image',title='File:X-15 launch from B-52 mothership (E-4942).jpg'),
+              dict(id='M160020e83df7a42c',type='image',title='File:Joseph A Walker after X-15 flight -2-14-28 (EC68-1937).jpg')]
+        value=dict(assets=[dict(media_ids=['M18e691f016cf7de2'],type='image'),dict(media_ids=['M160020e83df7a42f'],type='image')],
+            segments=[dict(asset=0,narration='Keep the actual words.'),dict(asset=1,narration='Walker was a research pilot.')],thumbnail=dict(asset=0))
+        before=copy.deepcopy(value)
+        fixed=motion.normalize(value,dict(items=rows),task)
+        self.assertEqual([a['media_ids'][0] for a in fixed['assets']],[r['id'] for r in rows])
+        self.assertEqual(value,before);self.assertEqual(fixed['segments'],value['segments'])
+        rows[0]['title']='File:Another picture.jpg'
+        self.assertEqual(motion.normalize(value,dict(items=rows),task)['assets'][0]['media_ids'],['M18e691f016cf7de2'])
     def test_drop_unused_slots_remap_references_and_keep_narration_and_research(self):
         row=dict(id='M'+'1'*16,type='video',title=motion.FILMS[1],evidence={'restored_copy':True})
         value=dict(assets=[dict(type='image',label='unused',media_ids=['M'+'0'*16]),
