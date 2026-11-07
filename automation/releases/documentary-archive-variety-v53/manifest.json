@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "release_id": "documentary-archive-variety-v53",
+  "files": [
+    {
+      "target": "workflow_documentary_brief.py",
+      "source": "automation/autonomy/modules/workflow_documentary_brief.py",
+      "sha256": "2a74d7d68bec9a0911c686c3a3d0c7480d64b9f9748f31d50d7c43240747b6a4",
+      "expected_sha256": "absent"
+    },
+    {
+      "target": "documentary_ai.py",
+      "source": "automation/autonomy/modules/documentary_ai.py",
+      "sha256": "2e68b166075340e95e1e258f4aeec97f44667890ead85f4ac2816e819478eadd",
+      "expected_sha256": "bca259707ff90e51163bcf6b7621713920ab526a3383ce77827b0487dce36bb9"
+    },
+    {
+      "target": "documentary_common.py",
+      "source": "automation/autonomy/modules/documentary_common.py",
+      "sha256": "bfbf28818fe71e46044eb02fdf8bb50d2885e6054bde4ca4f584e1bea0b77cb1",
+      "expected_sha256": "1c51ea5566e6203ef97cd72df62a121e6a458345309d8a13fee9d83f62f572a0"
+    }
+  ],
+  "tests": [
+    {
+      "source": "automation/autonomy/tests/test_documentary_brief_v53.py",
+      "path": "test_documentary_brief_v53.py",
+      "sha256": "976fc9b77da89bb5d780d6869fefc5aa191bd3d51543d32a26258493aa7fcf98"
+    }
+  ]
+}
