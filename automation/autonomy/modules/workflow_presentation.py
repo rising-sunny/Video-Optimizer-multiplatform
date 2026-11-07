@@ -22,7 +22,7 @@ def text_cache(job):
         raise RuntimeError('workflow_presentation_positive_text_cache_required')
     return path
 
-def inspect(ident,technical=False,cache_reconciliation=False):
+def inspect(ident,technical=False,cache_reconciliation=False,receipt_reconciliation=False):
     from generation_worker import preflight
     from catarsis_selection import task_channels
     if not c.valid_id(ident):raise RuntimeError('workflow_invalid_job')
@@ -33,10 +33,12 @@ def inspect(ident,technical=False,cache_reconciliation=False):
     channel=channels[0];job=c.RUNTIME/'manual-catarsis'/ident/channel
     if any((job/name).exists() for name in ('approval.json','publication.json','.transport.json')):
         raise RuntimeError('workflow_presentation_unpublished_unapproved_required')
-    if cache_reconciliation:
-        if not (state/(NAME+'-technical.claim')).is_file() or (state/(NAME+'-cache.claim')).exists():
+    if cache_reconciliation or receipt_reconciliation:
+        required=NAME+('-cache.claim' if receipt_reconciliation else '-technical.claim')
+        next_claim=NAME+('-receipt.claim' if receipt_reconciliation else '-cache.claim')
+        if not (state/required).is_file() or (state/next_claim).exists():
             raise RuntimeError('workflow_presentation_cache_checkpoint_unavailable')
-        parent=c.read(state/(NAME+'-technical-auth.json'));old=parent['item']
+        parent=c.read(state/(NAME+'-auth.json'));old=parent['item']
         if parent.get('request_sha256')!=c.digest(state/'request.json'):
             raise RuntimeError('workflow_presentation_parent_request_changed')
         immutable=('editorial-plan.json','sources.json','asset-credits.json','metadata.json','music-license-evidence.json','project.json','thumbnail.jpg','qa.json','visual-review.json','deepseek-text-review.json')
@@ -64,7 +66,7 @@ def inspect(ident,technical=False,cache_reconciliation=False):
         or text.get('approved') is not True or set(text.get('checks',{}))!={'facts_supported','licenses_and_full_credits'} or not all(text['checks'].values())):
         raise RuntimeError('workflow_presentation_display_only_failure_required')
     video=c.digest(job/'video.mp4')
-    expected=old['video_sha256'] if cache_reconciliation else video
+    expected=old['video_sha256'] if cache_reconciliation or receipt_reconciliation else video
     if qa.get('technical_checks_passed') is not True or qa.get('sha256')!=expected or review.get('video_sha256')!=expected:
         raise RuntimeError('workflow_presentation_exact_video_qa_required')
     root=c.ledger(job);budget=c.read(root/'budget.json')
@@ -98,7 +100,11 @@ def available(ident):
             try:
                 inspect(ident,cache_reconciliation=True)
                 return dict(state='eligible_cache_reconciliation',scope='same_original_av_payloads_no_review_spent',text_ai_requests=0,native_visual_reviews_remaining=1)
-            except Exception:return dict(state='blocked',error_code=c.clean(exc,300))
+            except Exception:
+                try:
+                    inspect(ident,receipt_reconciliation=True)
+                    return dict(state='eligible_receipt_reconciliation',scope='native_receipt_cache_only_unchanged_av_and_evidence',text_ai_requests=0,native_visual_reviews_remaining=1)
+                except Exception:return dict(state='blocked',error_code=c.clean(exc,300))
 
 def start(broker,ident,request_id):
     from generation_service import denied,safe_error
@@ -107,14 +113,15 @@ def start(broker,ident,request_id):
     from history_data import timestamp
     state=c.STATE/'catarsis'/ident
     try:
-        cache_reconciliation=(state/(NAME+'-technical.claim')).exists()
-        technical=(state/(NAME+'.claim')).exists() and not cache_reconciliation
-        item=inspect(ident,technical=technical,cache_reconciliation=cache_reconciliation)
-        stage_name=NAME+('-cache' if cache_reconciliation else '-technical' if technical else '')
+        receipt_reconciliation=(state/(NAME+'-cache.claim')).exists()
+        cache_reconciliation=(state/(NAME+'-technical.claim')).exists() and not receipt_reconciliation
+        technical=(state/(NAME+'.claim')).exists() and not cache_reconciliation and not receipt_reconciliation
+        item=inspect(ident,technical=technical,cache_reconciliation=cache_reconciliation,receipt_reconciliation=receipt_reconciliation)
+        stage_name=NAME+('-receipt' if receipt_reconciliation else '-cache' if cache_reconciliation else '-technical' if technical else '')
         auth=dict(job_id=ident,request_sha256=c.digest(state/'request.json'),item=item,
             sources=frozen_sources(),controls=controls(),publication_allowed=False)
-        if technical or cache_reconciliation:
-            auth['parent_auth_file']=NAME+('-technical' if cache_reconciliation else '')+'-auth.json'
+        if technical or cache_reconciliation or receipt_reconciliation:
+            auth['parent_auth_file']=NAME+('-cache' if receipt_reconciliation else '-technical' if cache_reconciliation else '')+'-auth.json'
             auth['parent_auth_sha256']=c.digest(state/auth['parent_auth_file'])
         c.write(state/(stage_name+'-auth.json'),auth)
         tracking=c.read(state/'workflow.json')
@@ -131,6 +138,7 @@ def start(broker,ident,request_id):
                 command=[PYTHON,'-B',str(c.ROOT/'workflow_presentation.py'),'--job-id',ident]
                 if technical:command.append('--technical-checkpoint')
                 if cache_reconciliation:command.append('--cache-reconciliation')
+                if receipt_reconciliation:command.append('--receipt-reconciliation')
                 with subprocess.Popen(command,stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,start_new_session=True) as process:
                     deadline=time.monotonic()+1800
                     while process.poll() is None:
@@ -163,7 +171,10 @@ def audio_digest(path):
 def fresh_render(job,render):
     """The native wrapper caches existing outputs: move the backed-up file first."""
     video=Path(job)/'video.mp4';held=Path(job)/'workflow-prior-render.mp4'
+    receipt=Path(job)/'receipt.json';held_receipt=Path(job)/'workflow-prior-receipt.json'
     if held.exists():raise RuntimeError('workflow_presentation_prior_render_already_held')
+    if held_receipt.exists():raise RuntimeError('workflow_presentation_prior_receipt_already_held')
+    if receipt.exists():os.replace(receipt,held_receipt)
     os.replace(video,held)
     try:
         render()
@@ -172,6 +183,7 @@ def fresh_render(job,render):
         if video_digest(video)==video_digest(held):raise RuntimeError('workflow_presentation_native_render_was_cached')
     except Exception:
         if not video.exists():os.replace(held,video)
+        if not receipt.exists() and held_receipt.exists():os.replace(held_receipt,receipt)
         raise
     return held
 
@@ -191,14 +203,14 @@ def visible_labels(job,project):
         at+=length
     return evidence
 
-def perform(ident,technical=False,cache_reconciliation=False):
+def perform(ident,technical=False,cache_reconciliation=False,receipt_reconciliation=False):
     from generation_worker import preflight,manual_editorial
     from publication_service import controls
     from workflow_jobs import run_catarsis,verify_ledger
     from workflow_native import implementation,enabled
     from autonomous_generation import Supervisor
     from history_data import timestamp
-    state=c.STATE/'catarsis'/ident;stage_name=NAME+('-cache' if cache_reconciliation else '-technical' if technical else '')
+    state=c.STATE/'catarsis'/ident;stage_name=NAME+('-receipt' if receipt_reconciliation else '-cache' if cache_reconciliation else '-technical' if technical else '')
     auth_path=state/(stage_name+'-auth.json');auth=c.read(auth_path);auth_sha=c.digest(auth_path)
     if auth.get('job_id')!=ident or auth.get('publication_allowed') is not False:raise RuntimeError('workflow_presentation_auth_invalid')
     item=auth['item'];job=Path(item['job']);channel=item['channel'];task=c.read(state/'request.json')
@@ -216,7 +228,7 @@ def perform(ident,technical=False,cache_reconciliation=False):
     sys.path.insert(0,str(editorial.REPO));from catharsis import catharsis_editor
     if not all(hasattr(catharsis_editor,name) for name in ('build_shots','text_card','overlay_layer','render')):
         raise RuntimeError('workflow_presentation_renderer_api_changed')
-    if (technical or cache_reconciliation) and c.digest(state/auth['parent_auth_file'])!=auth.get('parent_auth_sha256'):
+    if (technical or cache_reconciliation or receipt_reconciliation) and c.digest(state/auth['parent_auth_file'])!=auth.get('parent_auth_sha256'):
         raise RuntimeError('workflow_presentation_parent_auth_changed')
     with (state/(stage_name+'.claim')).open('x') as stream:stream.write(timestamp());stream.flush();os.fsync(stream.fileno())
     archive=c.RUNTIME/'workflow-attempts/catarsis'/ident/stage_name
@@ -234,6 +246,7 @@ def perform(ident,technical=False,cache_reconciliation=False):
         with daily.locked():
             Client.request=no_new_text
             status.update(state='running',error_code=None,updated_at=timestamp());c.write(state/'status.json',status)
+            (job/'blocked.json').unlink(missing_ok=True)
             plan=c.read(job/'editorial-plan.json');project=c.read(job/'project.json')
             with enabled(editorial,job,channel),manual_editorial(editorial,job,ident,channel,task['date'],guard,recovery=Supervisor(job,guard,attempt_namespace=NAME)):
                 held=fresh_render(job,lambda:editorial.d.render_project(project,job))
@@ -244,6 +257,7 @@ def perform(ident,technical=False,cache_reconciliation=False):
             if result.returncode or audio_digest(remux)!=old_audio:raise RuntimeError('workflow_presentation_original_audio_not_preserved')
             os.replace(remux,job/'video.mp4')
             held.unlink()
+            (job/'workflow-prior-receipt.json').unlink(missing_ok=True)
             from catarsis_style import EVIDENCE
             proof=c.read(job/EVIDENCE);proof['video_sha256']=c.digest(job/'video.mp4');c.write(job/EVIDENCE,proof)
             if c.digest(c.ledger(job)/item['text_cache']['file'])!=item['text_cache']['sha256'] or text_cache(job).name!=item['text_cache']['file']:
@@ -260,6 +274,7 @@ def perform(ident,technical=False,cache_reconciliation=False):
             qa=c.read(job/'qa.json')
             if qa.get('technical_checks_passed') is not True or qa.get('sha256')!=c.digest(job/'video.mp4'):
                 raise RuntimeError('workflow_presentation_native_qa_failed')
+            receipt=c.read(job/'receipt.json');receipt['video_sha256']=qa['sha256'];c.write(job/'receipt.json',receipt)
             proof=c.read(job/'workflow-presentation-proof.json');proof['visible_label_pixels']=label_evidence;c.write(job/'workflow-presentation-proof.json',proof)
             # Native review recalculates QA, reuses the exact cached factual
             # response and uses only the remaining original visual claim.
@@ -284,5 +299,5 @@ def perform(ident,technical=False,cache_reconciliation=False):
 
 if __name__=='__main__':
     import argparse
-    parser=argparse.ArgumentParser();parser.add_argument('--job-id',required=True);parser.add_argument('--technical-checkpoint',action='store_true');parser.add_argument('--cache-reconciliation',action='store_true');args=parser.parse_args()
-    os.umask(0o077);perform(args.job_id,technical=args.technical_checkpoint,cache_reconciliation=args.cache_reconciliation)
+    parser=argparse.ArgumentParser();parser.add_argument('--job-id',required=True);parser.add_argument('--technical-checkpoint',action='store_true');parser.add_argument('--cache-reconciliation',action='store_true');parser.add_argument('--receipt-reconciliation',action='store_true');args=parser.parse_args()
+    os.umask(0o077);perform(args.job_id,technical=args.technical_checkpoint,cache_reconciliation=args.cache_reconciliation,receipt_reconciliation=args.receipt_reconciliation)

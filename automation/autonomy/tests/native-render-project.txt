@@ -1,0 +1,54 @@
+@serialized
+def render_project(project, directory, smoke=False):
+    directory = inside(directory)
+    directory.mkdir(parents=True, exist_ok=True)
+    sources = {}
+    for media in project['media']:
+        source = Path(media['file']).resolve()
+        if not source.is_relative_to(ROOT) or not source.is_file():
+            raise ValueError('Media must be local workspace files')
+        sources[str(source)] = digest(source)
+    identity = {'project': project, 'sources': sources, 'scope': 'smoke' if smoke else 'daily'}
+    fingerprint = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
+    receipt = directory / 'receipt.json'
+    output = inside(directory / 'video.mp4')
+    if receipt.exists():
+        r = load(receipt)
+        if r['project_sha256'] != fingerprint or digest(output) != r['video_sha256']:
+            raise RuntimeError('Existing render differs; reconciliation required')
+        # Re-run technical QA: a receipt alone is not evidence of a current pass.
+        qa(output, directory, smoke)
+        return dict(r, reused=True)
+    if output.exists() or (directory / 'rendering.json').exists():
+        raise RuntimeError('Incomplete render requires manual reconciliation; refusing overwrite')
+    sys.dont_write_bytecode = True
+    sys.path.insert(0, str(REPO))
+    from catharsis import catharsis_editor as editor
+    from catharsis.catharsis_timeline import missing_slots
+    sequence = project['sequence']
+    total = sum(float(s['seconds']) for s in sequence)
+    if not sequence or any(float(s['seconds']) <= 0 for s in sequence): raise ValueError('Invalid sequence')
+    if not (2.9 <= total <= 3.1 if smoke else 50 <= total <= 59): raise ValueError('Duration outside contract')
+    for media in project['media']:
+        p = Path(media['file']).resolve()
+        if not p.is_relative_to(ROOT) or not p.is_file(): raise ValueError('Media must be local workspace files')
+    if any(missing_slots(s, project['media']) for s in sequence): raise ValueError('Missing media assignments')
+    track = next(t for t in load(PACKAGE / 'music.json')['tracks'] if t['title'] == project['music_title'])
+    music_path = RUNTIME / 'music' / track['filename']
+    if digest(music_path) != track['sha256']: raise ValueError('Unverified music')
+    atomic(directory / 'project.json', project)
+    atomic(directory / 'music_credits.json', track)
+    atomic(directory / 'rendering.json', {'project_sha256': fingerprint})
+    # Only the in-memory module reference changes. Repository files remain untouched.
+    editor._ffmpeg = lambda: str(ROOT / 'bin' / 'ffmpeg-limited')
+    shots, marks = editor.build_shots(project, sequence)
+    editor.render(shots, output, music=str(music_path), break_span=marks['break'],
+                  vignette=project['style'].get('vignette', True), sfx=False, loop=False)
+    report = qa(output, directory, smoke)
+    r = {'project_sha256': fingerprint, 'video_sha256': report['sha256'], 'status': 'prepared',
+         'visual_review_pending': True, 'editorial_review_pending': True,
+         'scope': identity['scope'], 'source_sha256': sources}
+    atomic(receipt, r)
+    (directory / 'rendering.json').unlink()
+    return dict(r, reused=False)
+

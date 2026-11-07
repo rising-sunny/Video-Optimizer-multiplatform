@@ -115,6 +115,15 @@ original. It retains both old claims/auths and adds one bound checkpoint. It nev
 grants another text request or visual review. A genuinely changed render does not
 qualify for this checkpoint.
 
+The native helper also caches `receipt.json`, not just `video.mp4`. Both outputs
+are moved aside after a verified backup; the receipt is preserved as an audit
+artifact. A regression fixture contains the exact native `render_project` body
+and exercises its first-render, reuse and fresh-render receipt branches. After
+native QA passes on the final remux, its real SHA256 updates the new receipt.
+One final receipt-only reconciliation is limited to an unchanged original AV
+payload, unchanged factual cache/ledger and unspent original visual allowance;
+it cannot repeat or qualify a changed render. Old authorizations and claims stay.
+
 Shorts retain their chosen music, native rendering, actual factual/rights and
 visual reviews, and native approval. Documentaries retain the installed narration,
 SRT, source acquisition and shot-checkpoint functions. Existing valid MP4 review

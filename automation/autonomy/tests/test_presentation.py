@@ -149,6 +149,7 @@ class Eligibility(unittest.TestCase):
         original.parent.mkdir(parents=True);original.write_bytes((self.job/'video.mp4').read_bytes())
         item=dict(files=c.tree(self.job),ledger=c.tree(self.ledger),video_sha256=c.digest(original))
         c.write(self.state/(presentation.NAME+'-technical-auth.json'),dict(request_sha256=c.digest(self.state/'request.json'),item=item))
+        c.write(self.state/(presentation.NAME+'-auth.json'),dict(request_sha256=c.digest(self.state/'request.json'),item=item))
         (self.state/(presentation.NAME+'.claim')).write_text('used')
         (self.state/(presentation.NAME+'-technical.claim')).write_text('used')
         (self.job/'video.mp4').write_bytes(b'container changed, same media')
