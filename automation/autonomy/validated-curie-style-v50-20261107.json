@@ -1,0 +1,84 @@
+{
+  "version": 1,
+  "date": "2026-11-07",
+  "batch_id": "cf2a22d4f40f453fba2b3af137b716d1",
+  "channel": "stunning-facts-of-history",
+  "state": "ready",
+  "quality_approved": true,
+  "publication_allowed": false,
+  "source_video_sha256": "1a3a1cf8bc27b4a1910d8bb273a21549a2fc419e887527b332c8ffbcd4742992",
+  "video_sha256": "b9b4c5a7521533755d56cc068b61127cd17e175f73a68234374e5efddfb4699f",
+  "approval_sha256": "7d57ffba1792fe5f0979b060210846ab337a9e659601f727b39d58cf0c762c5d",
+  "video_bytes": 91379632,
+  "directed_duration_seconds": 55,
+  "directed_frames": 1650,
+  "display_shots": 21,
+  "display_cards": 11,
+  "style": {
+    "font": "condensed bold serif",
+    "pixel_fitting": true,
+    "respects_card_variants": true,
+    "contiguous_original_phrases": true,
+    "entry": "crisp 3.5 percent scale over six frames; no blur or doubled letters",
+    "archival_source_boundaries_preserved": true,
+    "archival_labels_preserved": true,
+    "original_aac_payload_preserved": true
+  },
+  "technical_qa_passed": true,
+  "visual_checks": {
+    "images_inspected": true,
+    "motion_or_intentional_stills": true,
+    "text_readable": true,
+    "framing": true,
+    "intentional_black_and_static_only": true,
+    "context_labels": true,
+    "thumbnail": true,
+    "facts_supported": true,
+    "licenses_and_full_credits": true
+  },
+  "visual_quality_decision": "codex_positive_visual_checks_plus_controller_native_av_scope_verification",
+  "original_provider_overall_flag_preserved": false,
+  "scope_resolution": {
+    "version": "curie-style-review-scope-v50-4",
+    "original_provider_approved": false,
+    "new_visual_ai_requests": 0,
+    "basis": "All seven actual provider visual checks and all platform checks are explicitly true, with no findings. The sole written limitation is outside frame-review scope. Native full AV decode/audio-level/duration checks pass; original AAC and the chat-inspected actual crisp entry sheet are separately hash-bound. No full-video watching or listening is claimed.",
+    "original_provider_events_sha256": "4a5b6214bb776262452be8591ead44dda32da99666552e43b877af4200052868",
+    "entry_sheet_sha256": "11890cf4dd2462d3ed99c047acc400d14252451d631ac88efc8daf1a81e90ae7"
+  },
+  "deepseek_counts": {
+    "chat": 8,
+    "search": 3,
+    "fetch": 3,
+    "invocations": 4,
+    "input_tokens": 129362,
+    "output_tokens": 7177
+  },
+  "deepseek_estimated_usd": 0.05192099999999998,
+  "deepseek_new_calls_for_style_revision": 0,
+  "recorded_provider_usage": {
+    "codex": {
+      "measured_turns": 4,
+      "input_tokens": 139193,
+      "output_tokens": 648,
+      "cached_input_tokens": 21888
+    },
+    "deepseek": {
+      "measured_turns": 8,
+      "input_tokens": 129362,
+      "output_tokens": 7177,
+      "cached_input_tokens": 28288
+    }
+  },
+  "provider_fallbacks": [],
+  "latest_code_commit": "0c0c9b262dc275182bfd05a8e4e42ad31f0f4cae",
+  "latest_deployment_id": "7fe0af64b72931aef6d06c62dcb53b04",
+  "latest_deployment_tests": 33,
+  "publication": "not_requested",
+  "notes": [
+    "The original approved version and both actual visual responses/claims are preserved.",
+    "The second actual visual response passed every visual and platform check, with no findings, but its overall flag was false with a frame-review-scope limitation. Its raw flag remains false; the final quality decision is explicitly controller-owned after native AV checks and actual entry-sheet inspection.",
+    "No full-video content watching/listening is claimed. No new AI call or render was used for scope finalization.",
+    "No signed preview links, credentials or private transport URIs are stored here."
+  ]
+}
