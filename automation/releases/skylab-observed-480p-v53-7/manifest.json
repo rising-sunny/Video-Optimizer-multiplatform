@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "release_id": "skylab-observed-480p-v53-7",
+  "files": [
+    {
+      "target": "workflow_skylab_recovery.py",
+      "source": "automation/documentary/skylab-v53/modules/workflow_skylab_recovery.py",
+      "sha256": "81d8437eb0a46de12b8565e7f88c1e003f45efbb8f3f27f51a04207c5e062f6f",
+      "expected_sha256": "9494df2e5e8cd811f350a3b9370f6e0b6b0859db0a007eb4eed7d65b94876394"
+    },
+    {
+      "target": "documentary_media.py",
+      "source": "automation/documentary/skylab-v53/modules/documentary_media.py",
+      "sha256": "a939d837af126340ca0a29cfc5bb5018a0d44c5a6b1d12fab61ed8eb86de8caa",
+      "expected_sha256": "ba117f33d2152daf0789a04afea954959881a1e4e96c9d561db80ca61e924cee"
+    }
+  ],
+  "tests": [
+    {
+      "source": "automation/documentary/skylab-v53/tests/fixture_skylab_v53.py",
+      "sha256": "9c4c641c4494b888f8a8b0ae73f7980b1d9fa0e34389de3ff2a6bd3140a1ce39",
+      "path": "fixture_skylab_v53.py"
+    },
+    {
+      "source": "automation/documentary/skylab-v53/tests/test_skylab_recovery_v53.py",
+      "sha256": "00e6f05930265218ab522ae2e6f9c86c9c8ea89fffd808e1274b38cb8a42f6a0",
+      "path": "test_skylab_recovery_v53.py"
+    },
+    {
+      "source": "automation/documentary/skylab-v53/tests/fixture_official_media_v53.py",
+      "path": "fixture_official_media_v53.py",
+      "sha256": "d23439a3b337350bd865d30756152e82174495cac5deddbeb74d07d8ea9fca97"
+    }
+  ]
+}

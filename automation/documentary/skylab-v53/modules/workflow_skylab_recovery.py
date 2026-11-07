@@ -48,9 +48,9 @@ def official_record(title, fetcher):
             if movie:
                 # Select an actual provider rendition; never compute a media URL.
                 candidates = [d for d in info.get('derivatives', [])
-                    if (str(d.get('height', d.get('data-height', ''))) == '360'
-                        or '.360p.vp9.webm' in str(d.get('src', '')))
+                    if str(d.get('height', d.get('data-height', ''))) in ('360','480')
                     and str(d.get('type', '')).startswith('video/webm')]
+                candidates.sort(key=lambda d:int(d.get('height',d.get('data-height',480))))
             for variant in candidates:
                 url = variant.get('src', '')
                 if url.startswith('//upload.wikimedia.org/'):url='https:'+url

@@ -7,11 +7,24 @@ from unittest.mock import patch
 import workflow_skylab_recovery as recovery
 import documentary_common as common
 from fixture_skylab_v53 import OBSERVED, CATALOGUE
+from fixture_official_media_v53 import ACTUAL
 
 FILM = dict(id='M'+('a'*16),type='video')
 PHOTO = dict(id='M'+('b'*16),type='image')
 
 class Curation(unittest.TestCase):
+    def test_observed_provider_has_no_360p_webm_and_exact_480p_is_bounded(self):
+        from documentary_media import binary_limit
+        def fetch(url,limit):
+            for row in ACTUAL:
+                if ('prop=videoinfo' in url)==('prop=videoinfo' in row['request_url']):
+                    return json.dumps(row['response']).encode()
+            raise AssertionError(url)
+        row=recovery.official_record(recovery.FILM,fetch)
+        self.assertEqual(row['evidence']['chosen_derivative']['height'],480)
+        self.assertEqual(binary_limit(row),160*1024*1024)
+        changed=copy.deepcopy(row);changed['evidence']['file_title']='Different film'
+        self.assertEqual(binary_limit(changed),120*1024*1024)
     def catalogue(self):return dict(items=CATALOGUE['items']+[FILM,PHOTO])
     def test_observed_overlong_plan_becomes_native_valid_with_relevant_used_visuals(self):
         original=copy.deepcopy(OBSERVED)
