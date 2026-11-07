@@ -17,9 +17,9 @@ import workflow_common as c
 
 MAX_ATTEMPTS=3
 def attempt_limit(kind, ident):
-    # Two bounded, explicitly requested technical continuations of the same
+    # Three bounded, explicitly requested technical continuations of the same
     # saved Skylab plan. No model/review budget or original attempts are reset.
-    return 5 if kind=='documentary' and ident=='51c0cfdb56e743d88c68859e5b6df165' else MAX_ATTEMPTS
+    return 6 if kind=='documentary' and ident=='51c0cfdb56e743d88c68859e5b6df165' else MAX_ATTEMPTS
 PYTHON='/home/videoagent/Video-Optimizer-multiplatform/.venv/bin/python'
 
 def retry_allowed(job,code):
