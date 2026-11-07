@@ -7,6 +7,8 @@ calls the existing supervised build exactly once. A Facts-only job does not test
 authorize or acquire Revelations' Epidemic music. Complete account history is still
 read for deduplication, and the native source, readiness, pause, budget, metadata,
 licensing, technical QA and visual-review checks remain active.
+Before submission, the installer reuses the existing read-only Codex account reader
+to check current permission and quota windows, without model calls or retry grants.
 
 The current request is one English, text-led, 50–59 second vertical Catarsis Short
 for Stunning Facts of History about Marie Curie's WWI mobile radiography work.
