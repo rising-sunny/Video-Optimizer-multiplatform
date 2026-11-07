@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "release_id": "catarsis-style-continuity-v50",
+  "files": [
+    {
+      "target": "workflow_readable.py",
+      "source": "automation/autonomy/modules/workflow_readable.py",
+      "sha256": "177608f94736e5d4521492a8266b4ed5183464e9a2becd761e480115060cdab9",
+      "expected_sha256": "b2064e53635851b7198b28ee8a53af6cd84392fa42241c3bd9296f27d94b8726"
+    },
+    {
+      "target": "workflow_service.py",
+      "source": "automation/autonomy/modules/workflow_service.py",
+      "sha256": "c6cb8bb19724c9150b65f38d57c3e797fc77d42aa1b5f6032160f74d8982c80d",
+      "expected_sha256": "96595f947c6533e40dca6a55b05a07237714c475c1584336647dbcdf2e2922cd"
+    },
+    {
+      "target": "workflow_style_revision.py",
+      "source": "automation/autonomy/modules/workflow_style_revision.py",
+      "sha256": "3dd66368a9b95680322cd256cee34b4f2fba4487a4f3dcd07cc6c456acd96584",
+      "expected_sha256": "absent"
+    }
+  ],
+  "tests": [
+    {
+      "source": "automation/autonomy/tests/curie-final-project.json",
+      "path": "curie-final-project.json",
+      "sha256": "ba74374a5a4e63b222c667f9df1ef2cba55c4c1af28662f4171fbb6757f9775f"
+    },
+    {
+      "source": "automation/autonomy/tests/native-render-project.txt",
+      "path": "native-render-project.txt",
+      "sha256": "3a69391d7eea4b174b6d8537ef57170acfd475b7075763af427e5fc29b5821aa"
+    },
+    {
+      "source": "automation/autonomy/tests/test_native_render_receipt.py",
+      "path": "test_native_render_receipt.py",
+      "sha256": "49153dd133c7bcbd5464cedb7935de6f6c3bed494361234e1dfdd7858aae0444"
+    },
+    {
+      "source": "automation/autonomy/tests/test_presentation.py",
+      "path": "test_presentation.py",
+      "sha256": "8a15ce3082594e132af9094569785cb7477c88e83de8e49f15f4f4f6ce77874d"
+    },
+    {
+      "source": "automation/autonomy/tests/test_style_v50.py",
+      "path": "test_style_v50.py",
+      "sha256": "b089a4c3df7b8f372d94b3334f74a647032ffaec0e9940ba552870b6902b0208"
+    }
+  ]
+}

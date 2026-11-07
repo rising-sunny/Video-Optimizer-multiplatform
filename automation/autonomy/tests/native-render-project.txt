@@ -52,3 +52,4 @@ def render_project(project, directory, smoke=False):
     (directory / 'rendering.json').unlink()
     return dict(r, reused=False)
 
+

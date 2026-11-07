@@ -115,3 +115,17 @@ tokens OAuth, enlaces firmados de descarga, auth de Codex ni configuración secr
 Las fuentes de referencia no son un instalador para sustituir todo el runtime.
 Las recuperaciones que autorizaban intentos adicionales siguen limitadas a sus
 jobs originales; archivarlas no concede intentos nuevos.
+
+## Continuidad visual Catarsis — v50 (7 de noviembre de 2026)
+
+La corrección de legibilidad v49 había sustituido las tarjetas serif del canal por
+sans serif y desatendía sus variantes de composición. v50 recupera la serif gruesa
+estrecha, conserva ajuste por píxeles, despliega frases originales por partes y
+usa entradas cinéticas breves. Los rótulos factuales permanecen en sans serif.
+La revisión explícita de Curie conserva las fotos, palabras, tiempos del archivo,
+AAC y créditos; archiva la aprobación y el vídeo anteriores. No reinicia cuotas.
+Tiene un único dictamen visual nuevo, registrado por separado del presupuesto
+original, sin llamadas nuevas a DeepSeek ni publicación. Ver el alcance exacto
+en `automation/autonomy/README.md`; comprobar recibos antes de afirmar instalado
+o vídeo listo.
+

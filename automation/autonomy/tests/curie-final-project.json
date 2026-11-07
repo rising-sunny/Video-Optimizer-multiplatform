@@ -1,0 +1,152 @@
+{
+  "style": {
+    "grain": true,
+    "grade": true,
+    "bloom": false,
+    "vignette": true,
+    "loop": false,
+    "sfx": true,
+    "light_color": "warm"
+  },
+  "sequence": [
+    {
+      "kind": "card",
+      "seconds": 2.7333333333333334,
+      "text": "Her wartime laboratory had wheels.",
+      "variant": "center",
+      "act": "hook",
+      "motion": "push"
+    },
+    {
+      "kind": "media",
+      "seconds": 2.6666666666666665,
+      "media": 0,
+      "act": "hook",
+      "motion": "push",
+      "transition": "cut",
+      "text": "Marie Curie, 1903"
+    },
+    {
+      "kind": "media",
+      "seconds": 3.8333333333333335,
+      "media": 1,
+      "act": "rise",
+      "motion": "push",
+      "text": "Marie and Pierre Curie in their laboratory, 1896"
+    },
+    {
+      "kind": "media",
+      "seconds": 2.6,
+      "media": 3,
+      "act": "rise",
+      "motion": "push",
+      "text": "Marie Skłodowska-Curie, before 1907"
+    },
+    {
+      "kind": "card",
+      "seconds": 3.433333333333333,
+      "text": "Then, in 1914, France went to war.",
+      "variant": "center",
+      "act": "rise",
+      "motion": "hold"
+    },
+    {
+      "kind": "media",
+      "seconds": 2.7,
+      "media": 2,
+      "act": "rise",
+      "motion": "push",
+      "transition": "burn",
+      "text": "Marie Curie, c. 1900"
+    },
+    {
+      "kind": "card",
+      "seconds": 5.233333333333333,
+      "text": "The War Ministry asked her about training radiographers and existing X-ray apparatus.",
+      "variant": "center",
+      "act": "rise",
+      "motion": "hold"
+    },
+    {
+      "kind": "overlay",
+      "seconds": 3.2666666666666666,
+      "media": 4,
+      "act": "rise",
+      "motion": "push",
+      "text": "Solvay Conference, 1927 — later context"
+    },
+    {
+      "kind": "card",
+      "seconds": 4.266666666666667,
+      "text": "Radiography cars already existed. She did not invent them.",
+      "variant": "center",
+      "act": "turn",
+      "motion": "hold"
+    },
+    {
+      "kind": "media",
+      "seconds": 2.3,
+      "media": 0,
+      "act": "turn",
+      "motion": "hold",
+      "text": "Marie Curie, 1903"
+    },
+    {
+      "kind": "media",
+      "seconds": 2.8333333333333335,
+      "media": 2,
+      "act": "turn",
+      "motion": "push",
+      "transition": "burn",
+      "text": "Marie Curie, c. 1900"
+    },
+    {
+      "kind": "card",
+      "seconds": 5.1,
+      "text": "She worked to send them forward, with Irène and the medical teams.",
+      "variant": "center",
+      "act": "turn",
+      "motion": "hold"
+    },
+    {
+      "kind": "color",
+      "seconds": 0.9,
+      "text": "",
+      "variant": "color",
+      "act": "break",
+      "motion": "hold",
+      "tag": "break"
+    },
+    {
+      "kind": "media",
+      "seconds": 4.333333333333333,
+      "media": 5,
+      "act": "release",
+      "motion": "push",
+      "transition": "burn",
+      "text": "Marie Curie, photograph by Henri Manuel, c. 1920"
+    },
+    {
+      "kind": "card",
+      "seconds": 4.066666666666666,
+      "text": "Science reaching people. That was her actual authority.",
+      "variant": "center",
+      "act": "release",
+      "motion": "push"
+    },
+    {
+      "kind": "media",
+      "seconds": 4.733333333333333,
+      "media": 5,
+      "act": "end",
+      "motion": "push",
+      "text": "Marie Curie, by Henri Manuel, c. 1920"
+    }
+  ],
+  "card_style": "center",
+  "transition_count": 3,
+  "burn_count": 3,
+  "media_scenes": 9,
+  "text_cards": 7,
+  "total_seconds": 46.5
+}

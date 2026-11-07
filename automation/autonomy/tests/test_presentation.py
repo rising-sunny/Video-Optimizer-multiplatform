@@ -23,7 +23,7 @@ class Display(unittest.TestCase):
             font,lines,size,gap,height=readable.layout(text)
             self.assertEqual(' '.join(lines),' '.join(text.split()))
             self.assertGreaterEqual(size,96);self.assertLessEqual(height,870)
-            self.assertTrue(all(font.getlength(line)<=920 for line in lines))
+            self.assertTrue(all(font.getlength(line)*readable.CONDENSE<=920 for line in lines))
             self.assertEqual(readable.card(text).size,(1080,1920))
 
     def test_labels_are_large_and_fit_lower_panel(self):
@@ -37,12 +37,12 @@ class Display(unittest.TestCase):
         editor=types.ModuleType('presentation_test_editor')
         exec('def text_card(*a):pass\ndef overlay_layer(*a):pass\ndef build_shots(project,sequence):\n return sequence',editor.__dict__)
         originals=(editor.text_card,editor.overlay_layer,editor.build_shots)
-        plan=dict(assets=[dict(label='Marie Curie, 1903')],project=dict(sequence=[dict(kind='media',media=0,text='Existing shorter label'),dict(kind='card',text='Exact fact')]))
+        plan=dict(assets=[dict(label='Marie Curie, 1903')],project=dict(sequence=[dict(kind='media',seconds=3,media=0,text='Existing shorter label'),dict(kind='card',seconds=3,text='Exact fact')]))
         before=copy.deepcopy(plan)
         with readable.renderer(editor,plan):
             rendered=editor.build_shots({},plan['project']['sequence'])
             self.assertEqual(rendered[0]['kind'],'overlay');self.assertEqual(rendered[0]['text'],'Marie Curie, 1903')
-            self.assertEqual(rendered[1],plan['project']['sequence'][1])
+            self.assertEqual(rendered[1]['text'],plan['project']['sequence'][1]['text']);self.assertTrue(rendered[1]['kinetic'])
         self.assertEqual(before,plan);self.assertEqual(originals,(editor.text_card,editor.overlay_layer,editor.build_shots))
 
     def test_existing_video_is_moved_before_native_render_so_cache_cannot_skip_revision(self):

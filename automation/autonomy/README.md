@@ -206,3 +206,28 @@ that batch is retained and no second channel is generated.
 Repository persistence, VPS installation, generation readiness and publication
 must always be reported separately. Credentials, OAuth tokens, signed URLs,
 Codex auth and resumable upload session URIs never belong in commits.
+
+## Catarsis visual continuity (v50)
+
+Pixel fitting preserves the channel's original condensed bold serif for narrative
+cards. Center, left, word, inverted and red variants retain their meaning; source
+labels remain readable sans serif below the archival image. Long cards can unfold
+as contiguous original phrases with brief native kinetic entrances. The adapter
+keeps all source words, integer-frame boundaries of archival shots and the quiet
+break; it does not paraphrase history or add media.
+
+A new explicitly user-requested style revision of the approved, unpublished Curie
+Short is separate from automatic recovery. The exact single-channel generation
+request `revise-curie-catarsis-style-20261107-v1` is bound to its approved source
+video/approval hashes and returns that same batch. It archives the original job,
+ledger and approval byte-for-byte before making the revised working version.
+All original text counters and visual claims remain intact. New research/text
+transport is forbidden. This revision has one separately recorded real Codex
+visual assessment, with new MP4 scene/entry samples and labeled published style
+references. The original generation allowance is not reset or extended. It cannot
+be triggered by the observer, another request/topic or a publication operation.
+The native technical QA, exact factual-cache binding and native approval still
+have to pass. The soundtrack's original AAC packet payload and all source dates,
+credits and metadata are preserved. Repository code and installed/readied video
+status remain separate evidence; this entry is not a completed-render receipt.
+
