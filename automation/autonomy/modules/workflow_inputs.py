@@ -74,7 +74,7 @@ def resume_inputs(job):
             for name in ('render_project','qa'):
                 api[name+'_source']=public_text(inspect.getsource(getattr(helper,name)),16000)
         except Exception as exc:api=dict(error=c.clean(exc,200))
-    return dict(read_only=True, ai_requests=0, network_requests=0,
+    return dict(assessment_details=assessment_details(job),read_only=True, ai_requests=0, network_requests=0,
         fetched_sources=fetches[:14], factual_snapshots=snapshots,
         saved_snapshot_text=saved[:6], music=dict(fields=list(music), tracks=tracks),
         preview_frames=previews,qa=dict(technical_checks_passed=qa.get('technical_checks_passed'),
@@ -83,3 +83,27 @@ def resume_inputs(job):
         last_failure=c.clean(c.read(job/'blocked.json'),2000) if (job/'blocked.json').is_file() else None,
         preparation=c.read(job/'workflow-preparation.json') if (job/'workflow-preparation.json').is_file() else None,
         evidence_notice='Public saved input data only; a saved source or catalogue is not a quality approval.')
+
+
+def assessment_details(job):
+    """Bounded public review fields and original provider response, never credentials."""
+    import json
+    job=Path(job);result={}
+    for name in ('visual-review.json','deepseek-text-review.json'):
+        if (job/name).is_file():
+            value=c.read(job/name)
+            result[name]={k:value[k] for k in ('approved','video_sha256','checks','findings','recommendation','platform_policy_checks','assessment_sources','resolution') if k in value}
+    events=job/'visual-review-events.jsonl'
+    if events.is_file() and not events.is_symlink() and events.stat().st_size<=50*1024*1024:
+        messages=[];complete=False;failed=False
+        for line in events.read_text().splitlines():
+            try:row=json.loads(line)
+            except ValueError:continue
+            if row.get('type')=='turn.completed':complete=True
+            if row.get('type') in ('error','turn.failed'):failed=True
+            if row.get('type')=='item.completed' and row.get('item',{}).get('type')=='agent_message':
+                messages.append(row['item'].get('text',''))
+        result['provider_visual']=dict(completed=complete,failed=failed,events_sha256=c.digest(events),
+            original_response=public_text(messages[-1],18000) if messages else None)
+    return result
+
