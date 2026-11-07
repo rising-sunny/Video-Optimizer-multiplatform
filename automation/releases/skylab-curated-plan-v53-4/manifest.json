@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "release_id": "skylab-curated-plan-v53-4",
+  "files": [
+    {
+      "target": "workflow_preparation.py",
+      "source": "automation/documentary/skylab-v53/modules/workflow_preparation.py",
+      "sha256": "10ae016bee91d6655a297b6663aa76d130cb317b4b9b958f12ebefff0ee251ea",
+      "expected_sha256": "44e221104e186a7968c4a64ec8e54fa0af0d823a4674dc475980b3629c14ff10"
+    },
+    {
+      "target": "workflow_skylab_recovery.py",
+      "source": "automation/documentary/skylab-v53/modules/workflow_skylab_recovery.py",
+      "sha256": "d50026f4d32084cbe34408733f32bc7420e396f8f44d99809c7ac8d59cc9d338",
+      "expected_sha256": "absent"
+    }
+  ],
+  "tests": [
+    {
+      "source": "automation/documentary/skylab-v53/tests/fixture_skylab_v53.py",
+      "sha256": "9c4c641c4494b888f8a8b0ae73f7980b1d9fa0e34389de3ff2a6bd3140a1ce39",
+      "path": "fixture_skylab_v53.py"
+    },
+    {
+      "source": "automation/documentary/skylab-v53/tests/test_skylab_recovery_v53.py",
+      "sha256": "25d0142f5107e926a706d96f7249aff67c8223755793cbf0fc6f06ea007c46fd",
+      "path": "test_skylab_recovery_v53.py"
+    }
+  ]
+}
