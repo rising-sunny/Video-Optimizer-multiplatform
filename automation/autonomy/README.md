@@ -248,3 +248,20 @@ can render changed pixels and obtain one actual fresh assessment, separately
 claimed. Across both deliberate style stages there are at most two assessments;
 neither the generation budget nor any old claim is reset/replayed. Other failed
 videos, unrelated defects, changed evidence or repeated checkpoints are rejected.
+
+### Exact positive-check scope finalization (v50.4)
+
+The crisp MP4 passed all seven actual Codex visual checks and all visual platform
+checks, with no findings, but retained an overall false flag. Its sole suggestion
+said frame sheets cannot confirm full playback or audible quality. The raw false
+flag, response/cache and successful provider events remain unchanged and archived.
+A separate controller-owned final quality decision may resolve only this exact
+MP4/response: native full AV decode, audio levels, duration and unchanged original
+AAC must pass; the actual crisp entry sheet inspected in the current chat is
+hash-bound. Any failed/missing check, other finding or other suggestion rejects
+this path. This does not label the provider's overall flag true, does not claim
+full content watching/listening and does not authorize publication. The normal
+native review/approval tail combines the exact approved factual cache, existing
+positive visual/platform checks and this explicit local scope verification.
+No render or provider call is allowed. The native vision trace identifies reuse
+and controller decision ownership; old budgets and all claims remain untouched.

@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "release_id": "positive-visual-scope-v50-4",
+  "files": [
+    {
+      "target": "workflow_jobs.py",
+      "source": "automation/autonomy/modules/workflow_jobs.py",
+      "sha256": "0108650db8d302503173c7be343be2509662659cd9b045b3ce2f6617078850d1",
+      "expected_sha256": "03faf726d14e8fcb8e67f03421486c06cbd647259f9cfc146149a96859420c3c"
+    },
+    {
+      "target": "workflow_style_finalize.py",
+      "source": "automation/autonomy/modules/workflow_style_finalize.py",
+      "sha256": "600ebca2a0db16de64da0ac4a60ed8c03d14b34c15b712949820e1e1b5cfcfc7",
+      "expected_sha256": "absent"
+    }
+  ],
+  "tests": [
+    {
+      "source": "automation/autonomy/tests/curie-final-project.json",
+      "path": "curie-final-project.json",
+      "sha256": "ba74374a5a4e63b222c667f9df1ef2cba55c4c1af28662f4171fbb6757f9775f"
+    },
+    {
+      "source": "automation/autonomy/tests/native-render-project.txt",
+      "path": "native-render-project.txt",
+      "sha256": "3a69391d7eea4b174b6d8537ef57170acfd475b7075763af427e5fc29b5821aa"
+    },
+    {
+      "source": "automation/autonomy/tests/test_native_render_receipt.py",
+      "path": "test_native_render_receipt.py",
+      "sha256": "49153dd133c7bcbd5464cedb7935de6f6c3bed494361234e1dfdd7858aae0444"
+    },
+    {
+      "source": "automation/autonomy/tests/test_presentation.py",
+      "path": "test_presentation.py",
+      "sha256": "8a15ce3082594e132af9094569785cb7477c88e83de8e49f15f4f4f6ce77874d"
+    },
+    {
+      "source": "automation/autonomy/tests/test_review_details_v50.py",
+      "path": "test_review_details_v50.py",
+      "sha256": "8d371078469399dd7193b6a86c6e228865e1e4a69cc5fc8650f9ec2da638c115"
+    },
+    {
+      "source": "automation/autonomy/tests/test_scope_finalize_v50.py",
+      "path": "test_scope_finalize_v50.py",
+      "sha256": "a4040eb4fcc8ab387c96777147b34ad47ad07f93d0376ebf4df03cb801812469"
+    },
+    {
+      "source": "automation/autonomy/tests/test_style_v50.py",
+      "path": "test_style_v50.py",
+      "sha256": "cf266036728e6a0ee0c52a60976e5171bfbd2d7ebe1b45d226a2901103bb657f"
+    }
+  ]
+}

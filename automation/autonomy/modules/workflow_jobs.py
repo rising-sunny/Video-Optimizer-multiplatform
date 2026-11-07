@@ -157,6 +157,9 @@ def inspect(kind,ident):
     return task,status,enrollment,jobs
 
 def start(broker,kind,ident,request_id=None):
+    if kind=='catarsis' and request_id=='finalize-curie-style-review-scope-20261107-v1':
+        from workflow_style_finalize import start as finish_scope
+        return finish_scope(broker,ident,request_id)
     from generation_service import denied,safe_error
     from history_data import timestamp
     state=c.STATE/kind/ident
@@ -390,3 +393,4 @@ if __name__=='__main__':
     parser.add_argument('--job-id',required=True);parser.add_argument('--attempt',required=True);args=parser.parse_args()
     if not c.valid_id(args.job_id) or not args.attempt.isdigit() or len(args.attempt)!=3:raise SystemExit(2)
     os.umask(0o077);perform(args.kind,args.job_id,args.attempt)
+
