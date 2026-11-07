@@ -1,0 +1,188 @@
+{
+  "version": "curie-wwi-media-v51",
+  "state": "ready",
+  "batch_id": "414d2230218342febf4d42846e71c3e6",
+  "revision_of": "cf2a22d4f40f453fba2b3af137b716d1",
+  "release_commit": "2e8372aa33d137273889369b890122ea17c811aa",
+  "deployment_id": "908c90afb6f8c661ce5ebc08359ba05e",
+  "offline_tests": 9,
+  "video_sha256": "4ead29ff752aa469f28af6d5c172798fe2e7dcaf9376c2d8740a26f7faa02914",
+  "video_bytes": 89421434,
+  "approval_sha256": "d11cebb555eb09a9890c6a688c6c90c49550f8526ff529242956279a467d76d3",
+  "duration_seconds": 55,
+  "photographs": 7,
+  "video_sources": 1,
+  "video_scenes": 2,
+  "all_factual_card_words_preserved": true,
+  "typography": "crisp-condensed-bold-serif-v50",
+  "music_title": "Measured Paces",
+  "technical_checks_passed": true,
+  "native_review": {
+    "approved": true,
+    "video_sha256": "4ead29ff752aa469f28af6d5c172798fe2e7dcaf9376c2d8740a26f7faa02914",
+    "checks": {
+      "context_labels": true,
+      "framing": true,
+      "thumbnail": true,
+      "images_inspected": true,
+      "text_readable": true,
+      "motion_or_intentional_stills": true,
+      "intentional_black_and_static_only": true,
+      "facts_supported": true,
+      "licenses_and_full_credits": true
+    },
+    "findings": [],
+    "recommendation": "approve",
+    "platform_policy_checks": {
+      "youtube": {
+        "copyright_and_music": true,
+        "community_guidelines": true,
+        "non_misleading_context": true
+      },
+      "facebook": {
+        "copyright_and_music": true,
+        "community_guidelines": true,
+        "non_misleading_context": true
+      },
+      "instagram": {
+        "copyright_and_music": true,
+        "community_guidelines": true,
+        "non_misleading_context": true
+      }
+    },
+    "assessment_sources": {
+      "text_facts_rights": "deepseek",
+      "visual": "codex",
+      "platform_copyright": "deepseek_licenses_and_full_credits",
+      "platform_community_context": "codex_visual_and_metadata_assessment",
+      "full_video_watched": false
+    }
+  },
+  "actual_visual_provider": {
+    "approved": true,
+    "checks": {
+      "context_labels": true,
+      "framing": true,
+      "thumbnail": true,
+      "images_inspected": true,
+      "text_readable": true,
+      "motion_or_intentional_stills": true,
+      "intentional_black_and_static_only": true
+    },
+    "findings": [],
+    "suggestions": [
+      "Several artillery images repeat; varying the contextual stills could add visual variety."
+    ],
+    "visual_platform_checks": {
+      "youtube": {
+        "community_guidelines": true,
+        "non_misleading_context": true
+      },
+      "facebook": {
+        "community_guidelines": true,
+        "non_misleading_context": true
+      },
+      "instagram": {
+        "community_guidelines": true,
+        "non_misleading_context": true
+      }
+    }
+  },
+  "text_evidence_review": {
+    "approved": true,
+    "checks": {
+      "facts_supported": true,
+      "licenses_and_full_credits": true
+    },
+    "findings": [
+      {
+        "severity": "info",
+        "message": "Factual claims verified against fetched excerpts: Nobel Prize facts page confirms 1903 Physics share, first person with two Nobels, and WWI mobile X-ray teams; Musée Curie confirms radiography cars predate 1905 and that Curie did not create them but worked to multiply them; Musée de la Grande Guerre confirms the 12 August 1914 War Ministry letters on training radiographers and listing existing apparatus plus her Red Cross radiography-service inspector role; AIP confirms redirected Radium Institute work, military radiology centers, vehicles equipped from late October 1914, and Irène as first radiological assistant at 17 (Nobel page confirms Irène's later Chemistry Nobel)."
+      },
+      {
+        "severity": "info",
+        "message": "Card text aligns with the evidence: 'Radiography cars already existed. She did not invent them' and 'The War Ministry asked her about training radiographers and existing X-ray apparatus' match source excerpts without overreach; no lives-saved totals or X-ray-invention claims appear. The unsupported 'bullet before surgeon cut' card was removed per direction."
+      },
+      {
+        "severity": "info",
+        "message": "Contextual media is labeled honestly: Verdun, French field-hospital X-ray, Paris ambulances, Nice nurses and Western Front artillery clips all carry '(context)' or 'WWI context' labels and are not presented as Curie's own unit; Irène Curie 1917 trainee photo and mobile X-ray unit photo are genuine period subject images. No invented footage or titles."
+      },
+      {
+        "severity": "suggestion",
+        "message": "Minor date inconsistency: the Irène Curie/Suzanne Veil file's Commons description guesses 1915 while the filename and video label use 'November 1917'; the label is defensible from the file title, but a relative 'c.1917' caption would be more cautious."
+      },
+      {
+        "severity": "suggestion",
+        "message": "Keystone still carries 'Copyright undetermined' in its Commons permission template even though ShortName says Public domain (Missouri Historical Society open-access policy); acceptable with the MHS credit already present, but a documentary provenance note would strengthen the rights record."
+      },
+      {
+        "severity": "info",
+        "message": "Licenses and credits: all eight media items are Public domain per Commons receipts, each fully credited with author/collection, Commons Source URL and license; YouTube, Facebook and Instagram metadata all include full source list, per-item credits and licenses. Music 'Measured Paces' (Kevin MacLeod, incompetech, CC BY 4.0, ISRC USUAN1100164) is attested by the publisher catalogue and FAQ with visible attribution and monetized-use allowance; no Invented or Epidemic claims. Controller documented account scope and download evidence only; no extra provider permission is asserted beyond the CC BY 4.0 grant."
+      },
+      {
+        "severity": "info",
+        "message": "Narrative coherent for the 55 s silent card/clip arc: hook (wheels) → rise (Curie, Verdun, field X-ray, 1914) → turn (cars not her invention, multiplied with Irène and medical teams) → quiet break → reframe (science reaching people). Platform metadata descriptions and Instagram caption remain consistent with verified claims."
+      }
+    ]
+  },
+  "parent_video_sha256": "b9b4c5a7521533755d56cc068b61127cd17e175f73a68234374e5efddfb4699f",
+  "parent_approval_sha256": "7d57ffba1792fe5f0979b060210846ab337a9e659601f727b39d58cf0c762c5d",
+  "parent_ledger_unchanged": true,
+  "source_estimated_usd": 0.051921,
+  "revision_estimated_usd": 0.0072195,
+  "cumulative_estimated_usd": 0.0591405,
+  "cumulative_ceiling_usd": 0.2,
+  "revision_ai_usage": {
+    "state": "available",
+    "version": "editor-context-v10",
+    "recorded_calls": 1,
+    "by_provider": {
+      "codex": {
+        "measured_turns": 1,
+        "input_tokens": 31527,
+        "output_tokens": 132,
+        "cached_input_tokens": 4992
+      },
+      "deepseek": {
+        "measured_turns": 1,
+        "input_tokens": 21285,
+        "output_tokens": 695,
+        "cached_input_tokens": 384
+      }
+    },
+    "provider_fallbacks": [],
+    "codex_configuration": [
+      {
+        "model": "gpt-6-luna",
+        "reasoning_effort": "medium",
+        "service_tier": "default",
+        "source": "explicit_cli_arguments"
+      }
+    ],
+    "calls_without_usage": 0,
+    "scoped_copy_calls": 0,
+    "indexed_history_calls": 0,
+    "input_tokens": 52812,
+    "output_tokens": 827,
+    "cached_input_tokens": 5376,
+    "note": "Recorded CLI usage, not account quota or money. Cached input is included in input_tokens. Missing/failed telemetry may omit usage."
+  },
+  "native_readiness": {
+    "sha256": "a84e0b75dca2d174c05faaa6235c2fe5d57c9395cd06484b09cbb76ab469cc56",
+    "checks_passed": 36,
+    "checks_total": 36,
+    "all_checks_pass": true,
+    "approved_native_sha256": {
+      "runner.py": "3746cb10296bdff378d1ab026be1102795052c6ab450187bd71c039bdf73d9e2",
+      "daily_core.py": "896a24a21c67966f3cb889c776b6a238a7b3be3eb2fd7719f4565d7c56d5907b",
+      "daily_remote.py": "d0edd530d9929d516f3f2c96079daf4245cacbc144e3c39eebaa9eea5e196a51",
+      "editorial.py": "f09de5bf5817611dbb802f02e65af7f4a733a4a2c5ce58039a905e0309b012ec",
+      "render_adapter.py": "3f88cff95be05f808796d1361b78fcc22c7a3b20b9f6d6ee8a8cb1b31c9d41bf",
+      "music_provider.py": "8f7cf5719f0494186ac27eea5bc81eb60077159c4346246a7c323bd01a53ce13",
+      "epidemic_mcp.py": "d0e28e4bd91a0d10e8dab9f77c7c1fd10a2dc587ae6128c23400a814c7c2f699"
+    },
+    "native_files_match": true
+  },
+  "publication_requested": false,
+  "publication_allowed": false
+}
