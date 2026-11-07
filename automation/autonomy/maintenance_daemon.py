@@ -28,6 +28,7 @@ STORE=Path('/var/lib/video-workflow-maintenance')
 RUN=Path('/run/video-workflow-maintenance')
 ROOT=Path('/opt/video-agent-mcp')
 REPO=Path('/home/videoagent/Video-Optimizer-multiplatform')
+AUTOMATION=Path('/home/videoagent/video-automation')
 LOCK=Path('/run/lock/video-generation-install.lock')
 SCHEMAS={'inventory':{'operation'},'source':{'operation','module'},
     'deploy':{'operation','release_id','commit_sha','manifest_sha256'},'status':{'operation','deployment_id'}}
@@ -91,7 +92,7 @@ def source(name,policy):
     if name.startswith('native:'):
         bare=name.removeprefix('native:')
         if bare not in policy['native_modules']:raise RuntimeError('maintenance_source_not_allowed')
-        path=Path('/home/videoagent/video-automation')/bare
+        path=AUTOMATION/bare
     else:
         if not allowed(name,policy):raise RuntimeError('maintenance_source_not_allowed')
         path=ROOT/name
@@ -103,8 +104,16 @@ def source(name,policy):
 
 def inventory(policy):
     files={p.name:sha(safe(p).read_bytes()) for p in ROOT.glob('*.py') if allowed(p.name,policy)}
-    native={name:sha(safe(Path('/home/videoagent/video-automation')/name).read_bytes()) for name in policy['native_modules']}
-    return dict(state='available',modules=files,native_modules=native,maintenance_version=1,
+    native={name:sha(safe(AUTOMATION/name).read_bytes()) for name in policy['native_modules']}
+    readiness_path=safe(AUTOMATION/'runtime/production/readiness.json')
+    readiness={}
+    if readiness_path.is_file():
+        raw=readiness_path.read_bytes();data=json.loads(raw);checks=data.get('checks',{})
+        approved={name:data.get('code_sha256',{}).get(name) for name in policy['native_modules']}
+        readiness=dict(sha256=sha(raw),checks_passed=sum(v is True for v in checks.values()),checks_total=len(checks),
+            all_checks_pass=bool(checks) and all(v is True for v in checks.values()),approved_native_sha256=approved,
+            native_files_match=all(approved[name]==value for name,value in native.items()))
+    return dict(state='available',modules=files,native_modules=native,readiness=readiness,maintenance_version=1,
         deployments=[read(p) for p in sorted(STORE.glob('deployment-*.json'))[-10:]],read_only=True)
 
 def validate_manifest(manifest,policy):
@@ -185,7 +194,8 @@ def invariants(candidates):
 def health():
     for _ in range(60):
         try:
-            if broker('generation_workflow_capabilities').get('maintenance') is True:
+            capabilities=broker('generation_workflow_capabilities')
+            if capabilities.get('maintenance') is True and capabilities.get('native_ready') is True:
                 body=json.dumps(dict(jsonrpc='2.0',id=1,method='initialize',params={})).encode()
                 request=urllib.request.Request('http://127.0.0.1:8880/mcp',data=body,headers={'Content-Type':'application/json','Accept':'application/json, text/event-stream'})
                 try:urllib.request.urlopen(request,timeout=3).close();raise RuntimeError('maintenance_auth_boundary_changed')

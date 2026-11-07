@@ -336,6 +336,15 @@ class MaintenanceTests(unittest.TestCase):
         self.assertEqual(first,second);self.assertEqual(len(list(self.root.glob('deployment-*.json'))),1)
     def test_inventory_rejects_arbitrary_source_names(self):
         with self.assertRaisesRegex(RuntimeError,'not_allowed'):admin.source('../../root.key',self.policy)
+    def test_inventory_exposes_readiness_hash_evidence_without_private_values(self):
+        code=self.root/'code';code.mkdir();auto=self.root/'auto';(auto/'runtime/production').mkdir(parents=True)
+        native=b'# installed source\n';(auto/'runner.py').write_bytes(native)
+        raw=json.dumps(dict(checks={'a':True,'b':True},code_sha256={'runner.py':admin.sha(native)},secret='PRIVATE_VALUE')).encode()
+        (auto/'runtime/production/readiness.json').write_bytes(raw)
+        policy=dict(self.policy,native_modules=['runner.py'])
+        with patch.object(admin,'ROOT',code),patch.object(admin,'STORE',self.root/'absent-store'),patch.object(admin,'AUTOMATION',auto):value=admin.inventory(policy)
+        self.assertTrue(value['readiness']['native_files_match']);self.assertEqual(value['readiness']['checks_passed'],2)
+        self.assertNotIn('PRIVATE_VALUE',json.dumps(value))
     def test_interrupted_install_rolls_back_only_verified_files(self):
         code=self.root/'code';code.mkdir();backup=self.root/'backup';backup.mkdir()
         old=b'# previous\n';new=b'# candidate\n'

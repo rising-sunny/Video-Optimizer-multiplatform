@@ -34,7 +34,13 @@ def install(cls,operations):
         if set(request)!=SCHEMAS[op]:return denied('invalid_generation_request')
         try:
             with self.lock:
-                if op=='generation_workflow_capabilities':return dict(version=c.VERSION,maintenance=True,single_channel=True,automatic_recovery=True)
+                if op=='generation_workflow_capabilities':
+                    value=dict(version=c.VERSION,maintenance=True,single_channel=True,automatic_recovery=True,native_ready=False)
+                    try:
+                        from generation_worker import preflight
+                        preflight();value['native_ready']=True
+                    except Exception as exc:value['native_error']=safe_error(exc)
+                    return value
                 if op=='generation_workflow_diagnostics':return c.diagnostics(request['kind'],request['job_id'],request['channel'],request['include_saved_response'])
                 if op=='generation_workflow_admin':
                     if request['action'] not in ('inventory','source','deploy','status') or not isinstance(request['values'],dict):return denied('workflow_invalid_admin_action')
