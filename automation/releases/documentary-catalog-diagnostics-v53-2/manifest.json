@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "release_id": "documentary-catalog-diagnostics-v53-2",
+  "files": [
+    {
+      "target": "workflow_inputs.py",
+      "source": "automation/autonomy/modules/workflow_inputs.py",
+      "sha256": "91b1580a081db5567c7b4e45b23c106f24fb2dfdd7e30f791c610f42c14f4c66",
+      "expected_sha256": "5405b9d0f2f965f6bc206904fee43be641a87d009722636b05367fa2076f58f6"
+    }
+  ],
+  "tests": [
+    {
+      "source": "automation/autonomy/tests/test_documentary_plan_data_v53.py",
+      "path": "test_documentary_plan_data_v53.py",
+      "sha256": "752191f8373d588fb1549a4d76c95ab6d50df99df2d02d3ef528e6b009f2a788"
+    }
+  ]
+}

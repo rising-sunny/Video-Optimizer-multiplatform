@@ -27,6 +27,12 @@ def documentary_plan_data(job):
         'research','claims','assets','segments','thumbnail') if key in value}
     return json.loads(public_text(json.dumps(selected,ensure_ascii=False),120000))
 
+def documentary_catalog_data(job):
+    job=c.safe(Path(job));path=c.safe(job/'media-catalog.json')
+    if job.parent.name!='manual-documentary' or not path.is_file() or path.stat().st_size>4*1024*1024:return []
+    return [{k:public_text(row[k],2200) for k in ('id','type','title','description','date','author','license','source_url') if k in row}
+            for row in c.read(path).get('items',[])[:72]]
+
 
 def resume_inputs(job):
     job = c.safe(Path(job))
@@ -90,7 +96,7 @@ def resume_inputs(job):
         saved_snapshot_text=saved[:6], music=dict(fields=list(music), tracks=tracks),
         preview_frames=previews,qa=dict(technical_checks_passed=qa.get('technical_checks_passed'),
             sha256=qa.get('sha256'),fields=list(qa)),render_api=api,
-        plan_check=plan_check,presentation=presentation,
+        plan_check=plan_check,verified_catalogue=documentary_catalog_data(job),presentation=presentation,
         last_failure=c.clean(c.read(job/'blocked.json'),2000) if (job/'blocked.json').is_file() else None,
         preparation=c.read(job/'workflow-preparation.json') if (job/'workflow-preparation.json').is_file() else None,
         evidence_notice='Public saved input data only; a saved source or catalogue is not a quality approval.')
