@@ -37,7 +37,6 @@
     "licenses_and_full_credits": true
   },
   "visual_quality_decision": "codex_positive_visual_checks_plus_controller_native_av_scope_verification",
-  "original_provider_overall_flag_preserved": false,
   "scope_resolution": {
     "version": "curie-style-review-scope-v50-4",
     "original_provider_approved": false,
@@ -80,5 +79,7 @@
     "The second actual visual response passed every visual and platform check, with no findings, but its overall flag was false with a frame-review-scope limitation. Its raw flag remains false; the final quality decision is explicitly controller-owned after native AV checks and actual entry-sheet inspection.",
     "No full-video content watching/listening is claimed. No new AI call or render was used for scope finalization.",
     "No signed preview links, credentials or private transport URIs are stored here."
-  ]
+  ],
+  "original_provider_overall_approved": false,
+  "original_provider_response_preserved": true
 }
