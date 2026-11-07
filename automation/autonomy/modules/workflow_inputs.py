@@ -56,9 +56,25 @@ def resume_inputs(job):
     if job.parent.parent.name=='manual-catarsis' and (job/'visual-review.json').is_file():
         from workflow_presentation import available as presentation_available
         presentation=presentation_available(job.parent.name)
+    from workflow_preview import frames
+    previews=frames(job)
+    qa=c.read(job/'qa.json') if (job/'qa.json').is_file() else {}
+    api={}
+    if (job/'video.mp4').is_file():
+        try:
+            import inspect,sys
+            sys.path.insert(0,'/home/videoagent/video-automation');import editorial
+            from workflow_native import implementation
+            helper=implementation(editorial).d
+            api={name:str(inspect.signature(getattr(helper,name))) for name in dir(helper)
+                if (name in ('render_project','probe','check_video','validate_video') or 'qa' in name.lower())
+                and callable(getattr(helper,name))}
+        except Exception as exc:api=dict(error=c.clean(exc,200))
     return dict(read_only=True, ai_requests=0, network_requests=0,
         fetched_sources=fetches[:14], factual_snapshots=snapshots,
         saved_snapshot_text=saved[:6], music=dict(fields=list(music), tracks=tracks),
+        preview_frames=previews,qa=dict(technical_checks_passed=qa.get('technical_checks_passed'),
+            sha256=qa.get('sha256'),fields=list(qa)),render_api=api,
         plan_check=plan_check,presentation=presentation,
         last_failure=c.clean(c.read(job/'blocked.json'),2000) if (job/'blocked.json').is_file() else None,
         preparation=c.read(job/'workflow-preparation.json') if (job/'workflow-preparation.json').is_file() else None,
