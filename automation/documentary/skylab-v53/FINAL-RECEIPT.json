@@ -1,0 +1,94 @@
+{
+  "job_id": "51c0cfdb56e743d88c68859e5b6df165",
+  "state": "ready",
+  "quality_approved": true,
+  "quality_scope": "video_only",
+  "title": "Skylab: NASA's Space Station Broke Before Its Crew Arrived",
+  "duration_seconds": 600.466667,
+  "format": "16:9",
+  "video": {
+    "bytes": 176011030,
+    "sha256": "60d35a45c8a75634e42d46560a33ed8c7cbcba9ecf0f4dcfecf988989cfbb326"
+  },
+  "srt": {
+    "bytes": 14631,
+    "sha256": "4a86f6d7355f0525898ff4d4817aad2859f929b9d5eecaec3084dc498f9c7f09"
+  },
+  "style": {
+    "style": "documentary-catarsis-v31",
+    "shot_count": 131,
+    "clip_shots": 12,
+    "unique_visual_assets": 31,
+    "mean_shot_seconds": 4.583715012722647,
+    "longest_shot_seconds": 7.133333333333334,
+    "music_arc": {
+      "phases": [
+        "investigation",
+        "rising_tension",
+        "reflective_close"
+      ],
+      "crossfade_seconds": 3,
+      "selection_profile": "investigative-epic-v43",
+      "cue_recordings": [
+        "05173c4e-32cd-4321-8a2f-b5020c1e0567",
+        "1a18086f-d234-491d-b442-005ded940229",
+        "05173c4e-32cd-4321-8a2f-b5020c1e0567"
+      ]
+    },
+    "music_recordings": [
+      {
+        "recording_id": "05173c4e-32cd-4321-8a2f-b5020c1e0567",
+        "title": "You Saved Me"
+      },
+      {
+        "recording_id": "1a18086f-d234-491d-b442-005ded940229",
+        "title": "Hills and Hollows"
+      }
+    ],
+    "text_ai_requests": 0,
+    "thumbnail_mode": "manual"
+  },
+  "quality_review": {
+    "approved": true,
+    "checks": {
+      "title_accuracy": true,
+      "readability": true,
+      "context_labels": true,
+      "factual_support": true,
+      "rights": true,
+      "narrative_coherence": true
+    },
+    "findings": [],
+    "suggestions": [],
+    "assessment_sources": {
+      "text_facts_rights": "deepseek",
+      "visual": "codex",
+      "full_video_watched": false,
+      "text_correction_resolution": {
+        "version": "documentary-catarsis-v31",
+        "factual_review_sha256": "aa997d96e9b0b24c491d0f5d3a7e21f3ff16b44641331070f0fa59f00f21863f",
+        "facts_reused_from_unchanged_narration": true,
+        "new_media_and_music": "actual_provider_receipts",
+        "text_ai_requests": 0
+      }
+    }
+  },
+  "usage": {
+    "by_provider": {
+      "deepseek": {
+        "measured_turns": 6,
+        "input_tokens": 125661,
+        "output_tokens": 11237,
+        "cached_input_tokens": 768
+      },
+      "codex": {
+        "measured_turns": 1,
+        "input_tokens": 37548,
+        "cached_input_tokens": 8448,
+        "output_tokens": 40
+      }
+    },
+    "note": "Recorded API/CLI usage, not account quota or money. Cached input is included in input tokens; failed calls may omit telemetry."
+  },
+  "publication": "not_requested"
+}

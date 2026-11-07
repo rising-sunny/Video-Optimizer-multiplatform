@@ -1,0 +1,71 @@
+TITLE
+Skylab: NASA's Space Station Broke Before Its Crew Arrived
+
+DESCRIPTION — preserve all source and music credits
+In May 1973, Skylab reached orbit damaged and overheating before its first crew arrived. Follow the ground teams and Conrad, Weitz and Kerwin through two repairs: a parasol to cool the workshop and a spacewalk to release its solar wing. NASA photographs, ground tests, illustrations and mission film are identified by context. No exterior film of the June 7 repair is claimed.
+
+CHAPTERS
+0:00 A Station Wounded in Orbit
+1:40 Engineers Against the Clock
+2:58 Launch and the Failed First Attempt
+4:21 The Parasol and the Second Battle
+5:15 The Solar Array Repair
+6:57 Science From a Repaired Station
+8:07 Return and Aftermath
+
+Sources:
+https://www.nasa.gov/history/50-years-ago-skylab-2-the-we-fix-anything-crew/
+https://www.nasa.gov/history/50-years-ago-skylab-2-astronauts-deploy-jammed-solar-array-during-spacewalk/
+https://www.nasa.gov/history/50-years-ago-skylab-2-astronauts-splash-down-after-record-breaking-28-day-mission-2/
+
+Visual credits:
+[1] NASA — Public domain — https://commons.wikimedia.org/?curid=27561922
+[2] NASA Marshall Space Flight Center — Public domain — https://commons.wikimedia.org/?curid=155570356
+[3] NASA — Public domain — https://commons.wikimedia.org/?curid=54643
+[4] NASA — Public domain — https://commons.wikimedia.org/?curid=132733713
+[5] NASA — Public domain — https://commons.wikimedia.org/?curid=116411305
+[6] NASA Johnson Space Center — Public domain — https://commons.wikimedia.org/?curid=161880130
+[7] NASA Johnson Space Center — Public domain — https://commons.wikimedia.org/?curid=161880146
+[8] Unknown Unknown (parts filmed by Paul J. Weitz or Joseph P. Kerwin) — Public domain — https://commons.wikimedia.org/?curid=26140324
+[9] NASA Johnson Space Center — Public domain — https://commons.wikimedia.org/?curid=162123890
+[10] NASA Johnson Space Center — Public domain — https://commons.wikimedia.org/?curid=162123899
+[11] NASA — Public domain — https://commons.wikimedia.org/?curid=92267329
+[12] NASA — Public domain — https://commons.wikimedia.org/?curid=89344159
+[13] NASA — Public domain — https://commons.wikimedia.org/?curid=89344182
+[14] NASA — Public domain — https://commons.wikimedia.org/?curid=92282566
+[15] NASA Marshall Space Flight Center — Public domain — https://commons.wikimedia.org/?curid=157832768
+[16] NASA — Public domain — https://commons.wikimedia.org/?curid=92304419
+[17] NASA/Charles Conrad Jr. — Public domain — https://commons.wikimedia.org/?curid=18983629
+[18] NASA — Public domain — https://commons.wikimedia.org/?curid=27561913
+[19] NASA — Public domain — https://commons.wikimedia.org/?curid=52484563
+[20] NASA — Public domain — https://commons.wikimedia.org/?curid=157564380
+[21] NASA — Public domain — https://commons.wikimedia.org/?curid=6453562
+[22] NASA Johnson Space Center — Public domain — https://commons.wikimedia.org/?curid=162124258
+[23] NASA — Public domain — https://commons.wikimedia.org/?curid=69649863
+[24] NASA — Public domain — https://commons.wikimedia.org/wiki/File:Skylab_2_Crew_Members.jpg
+[25] NASA — Public domain — https://commons.wikimedia.org/wiki/File:Prime_crew_of_the_Skylab_2_mission_stand_beside_T-38_prior_to_take_off.jpg
+[26] NASA on The Commons — Public domain — https://commons.wikimedia.org/wiki/File:Skylab_2_Prime_Crew_(52849136314).jpg
+[27] NASA — Public domain — https://commons.wikimedia.org/wiki/File:Skylab_2_crew.jpg
+[28] NASA — Public domain — https://commons.wikimedia.org/wiki/File:Skylab_2_crew_mission_Saturn_IB_pose.jpg
+[29] NASA Johnson Space Center / NA — Public domain — https://commons.wikimedia.org/wiki/File:SKYLAB_IV_-_CREW_TRAINING_(KSC)_(s73-34093).jpg
+[30] NASA — Public domain — https://commons.wikimedia.org/wiki/File:Skylab_4_crew_mission_Saturn_IB_pose.jpg
+[31] NASA — Public domain — https://commons.wikimedia.org/wiki/File:Astronaut_Gerald_P._Carr,_commander_of_the_Skylab_4_mission.jpg
+[32] NASA Johnson Space Center — Public domain — https://commons.wikimedia.org/wiki/File:View_of_Astronaut_Owen_Garriott_taking_video_of_two_Skylab_spiders_experiment_(sl3-109-1345).jpg
+Visual adaptations: excerpts, animated framing, resizing, context labels and transitions; original footage audio omitted.
+
+Music:
+“You Saved Me” — Dream Cave (Epidemic Sound).
+“Hills and Hollows” — Helmut Schenker, Rickard Nilsson (Epidemic Sound).
+Music licensed through the account subscription for Stunning Revelations.
+
+Synthetic narration: Piper / en_US-lessac-medium. Voice model information: https://huggingface.co/rhasspy/piper-voices/resolve/5041a7a49ae5b3a0f30e6837769eb03fdbb231bd/en/en_US/lessac/medium/MODEL_CARD
+
+SUGGESTED TAGS
+Skylab, Skylab rescue, Skylab 2, NASA history, space history, 1973, Pete Conrad, Joseph Kerwin, Paul Weitz, space station, solar array, spacewalk, space documentary, Stunning Revelations
+
+ENGLISH SUBTITLES
+Upload the separate SRT with language English.
+
+THUMBNAIL
+BROKEN IN ORBIT — editorial illustration generated separately; it is not an archival photograph.
+
