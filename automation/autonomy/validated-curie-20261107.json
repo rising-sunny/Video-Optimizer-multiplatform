@@ -1,0 +1,45 @@
+{
+  "state": "ready_generation_only",
+  "batch_id": "cf2a22d4f40f453fba2b3af137b716d1",
+  "channel": "stunning-facts-of-history",
+  "quality_approved": true,
+  "approval_sha256": "aafb4abeef41ada2bb5e7d4ff5fb8009a7964ad37d9cb7e0f3ccb9622cd8d365",
+  "title": "Marie Curie's Wheels: The Mobile X-Ray Units of World War I",
+  "format": "1080x1920",
+  "seconds": 55,
+  "narration": false,
+  "video": {
+    "sha256": "1a3a1cf8bc27b4a1910d8bb273a21549a2fc419e887527b332c8ffbcd4742992",
+    "bytes": 92077829
+  },
+  "thumbnail": {
+    "sha256": "6790c52048756d3fe11c33d82626ec6f99c5db005cfe5c1d1b7a6407452bf12e",
+    "bytes": 161652
+  },
+  "review": {
+    "facts_and_rights": true,
+    "technical_qa": true,
+    "visual": true,
+    "scope": "Actual sampled final MP4 frames, native technical decode and unchanged input-bound factual response; not a full watch/listen claim."
+  },
+  "deepseek": {
+    "measured_turns": 8,
+    "input_tokens": 129362,
+    "output_tokens": 7177,
+    "cached_input_tokens": 28288,
+    "total_tokens": 136539,
+    "estimated_usd": 0.051921,
+    "estimated_usd_limit": 0.2
+  },
+  "codex": {
+    "measured_turns": 2,
+    "input_tokens": 52834,
+    "output_tokens": 324,
+    "cached_input_tokens": 16896
+  },
+  "verified_workflow_release": "presentation-native-receipt-v49-9",
+  "workflow_commit": "872dc66c09bc09cf610fde3dc85c379a06d511ef",
+  "vps_offline_tests": 87,
+  "publication_allowed": false,
+  "note": "Counters, original failed claims, negative assessment and previous AV were preserved. No preview tokens, credentials or upload sessions are archived."
+}
