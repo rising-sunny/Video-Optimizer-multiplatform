@@ -38,6 +38,15 @@ def generation_worker(text):
         text=replace(text,"    module_names = (", "    module_names = ('workflow_preparation.py','workflow_inputs.py',")
     if "'workflow_handoff.py'" not in text:
         text=replace(text,"    module_names = (", "    module_names = ('workflow_handoff.py',")
+    if 'readable_renderer(catharsis_editor' not in text:
+        text=replace(text,
+            '        from catarsis_style import renderer\n',
+            '        from catarsis_style import renderer\n        from workflow_readable import renderer as readable_renderer\n')
+        text=replace(text,
+            '            return render_project(*args, **kwargs)\n',
+            "            with readable_renderer(catharsis_editor, read(folder/'editorial-plan.json')) if use_style else contextlib.nullcontext():\n                return render_project(*args, **kwargs)\n")
+    if "'workflow_readable.py','workflow_presentation.py'" not in text:
+        text=replace(text,"    module_names = (", "    module_names = ('workflow_readable.py','workflow_presentation.py',")
     return text
 
 def deepseek_editor(text):

@@ -68,6 +68,29 @@ labels; music license links use the already retrieved publisher template and
 the exact catalogue ISRC, with receipt hashes checked. A failed charged repair
 does not automatically spend another continuation repeating the same result.
 
+### Display correction within the original review allowance (v49.4)
+
+All styled Short renders now fit cards by pixel width and show the existing
+source-person/date labels beneath each photograph or clip. Stored sentences,
+source credits and timing are not rewritten by this display adapter.
+
+A single-channel Short stopped only for `text_readable`/`context_labels` can use
+one separately claimed local presentation stage. It requires the exact completed
+video/QA and negative review, an approved factual response whose exact current
+evidence fingerprint is already cached, and exactly one used native visual claim.
+The existing native Short limit is two visual claims; this stage does not grant
+or reset one. The three continuation records remain intact. The local stage is
+one-time and idempotent, with frozen source/request/control hashes and a complete
+backup of the old video, failed visual assessment and paid ledger.
+
+The stage changes only pixel typography and renders already supplied labels.
+It preserves the original AAC payload, verifies unchanged textual evidence and
+uses the exact factual cache. New DeepSeek transport calls are explicitly denied
+inside this worker. Native technical QA and the remaining real Codex visual
+assessment must approve the corrected MP4 before native production approval.
+Exhausted visual limits, factual/rights failures, framing failures, changed source
+evidence or an already used local claim remain blocked. No publication follows.
+
 Shorts retain their chosen music, native rendering, actual factual/rights and
 visual reviews, and native approval. Documentaries retain the installed narration,
 SRT, source acquisition and shot-checkpoint functions. Existing valid MP4 review

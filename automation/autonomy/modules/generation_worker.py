@@ -307,8 +307,10 @@ def manual_editorial(editorial, folder, batch, channel, day, guard, recovery=Non
         from catarsis_fixes import multiline_cards
         from catharsis import catharsis_editor
         from catarsis_style import renderer
+        from workflow_readable import renderer as readable_renderer
         with multiline_cards(catharsis_editor), rules.encoder_profile(catharsis_editor), (renderer(catharsis_editor, folder) if use_style else contextlib.nullcontext()):
-            return render_project(*args, **kwargs)
+            with readable_renderer(catharsis_editor, read(folder/'editorial-plan.json')) if use_style else contextlib.nullcontext():
+                return render_project(*args, **kwargs)
     editorial.invoke, editorial.atomic, editorial.fit_promotional_text = call, store, promotional
     if validator is not None: editorial.validate_plan = checked_plan
     if original_external is not None: editorial.external = fetched
@@ -367,7 +369,7 @@ def perform(batch):
     from publication_service import controls
     control_pins = controls()
     request_pin = sha(folder / 'request.json')
-    module_names = ('workflow_handoff.py','workflow_preparation.py','workflow_inputs.py','workflow_common.py','workflow_jobs.py','workflow_native.py','workflow_recovery.py','workflow_service.py','catarsis_selection.py','generation_service.py','shorts_handoff.py','shorts_handoff_resume.py','documentary_sources.py','generation_worker.py', 'autonomous_generation.py', 'editorial_recovery.py',
+    module_names = ('workflow_readable.py','workflow_presentation.py','workflow_handoff.py','workflow_preparation.py','workflow_inputs.py','workflow_common.py','workflow_jobs.py','workflow_native.py','workflow_recovery.py','workflow_service.py','catarsis_selection.py','generation_service.py','shorts_handoff.py','shorts_handoff_resume.py','documentary_sources.py','generation_worker.py', 'autonomous_generation.py', 'editorial_recovery.py',
         'catarsis_fixes.py', 'platform_rules.py', 'music_credit_changes.py', 'credit_repair.py', 'catarsis_style.py', 'editor_efficiency.py', 'claude_editor.py', 'codex_budget.py', 'caption_policy.py', 'review_guidance.py', 'review_consistency.py', 'review_cache.py', 'deepseek_runtime.py', 'deepseek_editor.py', 'deepseek_review.py', 'documentary_media.py','shorts_media.py','shorts_resume.py','shorts_context_resume.py','shorts_curated_resume.py','curated_short_plans.py')
     module_pins = {name: sha(Path(__file__).with_name(name)) for name in module_names}
     def guard():

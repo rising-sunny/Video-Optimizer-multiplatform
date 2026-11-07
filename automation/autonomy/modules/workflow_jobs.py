@@ -19,6 +19,9 @@ MAX_ATTEMPTS=3
 PYTHON='/home/videoagent/Video-Optimizer-multiplatform/.venv/bin/python'
 
 def retry_allowed(job,code):
+    if code=='visual_or_editorial_review_failed' and job is not None and Path(job).parent.parent.name=='manual-catarsis':
+        from workflow_presentation import available
+        return available(Path(job).parent.name).get('state')=='eligible'
     # An already charged preparation correction must not spend another worker
     # continuation repeating its malformed result and hitting the same audit.
     if code in ('generation_dependency_deepseek_json_invalid','generation_dependency_deepseek_incomplete_handoff') and (job is not None and (Path(job)/'workflow-preparation-repair.json').is_file()):
@@ -170,6 +173,11 @@ def start(broker,kind,ident,request_id=None):
         status.update(state='interrupted',error_code='workflow_worker_interrupted')
         c.write(state/'status.json',status)
     if broker.active or (getattr(broker,'publication',None) and broker.publication.active):return denied('another_manual_operation_is_running')
+    if kind=='catarsis' and status.get('state')=='blocked':
+        codes=[row.get('error_code') for row in status.get('channels',{}).values()]
+        if 'visual_or_editorial_review_failed' in codes:
+            from workflow_presentation import start as presentation_start
+            return presentation_start(broker,ident,request_id)
     try:
         task,status,enrollment,jobs=inspect(kind,ident)
         from publication_service import controls

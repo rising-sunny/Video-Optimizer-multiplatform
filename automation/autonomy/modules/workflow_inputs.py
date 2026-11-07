@@ -52,8 +52,12 @@ def resume_inputs(job):
             project=selected.get('project'),metadata=selected.get('metadata'),assets=selected.get('assets'))
     except Exception as exc:
         plan_check=dict(state='blocked',error_code=c.clean(exc,500))
+    presentation={}
+    if job.parent.parent.name=='manual-catarsis' and (job/'visual-review.json').is_file():
+        from workflow_presentation import available as presentation_available
+        presentation=presentation_available(job.parent.name)
     return dict(read_only=True, ai_requests=0, network_requests=0,
         fetched_sources=fetches[:14], factual_snapshots=snapshots,
         saved_snapshot_text=saved[:6], music=dict(fields=list(music), tracks=tracks),
-        plan_check=plan_check,preparation=c.read(job/'workflow-preparation.json') if (job/'workflow-preparation.json').is_file() else None,
+        plan_check=plan_check,presentation=presentation,preparation=c.read(job/'workflow-preparation.json') if (job/'workflow-preparation.json').is_file() else None,
         evidence_notice='Public saved input data only; a saved source or catalogue is not a quality approval.')

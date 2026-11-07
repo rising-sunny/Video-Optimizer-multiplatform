@@ -1,0 +1,108 @@
+{
+  "version": 1,
+  "release_id": "native-readable-presentation-v49-4",
+  "files": [
+    {
+      "target": "workflow_jobs.py",
+      "source": "automation/autonomy/modules/workflow_jobs.py",
+      "sha256": "785f00b2899de1667c5fa137d3223560f5a3bc0e078fa6432fd12e89c71a58f4",
+      "expected_sha256": "65e4ba719b63866f1f75bbe8869c92a09e6aa388679ad217ddf1d02b13010060"
+    },
+    {
+      "target": "workflow_inputs.py",
+      "source": "automation/autonomy/modules/workflow_inputs.py",
+      "sha256": "5b65f6e601ec8e2639015f2efc08fe5cdc755437d9b5128e679cf333f3d3db36",
+      "expected_sha256": "4855f4de5ffc8f4f6bb25d71a6eea872557e6cfc5200e9daf7ff0cbb963029cb"
+    },
+    {
+      "target": "workflow_presentation.py",
+      "source": "automation/autonomy/modules/workflow_presentation.py",
+      "sha256": "c389df3b8b90bd8d5ea5b6f1b055adde12cd8cc7f821f339e09eceaf6d23e9ca",
+      "expected_sha256": "absent"
+    },
+    {
+      "target": "workflow_readable.py",
+      "source": "automation/autonomy/modules/workflow_readable.py",
+      "sha256": "b2064e53635851b7198b28ee8a53af6cd84392fa42241c3bd9296f27d94b8726",
+      "expected_sha256": "absent"
+    },
+    {
+      "target": "generation_worker.py",
+      "source": "automation/autonomy/modules/generation_worker.py",
+      "sha256": "5341ad85c5abdb0ae35a8720532767ebc89e23f5ada9d3735a34a04c94ef5c88",
+      "expected_sha256": "e6139653ff26f2885567eb1cc918dbf9ccd2659caa7126c3bb619e8e4bf9d422"
+    }
+  ],
+  "tests": [
+    {
+      "source": "automation/autonomy/tests/test_handoff_boundaries.py",
+      "path": "test_handoff_boundaries.py",
+      "sha256": "6df290f5f274fa43110665e54473163b5869f019cc98d0b9484bf2f9955fda29"
+    },
+    {
+      "source": "automation/autonomy/tests/test_presentation.py",
+      "path": "test_presentation.py",
+      "sha256": "e8c08c4a1747dbd1de71627da69fefad64be0f93ab803fbdc2e75071e74ea983"
+    },
+    {
+      "source": "automation/autonomy/tests/test_resume_preparation.py",
+      "path": "test_resume_preparation.py",
+      "sha256": "b98112b08c51a22d06fd36465e34c07708d03f2c8f3e99f673b50d7f7b5f750f"
+    },
+    {
+      "source": "automation/autonomy/tests/test_saved_inputs.py",
+      "path": "test_saved_inputs.py",
+      "sha256": "db2da8baea7f5e67280e4d896e05309b1d70770ee1c1562592a0363df1b9c59a"
+    },
+    {
+      "source": "automation/autonomy/tests/test_workflow.py",
+      "path": "test_workflow.py",
+      "sha256": "49ea64dc6c07ffeaf7894d54dc3797cf5cffc96e79e473b67443dbdc6f0c1a4e"
+    },
+    {
+      "source": "automation/autonomy/source_patch.py",
+      "path": "source_patch.py",
+      "sha256": "b46e6c4a86e0fd0ff6bfc4b4e3777b91875a1d4cdb0d8ea6112d8b2f5513510b"
+    },
+    {
+      "source": "automation/autonomy/maintenance_daemon.py",
+      "path": "maintenance_daemon.py",
+      "sha256": "27afe67b8de67b80510a31f9960392a920cda0dca83bb90abc22f21065bac6d5"
+    },
+    {
+      "source": "automation/autonomy/baseline/deepseek_editor.py",
+      "path": "baseline/deepseek_editor.py",
+      "sha256": "5f0784537695f1a576fb1d2fc22e19b940732ae5d1c07c1aeebd7accd9407543"
+    },
+    {
+      "source": "automation/autonomy/baseline/documentary_service.py",
+      "path": "baseline/documentary_service.py",
+      "sha256": "d72767abde3475795539f75ccc5bd62bed73534208dbbd982f8ecf77d6b530f0"
+    },
+    {
+      "source": "automation/autonomy/baseline/shorts_handoff.py",
+      "path": "baseline/shorts_handoff.py",
+      "sha256": "e2057297e4237407b3ed1d1d2d931f649ae434377812a789a5c479b671e6a6d6"
+    },
+    {
+      "source": "automation/autonomy/baseline/generation_worker.py",
+      "path": "baseline/generation_worker.py",
+      "sha256": "09260ea99cafa3a211068619141c14fd8eac7ef96b5640703beca31d377dd461"
+    },
+    {
+      "source": "automation/autonomy/baseline/generation_tools.py",
+      "path": "baseline/generation_tools.py",
+      "sha256": "a9262d490111232c2ff3d33a4ab6d65a7d928985ed7804fc69a58e5cc09dafda"
+    },
+    {
+      "source": "automation/autonomy/baseline/generation_service.py",
+      "path": "baseline/generation_service.py",
+      "sha256": "5d697ede31a35a49fe03bf95cc85b6872e963f6c9929e88068cb7fdaf60ddb7b"
+    },
+    {
+      "source": "automation/autonomy/tests/curie-metadata-boundaries.txt",
+      "path": "curie-metadata-boundaries.txt",
+      "sha256": "5cdaa5621bec79c9591f5de8dddc2c76cf77699a58a2a70b71f412c5e856ed87"
+    }
+  ]
+}
