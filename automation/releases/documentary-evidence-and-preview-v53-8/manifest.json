@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "release_id": "documentary-evidence-and-preview-v53-8",
+  "files": [
+    {
+      "target": "deepseek_review.py",
+      "source": "automation/autonomy/modules/deepseek_review.py",
+      "sha256": "9ffb18824804edc3143780e1c1f4f4f78b88e2a835216105f815413f9cc76d07",
+      "expected_sha256": "bcba9d128cf98a1c79d22245353aba17dfda272301285638f58a7fc6fe78a2e4"
+    },
+    {
+      "target": "workflow_inputs.py",
+      "source": "automation/autonomy/modules/workflow_inputs.py",
+      "sha256": "07243e13c988ddf537425183ee371e0acb850317178bfa601f66ea323c0170ff",
+      "expected_sha256": "e25e2aa76402ac1dceb3a5e39d8a08444deea13f595d7f3ee9e089628a83c46a"
+    },
+    {
+      "target": "workflow_preview.py",
+      "source": "automation/autonomy/modules/workflow_preview.py",
+      "sha256": "521b393edc0cdb430806f3ac46b3e2aacc636a662fa79dd3d76e924decd91ffd",
+      "expected_sha256": "e8a22cefb04c5f8e2838d5cdfa79fec01384d8dc4021ab061a09994f7bfb3fe6"
+    }
+  ],
+  "tests": [
+    {
+      "source": "automation/documentary/skylab-v53/tests/test_review_compact_v53.py",
+      "path": "test_review_compact_v53.py",
+      "sha256": "dd3dbb0939da7096a3123426e3d1ca1fcd27a70c3d9530095469f8190d60f65d"
+    },
+    {
+      "source": "automation/documentary/skylab-v53/tests/test_horizontal_preview_v53.py",
+      "path": "test_horizontal_preview_v53.py",
+      "sha256": "d1156aa2f8e2c8c25294d7caf9dc0bd028d9c7508dff55270051f09f7e090f38"
+    }
+  ]
+}

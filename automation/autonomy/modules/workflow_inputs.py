@@ -75,6 +75,14 @@ def resume_inputs(job):
         presentation=presentation_available(job.parent.name)
     from workflow_preview import frames
     previews=frames(job)
+    review_sizes={}
+    if job.parent.name=='manual-documentary':
+        try:
+            import deepseek_review
+            data=deepseek_review.evidence(job,enforce_limit=False)
+            review_sizes=dict(total_bytes=len(deepseek_review.encode(data).encode()),
+                by_field={k:len(deepseek_review.encode(v).encode()) for k,v in data.items()})
+        except Exception as exc:review_sizes=dict(error=c.clean(exc,200))
     qa=c.read(job/'qa.json') if (job/'qa.json').is_file() else {}
     api={}
     if (job/'video.mp4').is_file():
@@ -94,7 +102,7 @@ def resume_inputs(job):
     return dict(assessment_details=assessment_details(job),read_only=True, ai_requests=0, network_requests=0,
         fetched_sources=fetches[:14], factual_snapshots=snapshots,
         saved_snapshot_text=saved[:6], music=dict(fields=list(music), tracks=tracks),
-        preview_frames=previews,qa=dict(technical_checks_passed=qa.get('technical_checks_passed'),
+        preview_frames=previews,text_review_evidence_sizes=review_sizes,qa=dict(technical_checks_passed=qa.get('technical_checks_passed'),
             sha256=qa.get('sha256'),fields=list(qa)),render_api=api,
         plan_check=plan_check,verified_catalogue=documentary_catalog_data(job),presentation=presentation,
         official_media_inspection=c.read(job/'skylab-official-media-inspection-v53.json') if job.name=='51c0cfdb56e743d88c68859e5b6df165' and (job/'skylab-official-media-inspection-v53.json').is_file() else None,

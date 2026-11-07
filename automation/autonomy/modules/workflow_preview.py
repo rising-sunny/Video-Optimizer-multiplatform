@@ -8,9 +8,12 @@ def frames(job):
     video=c.safe(Path(job)/'video.mp4')
     if not video.is_file():return []
     before=c.digest(video);result=[]
-    for seconds in (4.0,7.0,20.0,24.5):
+    horizontal=Path(job).parent.name=='manual-documentary'
+    times=(4.0,24.5,90.0,180.0,300.0,420.0,540.0,590.0) if horizontal else (4.0,7.0,20.0,24.5)
+    geometry='scale=640:360' if horizontal else 'scale=360:640'
+    for seconds in times:
         response=subprocess.run(['ffmpeg','-v','error','-threads','1','-ss',str(seconds),
-            '-i',str(video),'-frames:v','1','-vf','scale=360:640','-c:v','mjpeg','-q:v','4','-f','image2pipe','-'],
+            '-i',str(video),'-frames:v','1','-vf',geometry,'-c:v','mjpeg','-q:v','4','-f','image2pipe','-'],
             capture_output=True,timeout=15)
         if response.returncode or not response.stdout.startswith(b'\xff\xd8') or len(response.stdout)>100000:
             continue
@@ -18,3 +21,4 @@ def frames(job):
             image_base64=base64.b64encode(response.stdout).decode(),quality_approval=False))
     if c.digest(video)!=before:return []
     return result
+

@@ -17,7 +17,7 @@ PLATFORMS = ('youtube', 'facebook', 'instagram')
 def digest(path):
     return hashlib.sha256(safe(path).read_bytes()).hexdigest()
 
-def evidence(folder):
+def evidence(folder, enforce_limit=True):
     result = {}
     names = ('editorial-plan.json', 'sources.json', 'asset-credits.json', 'metadata.json',
              'music-license-evidence.json', 'music-selection.json')
@@ -103,9 +103,41 @@ def evidence(folder):
                 value=dict(file_title=value.get('file_title'),metadata=selected,retrieved_at=value.get('retrieved_at'),
                     full_receipt_sha256=digest(path),full_receipt_preserved=True)
             result[path.name] = value
-    if len(encode(result).encode()) > 145000:
+    if isinstance(result.get('music-license-evidence.json'),dict):
+        result['music-license-evidence.json'].update(full_receipt_sha256=digest(folder/'music-license-evidence.json'),full_receipt_preserved=True)
+    result=compact_evidence(result)
+    if enforce_limit and len(encode(result).encode()) > 145000:
         raise Failure('generation_dependency_deepseek_review_context_limit')
     return result
+
+def compact_evidence(result):
+    """Lossless rights text/link normalization; select the actual soundtrack.
+
+    All original files remain pinned. This removes HTML markup and unrelated
+    catalogue tracks, never a factual excerpt, restriction or selected credit.
+    """
+    import copy,html
+    value=copy.deepcopy(result)
+    selection=value.get('music-selection.json',{})
+    ids={t.get('recording_id') for t in selection.get('tracks',[]) if isinstance(t,dict) and t.get('recording_id')}
+    music=value.get('music-license-evidence.json')
+    if ids and isinstance(music,dict) and isinstance(music.get('tracks'),list):
+        music['tracks']=[t for t in music['tracks'] if t.get('recording_id') in ids]
+        music['selection_scope']='Actual downloaded soundtrack recording IDs; full publisher receipt preserved locally.'
+    def field(v):
+        if not isinstance(v,dict) or 'value' not in v:return v
+        raw=str(v['value'])
+        from documentary_media import clean
+        links=list(dict.fromkeys(html.unescape(x) for x in re.findall(r'href=[\"\']([^\"\']+)[\"\']',raw)))
+        return dict(text=clean(raw),**(dict(links=links) if links else {}))
+    for name,receipt in value.items():
+        if not re.fullmatch(r'license-\d+\.json',name) or not isinstance(receipt,dict):continue
+        record=receipt.get('record',{})
+        rights=record.get('source_rights')
+        if isinstance(rights,dict):record['source_rights']={k:field(v) for k,v in rights.items()}
+        meta=receipt.get('metadata',{}).get('extmetadata')
+        if isinstance(meta,dict):receipt['metadata']['extmetadata']={k:field(v) for k,v in meta.items()}
+    return value
 
 def has_blocking_findings(findings):
     if findings is None:return False
@@ -371,4 +403,5 @@ def documentary(folder, images, quota_recovery=None):
     if not approved:
         raise Failure('documentary_review_requires_correction')
     return result
+
 
