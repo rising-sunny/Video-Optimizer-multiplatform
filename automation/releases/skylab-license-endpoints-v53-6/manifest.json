@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "release_id": "skylab-license-endpoints-v53-6",
+  "files": [
+    {
+      "target": "workflow_skylab_recovery.py",
+      "source": "automation/documentary/skylab-v53/modules/workflow_skylab_recovery.py",
+      "sha256": "9494df2e5e8cd811f350a3b9370f6e0b6b0859db0a007eb4eed7d65b94876394",
+      "expected_sha256": "464b13c32706c349ab502fc9f9330d42242bd39c2b785468c933c6dd11a4a046"
+    },
+    {
+      "target": "workflow_jobs.py",
+      "source": "automation/autonomy/modules/workflow_jobs.py",
+      "sha256": "d3acff572616c379cf43bf14d51b3aa7b1e8e5e25d64d82a1a7cbe525995e500",
+      "expected_sha256": "0108650db8d302503173c7be343be2509662659cd9b045b3ce2f6617078850d1"
+    },
+    {
+      "target": "workflow_inputs.py",
+      "source": "automation/autonomy/modules/workflow_inputs.py",
+      "sha256": "e25e2aa76402ac1dceb3a5e39d8a08444deea13f595d7f3ee9e089628a83c46a",
+      "expected_sha256": "91b1580a081db5567c7b4e45b23c106f24fb2dfdd7e30f791c610f42c14f4c66"
+    }
+  ],
+  "tests": [
+    {
+      "source": "automation/documentary/skylab-v53/tests/fixture_skylab_v53.py",
+      "sha256": "9c4c641c4494b888f8a8b0ae73f7980b1d9fa0e34389de3ff2a6bd3140a1ce39",
+      "path": "fixture_skylab_v53.py"
+    },
+    {
+      "source": "automation/documentary/skylab-v53/tests/test_skylab_recovery_v53.py",
+      "sha256": "85dd71361a33a357e856c005b53a195792a38a7833e569ede2372b8ea3edf381",
+      "path": "test_skylab_recovery_v53.py"
+    }
+  ]
+}

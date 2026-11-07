@@ -27,6 +27,17 @@ def official_record(title, fetcher):
     params = dict(action='query', format='json', prop=prop, titles=title, redirects=1)
     params[prefix+'prop'] = 'url|size|extmetadata'+('|derivatives' if movie else '')
     payload = json.loads(fetcher('https://commons.wikimedia.org/w/api.php?'+urlencode(params), 4*1024*1024))
+    if movie:
+        # The image-info endpoint owns CommonsMetadata licensing fields. Some
+        # TimedMediaHandler deployments omit those fields from video-info.
+        metadata=json.loads(fetcher('https://commons.wikimedia.org/w/api.php?'+urlencode(dict(
+            action='query',format='json',prop='imageinfo',titles=title,redirects=1,
+            iiprop='url|size|extmetadata')),4*1024*1024))
+        licensed={p['title']:p.get('imageinfo',[{}])[0] for p in metadata.get('query',{}).get('pages',{}).values()}
+        for page in payload.get('query',{}).get('pages',{}).values():
+            for info in page.get('videoinfo',[]):
+                actual=licensed.get(page.get('title'),{}).get('extmetadata')
+                if actual:info['extmetadata']=actual
     for page in payload.get('query', {}).get('pages', {}).values():
         if page.get('title') != title or type(page.get('pageid')) is not int or page['pageid'] <= 0:
             continue
@@ -164,7 +175,12 @@ def prepare(job, value, task, guard):
     catalog=read(job/'media-catalog.json')
     from documentary_media import fetch
     def getter(url,limit):
-        guard();return fetch(url,limit,guard,job)
+        guard();data=fetch(url,limit,guard,job)
+        inspection=job/'skylab-official-media-inspection-v53.json'
+        entries=read(inspection) if inspection.exists() else []
+        entries.append(dict(request_url=url,response=json.loads(data)))
+        save(inspection,entries[-6:])
+        return data
     film=official_record(FILM,getter)
     photo=official_record(PHOTO,getter)
     updated=copy.deepcopy(catalog)

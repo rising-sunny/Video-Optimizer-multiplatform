@@ -97,6 +97,7 @@ def resume_inputs(job):
         preview_frames=previews,qa=dict(technical_checks_passed=qa.get('technical_checks_passed'),
             sha256=qa.get('sha256'),fields=list(qa)),render_api=api,
         plan_check=plan_check,verified_catalogue=documentary_catalog_data(job),presentation=presentation,
+        official_media_inspection=c.read(job/'skylab-official-media-inspection-v53.json') if job.name=='51c0cfdb56e743d88c68859e5b6df165' and (job/'skylab-official-media-inspection-v53.json').is_file() else None,
         last_failure=c.clean(c.read(job/'blocked.json'),2000) if (job/'blocked.json').is_file() else None,
         preparation=c.read(job/'workflow-preparation.json') if (job/'workflow-preparation.json').is_file() else None,
         evidence_notice='Public saved input data only; a saved source or catalogue is not a quality approval.')

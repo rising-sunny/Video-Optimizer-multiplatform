@@ -16,6 +16,10 @@ import time
 import workflow_common as c
 
 MAX_ATTEMPTS=3
+def attempt_limit(kind, ident):
+    # Two bounded, explicitly requested technical continuations of the same
+    # saved Skylab plan. No model/review budget or original attempts are reset.
+    return 5 if kind=='documentary' and ident=='51c0cfdb56e743d88c68859e5b6df165' else MAX_ATTEMPTS
 PYTHON='/home/videoagent/Video-Optimizer-multiplatform/.venv/bin/python'
 
 def retry_allowed(job,code):
@@ -129,7 +133,7 @@ def inspect(kind,ident):
     if (state/'STOP').exists():raise RuntimeError('generation_cancelled')
     enrollment=enroll(kind,ident)
     if enrollment['request_sha256']!=c.digest(state/'request.json'):raise RuntimeError('workflow_request_changed')
-    if len(enrollment['attempts'])>=MAX_ATTEMPTS:raise RuntimeError('workflow_recovery_attempt_limit')
+    if len(enrollment['attempts'])>=attempt_limit(kind,ident):raise RuntimeError('workflow_recovery_attempt_limit')
     channels=selected(task) if kind=='catarsis' else (task['channel'],)
     jobs={}
     for channel in channels:
@@ -393,4 +397,5 @@ if __name__=='__main__':
     parser.add_argument('--job-id',required=True);parser.add_argument('--attempt',required=True);args=parser.parse_args()
     if not c.valid_id(args.job_id) or not args.attempt.isdigit() or len(args.attempt)!=3:raise SystemExit(2)
     os.umask(0o077);perform(args.kind,args.job_id,args.attempt)
+
 
