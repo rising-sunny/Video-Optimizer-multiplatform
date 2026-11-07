@@ -34,3 +34,14 @@ examples. The native editor must fetch and verify factual evidence and licenses.
 Repository and VPS documentation/code are persisted with the release. Earlier v47
 consolidation is installed first if its receipt is absent. Original historical jobs,
 approvals, source receipts, publication IDs and daily timer settings are preserved.
+
+## Source snapshot correction v48.1
+
+If `generation_source_changed` blocks the Curie installer before generation,
+read [the exact observed source correction](SOURCE-PINS-v48.1.md). Four old
+hardcoded pins differed from the existing validated readiness snapshot. The
+v48.1 delivery checks the observed worker, readiness and seven source hashes,
+backs up and updates only those pins, and executes the original native preflight
+before continuing this same request. It never refreshes readiness automatically.
+The original v48 baseline remains frozen as the historical input to this exact
+migration; the installed worker and correction receipt record the new binding.
