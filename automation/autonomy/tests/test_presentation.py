@@ -45,6 +45,35 @@ class Display(unittest.TestCase):
             self.assertEqual(rendered[1],plan['project']['sequence'][1])
         self.assertEqual(before,plan);self.assertEqual(originals,(editor.text_card,editor.overlay_layer,editor.build_shots))
 
+    def test_existing_video_is_moved_before_native_render_so_cache_cannot_skip_revision(self):
+        with tempfile.TemporaryDirectory() as name:
+            job=Path(name);video=job/'video.mp4';video.write_bytes(b'original')
+            def render():
+                self.assertFalse(video.exists());video.write_bytes(b'new pixels')
+            fake=types.SimpleNamespace(video_digest=lambda path:Path(path).read_bytes())
+            with patch.dict(sys.modules,{'catarsis_style':fake}):held=presentation.fresh_render(job,render)
+            self.assertEqual(held.read_bytes(),b'original');self.assertEqual(video.read_bytes(),b'new pixels')
+
+    def test_native_render_cache_or_missing_output_is_never_treated_as_correction(self):
+        with tempfile.TemporaryDirectory() as name:
+            job=Path(name);video=job/'video.mp4';video.write_bytes(b'original')
+            with self.assertRaisesRegex(RuntimeError,'native_render_missing'):presentation.fresh_render(job,lambda:None)
+            self.assertEqual(video.read_bytes(),b'original')
+            fake=types.SimpleNamespace(video_digest=lambda _:b'same')
+            with patch.dict(sys.modules,{'catarsis_style':fake}),self.assertRaisesRegex(RuntimeError,'was_cached'):
+                presentation.fresh_render(job,lambda:video.write_bytes(b'only container changed'))
+
+    def test_metadata_label_alone_cannot_pass_visible_label_evidence(self):
+        from PIL import Image,ImageDraw
+        import io
+        image=Image.new('RGB',(360,640),'black');stream=io.BytesIO();image.save(stream,format='JPEG')
+        project=dict(sequence=[dict(kind='media',seconds=3,media=0)])
+        with patch.object(presentation.subprocess,'run',return_value=types.SimpleNamespace(returncode=0,stdout=stream.getvalue())),self.assertRaisesRegex(RuntimeError,'label_not_visible'):
+            presentation.visible_labels(Path('/unused'),project)
+        ImageDraw.Draw(image).rectangle((80,480,280,490),fill='white');stream=io.BytesIO();image.save(stream,format='JPEG')
+        with patch.object(presentation.subprocess,'run',return_value=types.SimpleNamespace(returncode=0,stdout=stream.getvalue())):
+            self.assertGreater(presentation.visible_labels(Path('/unused'),project)[0]['white_label_pixels'],120)
+
 
 class Eligibility(unittest.TestCase):
     def setUp(self):
@@ -111,6 +140,22 @@ class Eligibility(unittest.TestCase):
         (self.state/(presentation.NAME+'.claim')).write_text('original retained')
         (self.state/(presentation.NAME+'-technical.claim')).write_text('used')
         with self.assertRaisesRegex(RuntimeError,'technical_checkpoint_unavailable'):presentation.inspect(self.ident,technical=True)
+
+    def test_cache_reconciliation_requires_original_av_payloads_and_unchanged_factual_inputs(self):
+        for name in ('sources.json','asset-credits.json','metadata.json','music-license-evidence.json'):
+            c.write(self.job/name,{})
+        (self.job/'thumbnail.jpg').write_bytes(b'thumbnail')
+        original=self.root/'runtime/workflow-attempts/catarsis'/self.ident/presentation.NAME/'job/video.mp4'
+        original.parent.mkdir(parents=True);original.write_bytes((self.job/'video.mp4').read_bytes())
+        item=dict(files=c.tree(self.job),ledger=c.tree(self.ledger),video_sha256=c.digest(original))
+        c.write(self.state/(presentation.NAME+'-technical-auth.json'),dict(request_sha256=c.digest(self.state/'request.json'),item=item))
+        (self.state/(presentation.NAME+'.claim')).write_text('used')
+        (self.state/(presentation.NAME+'-technical.claim')).write_text('used')
+        (self.job/'video.mp4').write_bytes(b'container changed, same media')
+        with patch.dict(sys.modules,{'catarsis_style':types.SimpleNamespace(video_digest=lambda _:b'same video')}),patch.object(presentation,'audio_digest',return_value='same audio'):
+            self.assertEqual(presentation.inspect(self.ident,cache_reconciliation=True)['channel'],self.channel)
+            c.write(self.job/'metadata.json',dict(title='changed facts'))
+            with self.assertRaisesRegex(RuntimeError,'cached_evidence_changed'):presentation.inspect(self.ident,cache_reconciliation=True)
 
     def test_uncertain_provider_request_does_not_resume(self):
         c.write(self.ledger/'budget.json',dict(pending=dict(kind='chat'),counts=dict(chat=8,invocations=4)))

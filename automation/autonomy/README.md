@@ -99,6 +99,22 @@ are still identical to the first authorization. The original claim/auth remain;
 the checkpoint gets a separate bound claim and cannot repeat. Changed renders or
 used review claims never qualify. Exceptions retain sanitized type/file/line data.
 
+Native `render_project` reuses an existing MP4. A presentation correction therefore
+moves its backed-up prior file out of that output path before rendering and
+requires changed video packet data afterwards. It restores the old path if no
+new output is produced. After copying the original AAC payload into the new MP4,
+the stage calls native `qa(video,directory,smoke=False)` again so its SHA256 binds
+the actual remuxed file. Merely refreshing extended frame sheets is not technical QA.
+Actual lower-panel pixels are also checked before spending the remaining vision
+claim; metadata labels alone cannot pass that check.
+
+One cache-reconciliation checkpoint applies only to the observed stale-QA/remux
+case: original factual inputs, ledger, negative assessment and QA must still be
+byte-identical, and the current audio/video packet hashes must match the archived
+original. It retains both old claims/auths and adds one bound checkpoint. It never
+grants another text request or visual review. A genuinely changed render does not
+qualify for this checkpoint.
+
 Shorts retain their chosen music, native rendering, actual factual/rights and
 visual reviews, and native approval. Documentaries retain the installed narration,
 SRT, source acquisition and shot-checkpoint functions. Existing valid MP4 review
