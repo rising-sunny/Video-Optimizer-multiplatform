@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "release_id": "documentary-narration-base-resume-v53-10",
+  "files": [
+    {
+      "target": "workflow_jobs.py",
+      "source": "automation/autonomy/modules/workflow_jobs.py",
+      "sha256": "0637e52bfa83a5c5408393f54805f5b6e81a63540c9c9fb12b1e42519e7cedf2",
+      "expected_sha256": "b887d798e4fbc6854b511deba308e0dc3077b35161e16acf026245d346ff790b"
+    }
+  ],
+  "tests": [
+    {
+      "source": "automation/documentary/skylab-v53/tests/test_skylab_attempt_bound_v53.py",
+      "path": "test_skylab_attempt_bound_v53.py",
+      "sha256": "4d225e6a76ca8d5677ea07006cd76833dafdcd6b10ae96aa3f72179d9740ebcc"
+    },
+    {
+      "source": "automation/documentary/skylab-v53/tests/test_documentary_base_resume_v53.py",
+      "path": "test_documentary_base_resume_v53.py",
+      "sha256": "6de0af0c7b56d3bbf456d8c8265cc3701689f17f58c40cec0770dbc66224acb9"
+    }
+  ]
+}

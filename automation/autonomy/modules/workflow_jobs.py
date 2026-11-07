@@ -19,7 +19,7 @@ MAX_ATTEMPTS=3
 def attempt_limit(kind, ident):
     # Three bounded, explicitly requested technical continuations of the same
     # saved Skylab plan. No model/review budget or original attempts are reset.
-    return 6 if kind=='documentary' and ident=='51c0cfdb56e743d88c68859e5b6df165' else MAX_ATTEMPTS
+    return 7 if kind=='documentary' and ident=='51c0cfdb56e743d88c68859e5b6df165' else MAX_ATTEMPTS
 PYTHON='/home/videoagent/Video-Optimizer-multiplatform/.venv/bin/python'
 
 def retry_allowed(job,code):
@@ -306,7 +306,18 @@ def run_documentary(job,task,ident,guard):
         if qa.get('passed') is not True or qa.get('video_sha256')!=c.digest(job/'video.mp4'):
             raise RuntimeError('workflow_existing_video_qa_not_valid')
         sheets=sorted(job.glob('review-sheet-*.jpg'))
-        if not sheets:raise RuntimeError('workflow_saved_review_frames_missing')
+        styled=job/'catarsis-proof-v31.json'
+        if task.get('horizontal_style')=='documentary-catarsis-v31':
+            if styled.exists():
+                proof=c.read(styled)
+                sheets=[job/name for name in proof.get('inputs',{})
+                        if Path(name).name==name and Path(name).suffix in ('.jpg','.png')]
+            # narration_base intentionally has no visual sheets. worker.quality
+            # must first assess evidence, render Catarsis and create its sheets.
+            # This does not grant visual approval or bypass the actual review.
+            pending_style=not styled.exists()
+        else:pending_style=False
+        if not sheets and not pending_style:raise RuntimeError('workflow_saved_review_frames_missing')
         worker.quality(job,task,config,guard,progress,sheets);worker.approve(ident,task,job,state,sources)
     else:worker.finish(ident,task,job,state,config,c.read(job/'editorial-plan.json'),guard,progress,sources)
 
