@@ -38,6 +38,8 @@ def safe(path):
     return path
 def sha(data):return hashlib.sha256(data).hexdigest()
 def read(path):return json.loads(safe(path).read_text())
+def public_directory(path):
+    path=safe(path);path.mkdir(mode=0o755,parents=True,exist_ok=True);path.chmod(0o755);return path
 def atomic(path,data,mode=0o600):
     path=safe(path);path.parent.mkdir(parents=True,exist_ok=True,mode=0o700)
     fd,temp=tempfile.mkstemp(dir=path.parent,prefix='.maintenance-')
@@ -230,8 +232,8 @@ def apply(deployment,policy):
             manifest=json.loads(raw);validate_manifest(manifest,policy)
             if manifest['release_id']!=deployment['release_id']:raise RuntimeError('maintenance_release_mismatch')
             stage=Path(tempfile.mkdtemp(prefix='video-workflow-tests-',dir='/var/tmp'));stage.chmod(0o755)
-            (stage/'candidate').mkdir(mode=0o755);(stage/'tests').mkdir(mode=0o755)
-            (stage/'work').mkdir(mode=0o755);os.chown(stage/'work',policy['client_uid'],policy['client_gid'])
+            for name in ('candidate','tests','work'):public_directory(stage/name)
+            os.chown(stage/'work',policy['client_uid'],policy['client_gid'])
             originals={};candidates={};total=0
             for file in manifest['files']:
                 target=safe(ROOT/file['target']);original=target.read_bytes() if target.exists() else None
@@ -324,6 +326,7 @@ def main():
     if os.geteuid()!=0:raise SystemExit('Root maintenance service required')
     os.umask(0o077);policy=read(POLICY);STORE.mkdir(mode=0o700,parents=True,exist_ok=True)
     RUN.mkdir(mode=0o750,parents=True,exist_ok=True);os.chown(RUN,0,policy['client_gid'])
+    RUN.chmod(0o750)
     # Never resume an ambiguous code transaction silently after a daemon crash.
     for path in STORE.glob('deployment-*.json'):
         value=read(path)

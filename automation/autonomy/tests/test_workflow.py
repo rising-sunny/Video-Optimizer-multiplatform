@@ -266,6 +266,15 @@ class MaintenanceTests(unittest.TestCase):
         for name in ('../secrets.py','/etc/config.json','config.py','server.py','a/b.py'):
             value=self.manifest();value['files'][0]['target']=name
             with self.subTest(name=name),self.assertRaises(RuntimeError):admin.validate_manifest(value,self.policy)
+    def test_candidate_directories_remain_readable_under_private_root_umask(self):
+        import os
+        previous=os.umask(0o077)
+        try:
+            directory=admin.public_directory(self.root/'candidate')
+            admin.atomic(directory/'test.py',b'# public test code',0o644)
+        finally:os.umask(previous)
+        self.assertEqual(directory.stat().st_mode&0o777,0o755)
+        self.assertEqual((directory/'test.py').stat().st_mode&0o777,0o644)
     def test_release_requires_tests_and_unique_targets(self):
         value=self.manifest();admin.validate_manifest(value,self.policy)
         value['tests']=[]

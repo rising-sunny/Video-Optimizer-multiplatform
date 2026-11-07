@@ -85,7 +85,7 @@ def stage_test(candidates,policy):
     spec=importlib.util.spec_from_file_location('workflow_admin_test_helper',BUNDLE/'maintenance_daemon.py')
     admin=importlib.util.module_from_spec(spec);spec.loader.exec_module(admin)
     stage=Path(tempfile.mkdtemp(prefix='video-workflow-bootstrap-',dir='/var/tmp'));stage.chmod(0o755)
-    for name in ('candidate','tests','work'):(stage/name).mkdir(mode=0o755)
+    for name in ('candidate','tests','work'):admin.public_directory(stage/name)
     os.chown(stage/'work',policy['client_uid'],policy['client_gid'])
     for name,data in candidates.items():base.atomic(stage/'candidate'/name,data)
     for file in (BUNDLE/'tests').rglob('*'):

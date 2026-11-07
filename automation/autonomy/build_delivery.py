@@ -51,7 +51,7 @@ def main():
         env['PYTHONPATH']=str(stage/'candidate')
         subprocess.run(['python3','-B','-m','unittest','discover','-s',str(stage/'tests'),'-q'],env=env,cwd=stage/'work',check=True)
     metadata=dict(name=NAME,bytes=archive.stat().st_size,archive_sha256=hashlib.sha256(archive.read_bytes()).hexdigest(),
-        base64_git_blob=hashlib.sha1(b'blob '+str(encoded.stat().st_size).encode()+b'\0'+encoded.read_bytes()).hexdigest(),files=len(files),offline_tests=43)
+        base64_git_blob=hashlib.sha1(b'blob '+str(encoded.stat().st_size).encode()+b'\0'+encoded.read_bytes()).hexdigest(),files=len(files),offline_tests=44)
     (OUT/(NAME+'-metadata.json')).write_text(json.dumps(metadata,indent=2)+'\n')
     print(json.dumps(metadata,indent=2))
 
