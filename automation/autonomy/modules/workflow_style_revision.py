@@ -21,12 +21,44 @@ NAME='curie-catarsis-style-v50'
 BATCH='cf2a22d4f40f453fba2b3af137b716d1'
 CHANNEL='stunning-facts-of-history'
 REQUEST_ID='revise-curie-catarsis-style-20261107-v1'
+CLEAN_REQUEST_ID='revise-curie-catarsis-style-clean-entry-20261107-v2'
 TOPIC='Revise only the visual Catarsis presentation of the approved Marie Curie Short cf2a22d4f40f453fba2b3af137b716d1: restore condensed bold serif cards, semantic phrase deployment and brief kinetic entries; retain verified text, source images, context labels, 55-second timing, music, credits and original generation budget. Generation only.'
+CLEAN_TOPIC='Correct only the observed blurred text-entry frames in the current Curie Catarsis style revision cf2a22d4f40f453fba2b3af137b716d1. Use a brief crisp scale entrance without blur or doubled letters. Preserve all original words, archive scene timing, music, credits, source approvals and original generation counters. One actual assessment of the changed pixels only. Generation only.'
 SOURCE_VIDEO='1a3a1cf8bc27b4a1910d8bb273a21549a2fc419e887527b332c8ffbcd4742992'
 SOURCE_APPROVAL='aafb4abeef41ada2bb5e7d4ff5fb8009a7964ad37d9cb7e0f3ccb9622cd8d365'
 
 def matches(request):
-    return request==dict(operation='generation_start_single',request_id=REQUEST_ID,channel=CHANNEL,topic=TOPIC)
+    return any(request==dict(operation='generation_start_single',request_id=ident,channel=CHANNEL,topic=topic)
+        for ident,topic in ((REQUEST_ID,TOPIC),(CLEAN_REQUEST_ID,CLEAN_TOPIC)))
+
+def inspect_clean_entry():
+    from workflow_presentation import text_cache
+    from generation_worker import preflight
+    state,job=c.paths('catarsis',BATCH,CHANNEL)
+    parent=c.read(state/(NAME+'-auth.json'))
+    status=c.read(state/'status.json');review=c.read(job/'visual-review.json')
+    failed={k for k,v in review.get('checks',{}).items() if v is not True}
+    if (not (state/(NAME+'.claim')).is_file() or (state/'STOP').exists()
+        or parent.get('request_id')!=REQUEST_ID or parent.get('request_sha256')!=c.digest(state/'request.json')
+        or status.get('state')!='blocked' or status.get('error_code')!='visual_or_editorial_review_failed'
+        or review.get('approved') is not False or failed!={'text_readable'}
+        or c.digest(job/'video.mp4')!='717a7317e6d2949035de5bee31e0591f35fedb4b1e3c57a0dab50a5888ab6748'
+        or review.get('video_sha256')!=c.digest(job/'video.mp4') or (job/'approval.json').exists()
+        or any((job/n).exists() for n in ('publication.json','.transport.json','tiktok-draft.json'))):
+        raise RuntimeError('workflow_style_clean_entry_exact_failed_checkpoint_required')
+    for name in ('editorial-plan.json','sources.json','asset-credits.json','metadata.json','music-license-evidence.json','project.json','thumbnail.jpg'):
+        if c.digest(job/name)!=parent['item']['files'][name]:raise RuntimeError('workflow_style_clean_entry_evidence_changed')
+    old_archive=c.RUNTIME/'workflow-attempts/catarsis'/BATCH/NAME/'job'
+    if c.digest(old_archive/'video.mp4')!=SOURCE_VIDEO or c.digest(old_archive/'approval.json')!=SOURCE_APPROVAL:
+        raise RuntimeError('workflow_style_original_approval_not_preserved')
+    first_root=c.RUNTIME/'workflow-style-reviews'/BATCH/NAME
+    if len(list(first_root.glob('vision-*.claimed')))!=1 or c.tree(c.ledger(job))!=parent['item']['ledger']:
+        raise RuntimeError('workflow_style_clean_entry_prior_claim_or_budget_changed')
+    preflight();cache=text_cache(job)
+    from workflow_readable import sequence_for_display
+    return dict(files=c.tree(job),ledger=c.tree(c.ledger(job)),budget=c.read(c.ledger(job)/'budget.json'),
+        text_cache=dict(file=cache.name,sha256=c.digest(cache)),display_sequence=sequence_for_display(c.read(job/'project.json')['sequence']),
+        prior_negative_review_sha256=c.digest(job/'visual-review.json'),prior_visual_claims_preserved=True)
 
 def inspect():
     from generation_worker import preflight
@@ -60,28 +92,34 @@ def start(broker,request):
     from workflow_jobs import frozen_sources,PYTHON
     from history_data import timestamp
     if not matches(request):return denied('workflow_style_revision_exact_request_required')
+    checkpoint=request['request_id']==CLEAN_REQUEST_ID
+    stage=NAME+'-clean-entry' if checkpoint else NAME
     state,job=c.paths('catarsis',BATCH,CHANNEL)
-    auth_path=state/(NAME+'-auth.json')
+    auth_path=state/(stage+'-auth.json')
     if auth_path.exists():return broker.status(BATCH)
     doc=getattr(broker,'workflow_documentary',None)
     if broker.active or (getattr(broker,'publication',None) and broker.publication.active) or (doc is not None and doc.active):return denied('another_manual_operation_is_running')
     try:
-        item=inspect()
-        auth=dict(job_id=BATCH,request_id=REQUEST_ID,request_sha256=c.digest(state/'request.json'),
+        item=inspect_clean_entry() if checkpoint else inspect()
+        auth=dict(job_id=BATCH,request_id=request['request_id'],request_sha256=c.digest(state/'request.json'),
             item=item,sources=frozen_sources(),controls=controls(),visual_reviews_max=1,
             new_text_calls=0,publication_allowed=False,created_at=timestamp())
         c.write(auth_path,auth)
         tracking=c.read(state/'workflow.json')
-        tracking['style_revision']=dict(version=NAME,state='queued',request_id=REQUEST_ID,
+        previous_revision=copy.deepcopy(tracking.get('style_revision'))
+        tracking['style_revision']=dict(version=stage,state='queued',request_id=request['request_id'],
             original_video_sha256=SOURCE_VIDEO,original_approval_sha256=SOURCE_APPROVAL,
-            original_claims_preserved=True,new_text_calls=0,visual_reviews_max=1)
+            original_claims_preserved=True,new_text_calls=0,visual_reviews_max=1,
+            previous_revision=previous_revision,visual_reviews_total_max=2 if checkpoint else 1)
         c.write(state/'workflow.json',tracking)
         status=c.read(state/'status.json');status.update(state='accepted',error_code=None,updated_at=timestamp())
         status['channels'][CHANNEL]=dict(state='preparing',phase='style_revision',error_code=None)
         c.write(state/'status.json',status);broker.active[BATCH]=True
         def execute():
             try:
-                with subprocess.Popen([PYTHON,'-B',str(c.ROOT/'workflow_style_revision.py'),'--perform'],
+                command=[PYTHON,'-B',str(c.ROOT/'workflow_style_revision.py'),'--perform']
+                if checkpoint:command.append('--clean-entry')
+                with subprocess.Popen(command,
                     stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,start_new_session=True) as process:
                     deadline=time.monotonic()+1800
                     while process.poll() is None:
@@ -157,7 +195,7 @@ def sample_sheets(job,display):
     path=job/'style-reference-sheet.jpg';board.save(path,quality=94);paths.append(path)
     return paths
 
-def perform():
+def perform(checkpoint=False):
     from generation_worker import preflight,manual_editorial,public_metadata
     from publication_service import controls
     from workflow_presentation import fresh_render,audio_digest,text_cache,visible_labels
@@ -168,8 +206,10 @@ def perform():
     from deepseek_runtime import Client
     from credit_repair import native_review_function
     state,job=c.paths('catarsis',BATCH,CHANNEL)
-    auth_path=state/(NAME+'-auth.json');auth=c.read(auth_path);auth_sha=c.digest(auth_path)
-    if auth.get('request_id')!=REQUEST_ID or auth.get('job_id')!=BATCH or auth.get('publication_allowed') is not False or auth.get('visual_reviews_max')!=1:
+    stage=NAME+'-clean-entry' if checkpoint else NAME
+    request_id=CLEAN_REQUEST_ID if checkpoint else REQUEST_ID
+    auth_path=state/(stage+'-auth.json');auth=c.read(auth_path);auth_sha=c.digest(auth_path)
+    if auth.get('request_id')!=request_id or auth.get('job_id')!=BATCH or auth.get('publication_allowed') is not False or auth.get('visual_reviews_max')!=1:
         raise RuntimeError('workflow_style_revision_auth_invalid')
     def guard():
         if (state/'STOP').exists():raise RuntimeError('generation_cancelled')
@@ -177,17 +217,17 @@ def perform():
             raise RuntimeError('workflow_style_revision_frozen_sources_changed')
         preflight()
     guard();item=auth['item']
-    with (state/(NAME+'.claim')).open('x') as stream:stream.write(timestamp());stream.flush();os.fsync(stream.fileno())
+    with (state/(stage+'.claim')).open('x') as stream:stream.write(timestamp());stream.flush();os.fsync(stream.fileno())
     if c.tree(job)!=item['files'] or c.tree(c.ledger(job))!=item['ledger']:raise RuntimeError('workflow_style_revision_inputs_changed')
-    archive=c.RUNTIME/'workflow-attempts/catarsis'/BATCH/NAME
+    archive=c.RUNTIME/'workflow-attempts/catarsis'/BATCH/stage
     archive.mkdir(mode=0o700,parents=True,exist_ok=False)
     shutil.copytree(job,archive/'job');shutil.copytree(c.ledger(job),archive/'ledger')
     if c.tree(archive/'job')!=item['files'] or c.tree(archive/'ledger')!=item['ledger']:raise RuntimeError('workflow_style_revision_backup_failed')
     old_video=archive/'job/video.mp4';old_audio=audio_digest(old_video)
-    review_root=c.RUNTIME/'workflow-style-reviews'/BATCH/NAME
+    review_root=c.RUNTIME/'workflow-style-reviews'/BATCH/stage
     review_root.mkdir(mode=0o700,parents=True,exist_ok=False)
     c.write(review_root/'authorization.json',dict(original_job_id=BATCH,original_video_sha256=SOURCE_VIDEO,
-        original_approval_sha256=SOURCE_APPROVAL,request_id=REQUEST_ID,maximum_visual_assessments=1,
+        original_approval_sha256=SOURCE_APPROVAL,request_id=request_id,maximum_visual_assessments=1,
         original_vision_claims_preserved=True,new_text_calls=0))
     task=c.read(state/'request.json');status=c.read(state/'status.json')
     sys.path.insert(0,'/home/videoagent/video-automation');import editorial as exported;import daily_core as core
@@ -199,7 +239,7 @@ def perform():
         with daily.locked():
             Client.request=no_new_text
             status.update(state='running',error_code=None,updated_at=timestamp());c.write(state/'status.json',status)
-            (job/'approval.json').unlink();(job/'quality-review-cache.json').unlink(missing_ok=True)
+            (job/'approval.json').unlink(missing_ok=checkpoint);(job/'quality-review-cache.json').unlink(missing_ok=True)
             project,plan=c.read(job/'project.json'),c.read(job/'editorial-plan.json')
             display=sequence_for_display(project['sequence'])
             if display!=item['display_sequence']:raise RuntimeError('workflow_style_revision_display_changed')
@@ -219,6 +259,7 @@ def perform():
                 original_approval_preserved_in_archive=True,original_audio_payload_preserved=True,
                 approved_text_and_media_unchanged=True,display_sequence=display,visual_reviews_max=1,
                 visible_labels=visible_labels(job,project),text_ai_requests=0,
+                clean_scale_entry_without_blur_or_echo=checkpoint,
                 reference_videos=['p3lxkEhl4LA','3B2FCQvm9bQ']))
             editorial.d.qa(job/'video.mp4',job,smoke=False)
             qa=c.read(job/'qa.json')
@@ -256,5 +297,5 @@ def perform():
 
 if __name__=='__main__':
     import argparse
-    parser=argparse.ArgumentParser();parser.add_argument('--perform',action='store_true',required=True);parser.parse_args()
-    os.umask(0o077);perform()
+    parser=argparse.ArgumentParser();parser.add_argument('--perform',action='store_true',required=True);parser.add_argument('--clean-entry',action='store_true');args=parser.parse_args()
+    os.umask(0o077);perform(checkpoint=args.clean_entry)

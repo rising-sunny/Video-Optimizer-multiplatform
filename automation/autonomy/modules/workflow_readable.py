@@ -134,6 +134,19 @@ def renderer(editor,plan):
     old_card,old_overlay,old_build=editor.text_card,editor.overlay_layer,editor.build_shots
     namespace=old_build.__globals__
     old_globals={key:namespace.get(key) for key in ('text_card','overlay_layer','build_shots')}
+    # encoder_profile uses a private render namespace; the style wrapper keeps
+    # that actual render function in its original_render closure.
+    render=getattr(editor,'render',old_build)
+    if 'original_render' in getattr(render.__code__,'co_freevars',()):
+        render=render.__closure__[render.__code__.co_freevars.index('original_render')].cell_contents
+    spaces=[]
+    for space in (namespace,getattr(render,'__globals__',{})):
+        if '_kinetic' in space and not any(space is existing for existing,_ in spaces):
+            spaces.append((space,space['_kinetic']))
+    old_kinetic=getattr(editor,'_kinetic',None)
+    def clear_entry(image,index,echo):
+        # No blur or doubled glyphs, including in the intermediate entry frames.
+        return editor._zoomed(image,1+.035*(1-min(index/5,1)))
     assets=plan['assets']
     def build(project,sequence):
         visible=sequence_for_display(sequence,getattr(editor,'FPS',30))
@@ -147,7 +160,11 @@ def renderer(editor,plan):
     try:
         editor.text_card,editor.overlay_layer,editor.build_shots=card,caption,build
         namespace.update(text_card=card,overlay_layer=caption,build_shots=build)
+        if old_kinetic is not None:editor._kinetic=clear_entry
+        for space,_ in spaces:space['_kinetic']=clear_entry
         yield
     finally:
+        for space,old in spaces:space['_kinetic']=old
+        if old_kinetic is not None:editor._kinetic=old_kinetic
         namespace.update(old_globals)
         editor.text_card,editor.overlay_layer,editor.build_shots=old_card,old_overlay,old_build

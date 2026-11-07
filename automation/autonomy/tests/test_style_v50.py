@@ -74,6 +74,28 @@ class Presentation(unittest.TestCase):
         self.assertGreater(alpha.getpixel((540,1450)),240)
         self.assertGreater(sum(x>220 for x in image.convert('L').crop((0,1380,1080,1850)).tobytes()),1000)
 
+    def test_actual_private_render_namespace_gets_crisp_entries_and_is_restored(self):
+        from PIL import Image
+        native={}
+        exec('def _kinetic(image,index,echo):\n raise AssertionError("old blurred entrance used")\ndef render():\n return _kinetic\n',native)
+        original_render=native['render'];old_kinetic=native['_kinetic']
+        def style_wrapper(original_render):
+            def render():return original_render()
+            return render
+        editor=types.ModuleType('style_editor')
+        exec('def text_card(*args):pass\ndef overlay_layer(*args):pass\ndef build_shots(project,sequence):return sequence\n',editor.__dict__)
+        editor.render=style_wrapper(original_render);editor._kinetic=old_kinetic
+        scales=[]
+        def zoom(image,scale):scales.append(scale);return image
+        editor._zoomed=zoom
+        image=Image.new('RGB',(1080,1920),'white');echo=Image.new('RGB',image.size,'red')
+        with readable.renderer(editor,dict(assets=[])):
+            kinetic=editor.render()
+            for index in range(6):self.assertEqual(kinetic(image,index,echo).tobytes(),image.tobytes())
+            self.assertAlmostEqual(scales[0],1.035);self.assertEqual(scales[-1],1)
+            self.assertTrue(all(1<=s<=1.035 for s in scales))
+        self.assertIs(editor._kinetic,old_kinetic);self.assertIs(editor.render(),old_kinetic)
+
 
 class RevisionScope(unittest.TestCase):
     def test_only_the_exact_new_user_revision_request_matches(self):

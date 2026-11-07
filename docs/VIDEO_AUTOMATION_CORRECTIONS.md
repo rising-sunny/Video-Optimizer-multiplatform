@@ -129,3 +129,9 @@ original, sin llamadas nuevas a DeepSeek ni publicación. Ver el alcance exacto
 en `automation/autonomy/README.md`; comprobar recibos antes de afirmar instalado
 o vídeo listo.
 
+
+El primer dictamen de v50 bloqueó las letras desenfocadas/dobles durante la
+entrada. v50.1 sustituye ese efecto por escala breve nítida; conserva el dictamen
+negativo y permite un único checkpoint vinculado a ese MP4 y ese fallo concretos.
+Los dos dictámenes de la revisión se registran por separado; no se reinician
+cuotas ni se generaliza el intento adicional a otros trabajos.

@@ -231,3 +231,20 @@ have to pass. The soundtrack's original AAC packet payload and all source dates,
 credits and metadata are preserved. Repository code and installed/readied video
 status remain separate evidence; this entry is not a completed-render receipt.
 
+
+### Crisp text-entry checkpoint (v50.1)
+
+The first actual revision assessment accepted framing/context/intentional stills
+but blocked text readability in blurred/doubled entry frames. Its negative
+assessment and visual claim remain preserved. The display renderer now replaces
+blur/echo with a crisp 3.5% scale entrance over six frames, including the encoder's
+private render namespace. No source words or archival timing change.
+
+One exact checkpoint is bound to the observed failed MP4 hash and only the
+text_readable failure. It requires the untouched original factual evidence,
+ledger and original archived approval, and the first revision's used claim.
+The explicit single request `revise-curie-catarsis-style-clean-entry-20261107-v2`
+can render changed pixels and obtain one actual fresh assessment, separately
+claimed. Across both deliberate style stages there are at most two assessments;
+neither the generation budget nor any old claim is reset/replayed. Other failed
+videos, unrelated defects, changed evidence or repeated checkpoints are rejected.

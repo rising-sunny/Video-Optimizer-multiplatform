@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "release_id": "catarsis-crisp-text-entry-v50-1",
+  "files": [
+    {
+      "target": "workflow_readable.py",
+      "source": "automation/autonomy/modules/workflow_readable.py",
+      "sha256": "3cb16da42ad86fba9992fc881a9dbf7c5f87361e544c1ce45e404bd7bc5d17e3",
+      "expected_sha256": "177608f94736e5d4521492a8266b4ed5183464e9a2becd761e480115060cdab9"
+    },
+    {
+      "target": "workflow_service.py",
+      "source": "automation/autonomy/modules/workflow_service.py",
+      "sha256": "0df154872ced69652d56be5e0eec68679ea40804ac97700353f40a26c7e8fbc2",
+      "expected_sha256": "c6cb8bb19724c9150b65f38d57c3e797fc77d42aa1b5f6032160f74d8982c80d"
+    },
+    {
+      "target": "workflow_style_revision.py",
+      "source": "automation/autonomy/modules/workflow_style_revision.py",
+      "sha256": "5a506a491c6f2e2efd284f67a94478ed17a5e281a9932e8a148e4b554e266123",
+      "expected_sha256": "3dd66368a9b95680322cd256cee34b4f2fba4487a4f3dcd07cc6c456acd96584"
+    }
+  ],
+  "tests": [
+    {
+      "source": "automation/autonomy/tests/curie-final-project.json",
+      "path": "curie-final-project.json",
+      "sha256": "ba74374a5a4e63b222c667f9df1ef2cba55c4c1af28662f4171fbb6757f9775f"
+    },
+    {
+      "source": "automation/autonomy/tests/native-render-project.txt",
+      "path": "native-render-project.txt",
+      "sha256": "3a69391d7eea4b174b6d8537ef57170acfd475b7075763af427e5fc29b5821aa"
+    },
+    {
+      "source": "automation/autonomy/tests/test_native_render_receipt.py",
+      "path": "test_native_render_receipt.py",
+      "sha256": "49153dd133c7bcbd5464cedb7935de6f6c3bed494361234e1dfdd7858aae0444"
+    },
+    {
+      "source": "automation/autonomy/tests/test_presentation.py",
+      "path": "test_presentation.py",
+      "sha256": "8a15ce3082594e132af9094569785cb7477c88e83de8e49f15f4f4f6ce77874d"
+    },
+    {
+      "source": "automation/autonomy/tests/test_style_v50.py",
+      "path": "test_style_v50.py",
+      "sha256": "cf266036728e6a0ee0c52a60976e5171bfbd2d7ebe1b45d226a2901103bb657f"
+    }
+  ]
+}
