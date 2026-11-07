@@ -55,6 +55,9 @@ def install(cls,operations):
         except Exception as exc:return denied(safe_error(exc))
     @functools.wraps(original_start)
     def start(self,request):
+        from workflow_media_revision import REQUEST_ID as MEDIA_REQUEST,matches as media_matches,start as revise_media
+        if request.get('request_id')==MEDIA_REQUEST:
+            return revise_media(self,request,original_start)
         # An explicitly requested visual revision is generation, not recovery
         # of the exhausted original generation allowance.
         from workflow_style_revision import REQUEST_ID,CLEAN_REQUEST_ID,matches,start as revise_style
@@ -95,4 +98,5 @@ def bind_documentary(parent):
             enroll('documentary',value['job_id'],state_root=self.state)
         return value
     cls.start=start;cls._workflow_installed=True
+
 

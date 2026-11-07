@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "release_id": "curie-wwi-media-v51",
+  "files": [
+    {
+      "target": "workflow_media_revision.py",
+      "source": "automation/autonomy/modules/workflow_media_revision.py",
+      "sha256": "755a72803be9cb38f392b2255443f1037c77c0dee8cef271fd5d28481abb2644",
+      "expected_sha256": "absent"
+    },
+    {
+      "target": "workflow_service.py",
+      "source": "automation/autonomy/modules/workflow_service.py",
+      "sha256": "36c86daa2bcf38004bb0935cf6053b441fd892f11870cb0fc64941cb9e178400",
+      "expected_sha256": "0df154872ced69652d56be5e0eec68679ea40804ac97700353f40a26c7e8fbc2"
+    },
+    {
+      "target": "generation_worker.py",
+      "source": "automation/autonomy/modules/generation_worker.py",
+      "sha256": "a2c2b2f76b421abe8aec9650a620960eea098ba7a29f470b403008ba982b4b81",
+      "expected_sha256": "5341ad85c5abdb0ae35a8720532767ebc89e23f5ada9d3735a34a04c94ef5c88"
+    },
+    {
+      "target": "deepseek_review.py",
+      "source": "automation/autonomy/modules/deepseek_review.py",
+      "sha256": "bcba9d128cf98a1c79d22245353aba17dfda272301285638f58a7fc6fe78a2e4",
+      "expected_sha256": "fe08bf8a1e382c5e718e0d4894e962264fa07cc40601e43637aeef4e92ffc675"
+    }
+  ],
+  "tests": [
+    {
+      "source": "automation/autonomy/tests/test_media_revision_v51.py",
+      "path": "test_media_revision_v51.py",
+      "sha256": "f7d5a0ba2eae4462a388525ee0d6075fabbee005f4d26edaa25b01bcd0a49d0a"
+    }
+  ]
+}

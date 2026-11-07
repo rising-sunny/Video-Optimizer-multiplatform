@@ -369,7 +369,7 @@ def perform(batch):
     from publication_service import controls
     control_pins = controls()
     request_pin = sha(folder / 'request.json')
-    module_names = ('workflow_readable.py','workflow_presentation.py','workflow_handoff.py','workflow_preparation.py','workflow_inputs.py','workflow_common.py','workflow_jobs.py','workflow_native.py','workflow_recovery.py','workflow_service.py','catarsis_selection.py','generation_service.py','shorts_handoff.py','shorts_handoff_resume.py','documentary_sources.py','generation_worker.py', 'autonomous_generation.py', 'editorial_recovery.py',
+    module_names = ('workflow_media_revision.py','workflow_readable.py','workflow_presentation.py','workflow_handoff.py','workflow_preparation.py','workflow_inputs.py','workflow_common.py','workflow_jobs.py','workflow_native.py','workflow_recovery.py','workflow_service.py','catarsis_selection.py','generation_service.py','shorts_handoff.py','shorts_handoff_resume.py','documentary_sources.py','generation_worker.py', 'autonomous_generation.py', 'editorial_recovery.py',
         'catarsis_fixes.py', 'platform_rules.py', 'music_credit_changes.py', 'credit_repair.py', 'catarsis_style.py', 'editor_efficiency.py', 'claude_editor.py', 'codex_budget.py', 'caption_policy.py', 'review_guidance.py', 'review_consistency.py', 'review_cache.py', 'deepseek_runtime.py', 'deepseek_editor.py', 'deepseek_review.py', 'documentary_media.py','shorts_media.py','shorts_resume.py','shorts_context_resume.py','shorts_curated_resume.py','curated_short_plans.py')
     module_pins = {name: sha(Path(__file__).with_name(name)) for name in module_names}
     def guard():
@@ -397,9 +397,14 @@ def perform(batch):
     status.update(state='running', updated_at=timestamp())
     atomic(folder / 'status.json', status)
     with daily.locked():
-        from history_worker import collect
-        history = collect(remote)
-        core.atomic(AUTOMATION / 'runtime/production/history.json', native_history(history))
+        revision=request.get('media_revision')
+        if revision:
+            from workflow_media_revision import verify_parent
+            verify_parent(revision)
+        else:
+            from history_worker import collect
+            history = collect(remote)
+            core.atomic(AUTOMATION / 'runtime/production/history.json', native_history(history))
         for channel in selected:
             guard()
             job = JOBS / batch / channel
@@ -413,7 +418,19 @@ def perform(batch):
             status['updated_at'] = timestamp()
             atomic(folder / 'status.json', status)
             try:
-                build(editorial, job, channel, request['date'], request['topics'][channel], batch, guard)
+                if revision:
+                    from workflow_media_revision import prepare,context
+                    from workflow_native import implementation
+                    from autonomous_generation import Supervisor
+                    class MediaSupervisor(Supervisor):
+                        def decision(self,*args,**kwargs):
+                            raise RuntimeError('workflow_media_revision_requires_attention')
+                    prepare(job,request,guard)
+                    with context(implementation(editorial),job,request,guard):
+                        build(editorial,job,channel,request['date'],request['topics'][channel],batch,guard,
+                            recovery=MediaSupervisor(job,guard,attempt_namespace='media-v51'))
+                else:
+                    build(editorial, job, channel, request['date'], request['topics'][channel], batch, guard)
                 approved = core.approval(job, channel, request['date'])
                 if approved.get('scope') != 'production':
                     raise RuntimeError('manual_quality_scope_mismatch')
@@ -528,4 +545,5 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
