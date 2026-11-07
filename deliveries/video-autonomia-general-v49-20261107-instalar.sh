@@ -2,7 +2,7 @@
 set -euo pipefail
 umask 077
 repo=/home/videoagent/Video-Optimizer-multiplatform
-commit=a1c692b4d168322ffd1b451a08615773b1a3c67f
+commit=4a3a5e65e6526ec83923a37db289ea17a2794362
 unidad=video-autonomia-general-v49-20261107-install
 paquete=$(mktemp /tmp/video-autonomia-general-v49.XXXXXX.tgz)
 trap 'rm -f "$paquete"' EXIT
@@ -15,7 +15,7 @@ runuser -u videoagent -- git -C "$repo" show \
     "$commit:deliveries/video-autonomia-general-v49-20261107.tgz.b64" |
     base64 -d > "$paquete"
 printf '%s  %s\n' \
-    '17a96502e3ea1342022ccca8d9134939fdf549a18c4850286eeb896de464e39b' \
+    'f2aae13704e22064f5bb6ac4ef5e2e74bf35288e694447a49d6d556eccb4c3a6' \
     "$paquete" | sha256sum -c -
 directorio=$(mktemp -d /tmp/video-autonomia-general-v49.XXXXXX)
 chmod 0755 "$directorio"
