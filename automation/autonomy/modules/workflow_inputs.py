@@ -16,6 +16,17 @@ def public_url(value):
     parsed = urlsplit(str(value))
     return urlunsplit((parsed.scheme, parsed.hostname or '', parsed.path, '', ''))
 
+def documentary_plan_data(job):
+    """Bounded public saved plan, including invalid shapes, for local recovery."""
+    import json
+    job=c.safe(Path(job));path=c.safe(job/'editorial-plan.json')
+    if job.parent.name!='manual-documentary' or not path.is_file() or path.stat().st_size>60000:return {}
+    raw=path.read_text();value=json.loads(raw)
+    if not isinstance(value,dict):return {}
+    selected={key:value[key] for key in ('history_review_complete','duplicate','title','description',
+        'research','claims','assets','segments','thumbnail') if key in value}
+    return json.loads(public_text(json.dumps(selected,ensure_ascii=False),120000))
+
 
 def resume_inputs(job):
     job = c.safe(Path(job))
@@ -51,7 +62,7 @@ def resume_inputs(job):
             music_title=selected.get('music_title'),music_license_url=selected.get('music_license_url'),
             project=selected.get('project'),metadata=selected.get('metadata'),assets=selected.get('assets'))
     except Exception as exc:
-        plan_check=dict(state='blocked',error_code=c.clean(exc,500))
+        plan_check=dict(state='blocked',error_code=c.clean(exc,500),saved_documentary_plan=documentary_plan_data(job))
     presentation={}
     if job.parent.parent.name=='manual-catarsis' and (job/'visual-review.json').is_file():
         from workflow_presentation import available as presentation_available
@@ -111,4 +122,5 @@ def assessment_details(job):
         result['actual_text_entry_sheet']=dict(mime_type='image/jpeg',image_base64=base64.b64encode(sheet.read_bytes()).decode(),
             source='actual_final_mp4_entry_frames',video_sha256=c.digest(job/'video.mp4'),sha256=c.digest(sheet))
     return result
+
 
