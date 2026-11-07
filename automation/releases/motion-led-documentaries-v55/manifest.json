@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "release_id": "motion-led-documentaries-v55",
+  "files": [
+    {
+      "target": "documentary_ai.py",
+      "source": "automation/documentary/motion-v55/modules/documentary_ai.py",
+      "sha256": "7ff29d894f6a6716c23d868bbf749fb4439132690f3e38d48f76d5f897aa0731",
+      "expected_sha256": "2e68b166075340e95e1e258f4aeec97f44667890ead85f4ac2816e819478eadd"
+    },
+    {
+      "target": "documentary_common.py",
+      "source": "automation/documentary/motion-v55/modules/documentary_common.py",
+      "sha256": "2eb860b1b4d068d58a214721e01366ce3673aded90f87fea15a472ba27d5b983",
+      "expected_sha256": "bfbf28818fe71e46044eb02fdf8bb50d2885e6054bde4ca4f584e1bea0b77cb1"
+    },
+    {
+      "target": "documentary_catarsis_render.py",
+      "source": "automation/documentary/motion-v55/modules/documentary_catarsis_render.py",
+      "sha256": "432ad49a8c07600c01721b56935a604f0cb0b588030886e4fed62e0203348b68",
+      "expected_sha256": "f2b0969342a51675fb6a4d3208ab753ce21f3e603c84c3b60ddbeecc7d99da59"
+    },
+    {
+      "target": "documentary_catarsis_assets.py",
+      "source": "automation/documentary/motion-v55/modules/documentary_catarsis_assets.py",
+      "sha256": "96af175ad6d52e0d45851afc075597bccb37db0295826d4274929908c8bed1c0",
+      "expected_sha256": "551163403cac98d58af07a23ee60438cafd6fdcc33cf28b96dd567b95b14e0dd"
+    },
+    {
+      "target": "workflow_motion_documentary.py",
+      "source": "automation/documentary/motion-v55/modules/workflow_motion_documentary.py",
+      "sha256": "cb1410734b367595748ba661760fac296615a57e36e420f9fe8632f550940de4",
+      "expected_sha256": "absent"
+    }
+  ],
+  "tests": [
+    {
+      "source": "automation/documentary/motion-v55/tests/test_motion_documentary_v55.py",
+      "path": "test_motion_documentary_v55.py",
+      "sha256": "10b8912737ce28db2395371f3aca457463268dc198cbba08fcd3f545249e8b3b"
+    }
+  ]
+}
