@@ -69,6 +69,10 @@ def resume_inputs(job):
             api={name:str(inspect.signature(getattr(helper,name))) for name in dir(helper)
                 if (name in ('render_project','probe','check_video','validate_video') or 'qa' in name.lower())
                 and callable(getattr(helper,name))}
+            # Only these two non-credential generation functions are exposed;
+            # no arbitrary helper/module path or configuration read is accepted.
+            for name in ('render_project','qa'):
+                api[name+'_source']=public_text(inspect.getsource(getattr(helper,name)),16000)
         except Exception as exc:api=dict(error=c.clean(exc,200))
     return dict(read_only=True, ai_requests=0, network_requests=0,
         fetched_sources=fetches[:14], factual_snapshots=snapshots,
