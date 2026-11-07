@@ -3,7 +3,7 @@ set -euo pipefail
 umask 077
 
 repo=/home/videoagent/Video-Optimizer-multiplatform
-commit=6a1cea9a71dc7aeb82ab6f86e20fbf00d9626c4b
+commit=80cda3552b142bdfe1d724cf8e783e842fe2aed5
 unidad=video-short-individual-curie-v48-20261106-install
 paquete=$(mktemp /tmp/video-short-individual-curie-v48.XXXXXX.tgz)
 trap 'rm -f "$paquete"' EXIT
@@ -33,7 +33,7 @@ runuser -u videoagent -- git -C "$repo" show \
     "$commit:deliveries/video-short-individual-curie-v48-20261106.tgz.b64" |
     base64 -d > "$paquete"
 printf '%s  %s\n' \
-    'da246243032dcaea757e9b1e5785de45eab866b10e9542238d4a26006336a78d' \
+    '83e93a83a4cdd7dff663ecbdeb90faada9b7921ff78bdd146b8aada2c745c0e1' \
     "$paquete" | sha256sum -c -
 
 directorio=$(mktemp -d /tmp/video-short-individual-curie-v48.XXXXXX)
