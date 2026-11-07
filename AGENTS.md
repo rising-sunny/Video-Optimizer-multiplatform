@@ -17,3 +17,7 @@ The versioned sources and reusable publisher are in `automation/documentary/`.
 ## Single-channel Catarsis (v48)
 
 For a request covering only one channel, read `automation/catarsis-single/README.md` and use `/opt/video-agent-mcp/single_catarsis_request.py`. Do not use the pair generation/publication tools for a one-channel request. Existing generation status can read single batches; the unselected channel is not_requested.
+
+## Autonomous generation (v49)
+
+For every future Short or horizontal documentary, on either channel, read `automation/autonomy/README.md`. Use the connected diagnostics, same-job recovery and verified maintenance-release tools instead of asking the user to relay VPS shell commands. Preserve original budgets, claims, completed media and approvals. A successful deployment does not prove generation readiness or publication. Publication remains a separately authorized operation.
