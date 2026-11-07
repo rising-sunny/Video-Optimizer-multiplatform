@@ -175,7 +175,7 @@ def start(broker,kind,ident,request_id=None):
     if broker.active or (getattr(broker,'publication',None) and broker.publication.active):return denied('another_manual_operation_is_running')
     if kind=='catarsis' and status.get('state')=='blocked':
         codes=[row.get('error_code') for row in status.get('channels',{}).values()]
-        if 'visual_or_editorial_review_failed' in codes:
+        if 'visual_or_editorial_review_failed' in codes or previous.get('presentation',{}).get('state')=='blocked':
             from workflow_presentation import start as presentation_start
             return presentation_start(broker,ident,request_id)
     try:

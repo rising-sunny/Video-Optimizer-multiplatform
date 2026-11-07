@@ -99,6 +99,19 @@ class Eligibility(unittest.TestCase):
         (self.state/(presentation.NAME+'.claim')).write_text('used')
         with self.assertRaisesRegex(RuntimeError,'already_attempted'):presentation.inspect(self.ident)
 
+    def test_one_technical_checkpoint_requires_every_original_artifact_and_ledger_unchanged(self):
+        (self.state/(presentation.NAME+'.claim')).write_text('original retained')
+        c.write(self.state/(presentation.NAME+'-auth.json'),dict(job_id=self.ident,request_sha256=c.digest(self.state/'request.json'),item=dict(files=c.tree(self.job),ledger=c.tree(self.ledger))))
+        c.write(self.job/'blocked.json',dict(reason='generation_failed'))
+        self.assertEqual(presentation.inspect(self.ident,technical=True)['channel'],self.channel)
+        (self.job/'video.mp4').write_bytes(b'changed render must not replay')
+        with self.assertRaisesRegex(RuntimeError,'changed_checkpoint'):presentation.inspect(self.ident,technical=True)
+
+    def test_used_technical_checkpoint_cannot_repeat(self):
+        (self.state/(presentation.NAME+'.claim')).write_text('original retained')
+        (self.state/(presentation.NAME+'-technical.claim')).write_text('used')
+        with self.assertRaisesRegex(RuntimeError,'technical_checkpoint_unavailable'):presentation.inspect(self.ident,technical=True)
+
     def test_uncertain_provider_request_does_not_resume(self):
         c.write(self.ledger/'budget.json',dict(pending=dict(kind='chat'),counts=dict(chat=8,invocations=4)))
         with self.assertRaisesRegex(RuntimeError,'ambiguous_provider_request'):presentation.inspect(self.ident)

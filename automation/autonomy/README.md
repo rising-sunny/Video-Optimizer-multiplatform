@@ -91,6 +91,14 @@ assessment must approve the corrected MP4 before native production approval.
 Exhausted visual limits, factual/rights failures, framing failures, changed source
 evidence or an already used local claim remain blocked. No publication follows.
 
+The display-only entry prepares the native renderer's repository import path
+before claiming its work, just as native `build` normally does. A single technical
+checkpoint may resume an initialization failure only when every job artifact
+(apart from the failure record), every ledger file and the original request hash
+are still identical to the first authorization. The original claim/auth remain;
+the checkpoint gets a separate bound claim and cannot repeat. Changed renders or
+used review claims never qualify. Exceptions retain sanitized type/file/line data.
+
 Shorts retain their chosen music, native rendering, actual factual/rights and
 visual reviews, and native approval. Documentaries retain the installed narration,
 SRT, source acquisition and shot-checkpoint functions. Existing valid MP4 review
