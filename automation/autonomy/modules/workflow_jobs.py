@@ -42,7 +42,7 @@ def evidence(job):
     result.update({url:dict(content=row['content'],transport=row['transport']) for url,row in available(job).items()})
     return result
 
-def plan(job,kind,task,channel=None):
+def saved_plan(job):
     target=job/'editorial-plan.json'
     if target.is_file():value=c.read(target)
     else:
@@ -65,6 +65,9 @@ def plan(job,kind,task,channel=None):
                 if name in native and native[name]!=value[name]:raise RuntimeError('workflow_envelope_conflict')
                 native[name]=value[name]
         value=native
+    return copy.deepcopy(value)
+
+def validate_saved_plan(job,value,kind,task,channel=None):
     value=copy.deepcopy(value)
     known=evidence(job);urls={row['url'] for row in value.get('research',[])}
     if len(urls)<2 or not urls<=set(known):raise RuntimeError('workflow_verified_factual_evidence_missing')
@@ -92,6 +95,9 @@ def plan(job,kind,task,channel=None):
     implementation(editorial).validate_plan(value,channel,task['date'],c.read(job/'music-input.json'),c.read(job/'history-input.json'))
     validate(value);validate_base_plan(value)
     return value
+
+def plan(job,kind,task,channel=None):
+    return validate_saved_plan(job,saved_plan(job),kind,task,channel)
 
 def frozen_sources():
     # Include the implementation modules read by the native source-pin check.
@@ -124,8 +130,16 @@ def inspect(kind,ident):
         if budget.get('pending') is not None:raise RuntimeError('workflow_ambiguous_provider_request')
         # Reserve room for the mandatory independent text assessment.
         if budget['counts']['chat']>=10 or budget['counts']['invocations']>=4:raise RuntimeError('workflow_original_budget_exhausted')
+        value=saved_plan(job)
+        if (job/'video.mp4').exists():
+            value=validate_saved_plan(job,value,kind,task,channel)
+        else:
+            # Inspect stays read-only. Missing public evidence/music is prepared
+            # in the claimed worker, after the original inputs are archived.
+            from workflow_preparation import identity
+            identity(job,value,kind,task,channel)
         jobs[channel]=dict(job=str(job),files=c.tree(job),ledger=c.tree(c.ledger(job)),
-            original_budget=budget,plan=plan(job,kind,task,channel))
+            original_budget=budget,plan=value)
     if not jobs:raise RuntimeError('workflow_no_unapproved_channel')
     from generation_worker import preflight
     preflight()
@@ -236,7 +250,8 @@ def run_catarsis(job,task,channel,ident,guard):
     semantic_history(job,guard)
     class SavedSupervisor(Supervisor):
         def decision(self,*args,**kwargs):raise RuntimeError('workflow_saved_plan_requires_attention')
-    with manual_editorial(editorial,job,ident,channel,task['date'],guard,recovery=SavedSupervisor(job,guard,attempt_namespace='workflow-v49')):
+    from workflow_native import enabled
+    with enabled(editorial,job,channel),manual_editorial(editorial,job,ident,channel,task['date'],guard,recovery=SavedSupervisor(job,guard,attempt_namespace='workflow-v49')):
         old=editorial.external;editorial.external=source_delivery(job,old,guard)
         try:
             if (job/'video.mp4').exists():
@@ -301,7 +316,14 @@ def perform(kind,ident,token):
                 shutil.copytree(job,archive/channel);shutil.copytree(c.ledger(job),archive/(channel+'-ledger'))
                 if c.tree(archive/channel)!=item['files'] or c.tree(archive/(channel+'-ledger'))!=item['ledger']:raise RuntimeError('workflow_archive_failed')
                 for name in ('blocked.json','autonomy-feedback.json','editor-recovery-status.json'):(job/name).unlink(missing_ok=True)
-                c.write(job/'editorial-plan.json',item['plan'])
+                value=item['plan']
+                if not (job/'video.mp4').exists():
+                    if kind=='catarsis':
+                        status['channels'][channel].update(state='preparing',phase='recovering_saved_inputs',error_code=None)
+                        status['updated_at']=timestamp();c.write(state/'status.json',status)
+                    from workflow_preparation import prepare
+                    value=prepare(job,value,kind,task,channel,token,guard)
+                c.write(job/'editorial-plan.json',value)
                 if kind=='catarsis':status['channels'][channel]=run_catarsis(job,task,channel,ident,guard)
                 else:run_documentary(job,task,ident,guard);status=c.read(state/'status.json')
                 verify_ledger(job,item['original_budget'])

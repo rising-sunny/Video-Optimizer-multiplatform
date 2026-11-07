@@ -38,6 +38,26 @@ MP4 with valid technical QA. Ready sibling channels are preserved. Original
 claims remain; every continuation gets a separate durable authorization, claim,
 backup and attempt record. A job has at most three such continuations.
 
+### Missing preparation inputs (v49.2)
+
+Same-job inspection remains read-only. After claiming the authorized continuation
+and archiving its original files and ledger, the worker prepares missing native
+history/music snapshots, retrieves only cited public factual pages through the
+existing six-GET receipt mechanism, and validates the complete plan. Existing
+inputs, failed page intents and original paid counters are retained. Unsupported
+citations never become verified merely because they occur in the saved response.
+One evidence-bound plan correction may use the original remaining text budget,
+with capacity reserved for the independent assessment. There is no new topic,
+research API budget, automatic provider fallback or fabricated approval.
+
+The native source contains an old `generation_moved_to_codex_chat` entry-point
+sentinel in `build`/`invoke`. For user-authorized generation the adapter recognizes
+only that exact first statement and compiles the remaining native function in
+its original namespace. The pinned native file and readiness record are unchanged;
+the actual native validation, sandbox, encoding, reviews and approval still run.
+Other guards are never removed. The adapter applies to future Short builds as
+well as saved Short continuations; documentary functions retain their own pipeline.
+
 Shorts retain their chosen music, native rendering, actual factual/rights and
 visual reviews, and native approval. Documentaries retain the installed narration,
 SRT, source acquisition and shot-checkpoint functions. Existing valid MP4 review

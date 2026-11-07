@@ -1,0 +1,93 @@
+{
+  "version": 1,
+  "release_id": "same-job-preparation-v49-2",
+  "files": [
+    {
+      "target": "workflow_jobs.py",
+      "source": "automation/autonomy/modules/workflow_jobs.py",
+      "sha256": "c7fea314b2059fec5c4934b29b733475b65526e09258bfad674a667a7b93a60c",
+      "expected_sha256": "9181b10b01e2601ec15932e2ce9942ea54c430afa317d6997976371b0acf1c02"
+    },
+    {
+      "target": "workflow_native.py",
+      "source": "automation/autonomy/modules/workflow_native.py",
+      "sha256": "139ff260df1c1492a4347d93d5a11501cf2949b02142a34908df421bbf1f1e12",
+      "expected_sha256": "b40bee29e182c463bb20474ce9f8dbc59a68ac6963f197dbf25600c908c0b694"
+    },
+    {
+      "target": "workflow_preparation.py",
+      "source": "automation/autonomy/modules/workflow_preparation.py",
+      "sha256": "8952f2ed466ce9601ada34b89f89023aa08134e5f042131306dd65c420dcc955",
+      "expected_sha256": "absent"
+    },
+    {
+      "target": "workflow_inputs.py",
+      "source": "automation/autonomy/modules/workflow_inputs.py",
+      "sha256": "0a8724b55c4c3f670383102b34cffc80ac228b1abaeb5358119b8047c4acf166",
+      "expected_sha256": "92813ca59cbb624479c22a9cef118067bbb689ac2d0fd30b1104fedf30901e43"
+    },
+    {
+      "target": "generation_worker.py",
+      "source": "automation/autonomy/modules/generation_worker.py",
+      "sha256": "6d3caf07c062282f875dcd1aa4ca9a54304d5a6a8eb59be9c0c6989ffdbee92f",
+      "expected_sha256": "8fc14201892c4a7836b5204fb710d6d936aafa75dd642d19a04aa580b62114e1"
+    }
+  ],
+  "tests": [
+    {
+      "source": "automation/autonomy/tests/test_resume_preparation.py",
+      "path": "test_resume_preparation.py",
+      "sha256": "b98112b08c51a22d06fd36465e34c07708d03f2c8f3e99f673b50d7f7b5f750f"
+    },
+    {
+      "source": "automation/autonomy/tests/test_saved_inputs.py",
+      "path": "test_saved_inputs.py",
+      "sha256": "db2da8baea7f5e67280e4d896e05309b1d70770ee1c1562592a0363df1b9c59a"
+    },
+    {
+      "source": "automation/autonomy/tests/test_workflow.py",
+      "path": "test_workflow.py",
+      "sha256": "49ea64dc6c07ffeaf7894d54dc3797cf5cffc96e79e473b67443dbdc6f0c1a4e"
+    },
+    {
+      "source": "automation/autonomy/source_patch.py",
+      "path": "source_patch.py",
+      "sha256": "f7590bb92ada72e3cefeea70937c08388b6dc591191697968adfc3e95c89020f"
+    },
+    {
+      "source": "automation/autonomy/maintenance_daemon.py",
+      "path": "maintenance_daemon.py",
+      "sha256": "27afe67b8de67b80510a31f9960392a920cda0dca83bb90abc22f21065bac6d5"
+    },
+    {
+      "source": "automation/autonomy/baseline/deepseek_editor.py",
+      "path": "baseline/deepseek_editor.py",
+      "sha256": "5f0784537695f1a576fb1d2fc22e19b940732ae5d1c07c1aeebd7accd9407543"
+    },
+    {
+      "source": "automation/autonomy/baseline/documentary_service.py",
+      "path": "baseline/documentary_service.py",
+      "sha256": "d72767abde3475795539f75ccc5bd62bed73534208dbbd982f8ecf77d6b530f0"
+    },
+    {
+      "source": "automation/autonomy/baseline/shorts_handoff.py",
+      "path": "baseline/shorts_handoff.py",
+      "sha256": "e2057297e4237407b3ed1d1d2d931f649ae434377812a789a5c479b671e6a6d6"
+    },
+    {
+      "source": "automation/autonomy/baseline/generation_worker.py",
+      "path": "baseline/generation_worker.py",
+      "sha256": "09260ea99cafa3a211068619141c14fd8eac7ef96b5640703beca31d377dd461"
+    },
+    {
+      "source": "automation/autonomy/baseline/generation_tools.py",
+      "path": "baseline/generation_tools.py",
+      "sha256": "a9262d490111232c2ff3d33a4ab6d65a7d928985ed7804fc69a58e5cc09dafda"
+    },
+    {
+      "source": "automation/autonomy/baseline/generation_service.py",
+      "path": "baseline/generation_service.py",
+      "sha256": "5d697ede31a35a49fe03bf95cc85b6872e963f6c9929e88068cb7fdaf60ddb7b"
+    }
+  ]
+}

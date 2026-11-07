@@ -208,6 +208,8 @@ class CheckpointBoundaryTests(unittest.TestCase):
     def short_modules(self,scope='production'):
         from contextlib import nullcontext
         editorial=module('test_checkpoint_editorial',external=lambda *a:None,__file__=__file__)
+        enabling=patch.object(native,'enabled',side_effect=lambda *a:nullcontext())
+        enabling.start();self.addCleanup(enabling.stop)
         exec('def build(*args,**kwargs):raise AssertionError("must reuse existing video")',editorial.__dict__)
         def approve(*args):
             c.write(self.job/'approval.json',dict(scope=scope))

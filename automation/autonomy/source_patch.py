@@ -25,6 +25,13 @@ def generation_worker(text):
             '    from workflow_native import implementation\n    editorial = implementation(editorial)\n')
     if "'workflow_common.py','workflow_jobs.py'" not in text:
         text=replace(text,"    module_names = (", "    module_names = ('workflow_common.py','workflow_jobs.py','workflow_native.py','workflow_recovery.py','workflow_service.py',")
+    if 'with enabled(editorial, folder, channel), manual_editorial' not in text:
+        text=replace(text,
+            '    with manual_editorial(editorial, folder, batch, channel, day, guard, recovery=recovery):\n',
+            '    from workflow_native import enabled\n'
+            '    with enabled(editorial, folder, channel), manual_editorial(editorial, folder, batch, channel, day, guard, recovery=recovery):\n')
+    if "'workflow_preparation.py','workflow_inputs.py'" not in text:
+        text=replace(text,"    module_names = (", "    module_names = ('workflow_preparation.py','workflow_inputs.py',")
     return text
 
 def deepseek_editor(text):

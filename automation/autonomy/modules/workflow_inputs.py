@@ -43,4 +43,5 @@ def resume_inputs(job):
     return dict(read_only=True, ai_requests=0, network_requests=0,
         fetched_sources=fetches[:14], factual_snapshots=snapshots,
         saved_snapshot_text=saved[:6], music=dict(fields=list(music), tracks=tracks),
+        preparation=c.read(job/'workflow-preparation.json') if (job/'workflow-preparation.json').is_file() else None,
         evidence_notice='Public saved input data only; a saved source or catalogue is not a quality approval.')
