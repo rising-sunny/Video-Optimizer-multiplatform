@@ -45,3 +45,5 @@ backs up and updates only those pins, and executes the original native preflight
 before continuing this same request. It never refreshes readiness automatically.
 The original v48 baseline remains frozen as the historical input to this exact
 migration; the installed worker and correction receipt record the new binding.
+
+For the observed Curie JSON failure, see [saved JSON recovery](SAVED-JSON-v48.2.md). Reuse the exact batch and response; never reset its paid ledger or claims.
