@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "release_id": "documentary-review-scope-v53-11",
+  "files": [
+    {
+      "target": "deepseek_review.py",
+      "source": "automation/autonomy/modules/deepseek_review.py",
+      "sha256": "cf510f42b2d43b4b8040ee249c49ed0effb9c5df0e3fc09752bf3a42bc02505d",
+      "expected_sha256": "9ffb18824804edc3143780e1c1f4f4f78b88e2a835216105f815413f9cc76d07"
+    }
+  ],
+  "tests": [
+    {
+      "source": "automation/documentary/skylab-v53/tests/test_review_compact_v53.py",
+      "path": "test_review_compact_v53.py",
+      "sha256": "332858005600d22b5d9639c70254e8182580e03b97820d56fb13c58d11b9992b"
+    }
+  ]
+}

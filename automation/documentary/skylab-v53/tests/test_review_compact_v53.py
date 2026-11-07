@@ -1,8 +1,12 @@
 import copy
 import unittest
-from deepseek_review import compact_evidence
+from deepseek_review import compact_evidence,compact_for_scope
 
 class Compact(unittest.TestCase):
+    def test_existing_short_evidence_keeps_its_original_input_binding(self):
+        value={'license-0.json':{'record':{'source_rights':{'Artist':{'value':'<b>Full Author</b>'}}}}}
+        self.assertIs(compact_for_scope('/runtime/manual-catarsis/batch/channel',value),value)
+        self.assertNotEqual(compact_for_scope('/runtime/manual-documentary/job',value),value)
     def test_all_facts_restrictions_links_and_selected_music_are_retained(self):
         value={'editorial-plan.json':{'segments':[{'narration':'Unchanged complete narration.'}]},
             'factual_source_excerpts':{'https://nasa.gov/source':{'text':'Full fetched source without truncation.'}},

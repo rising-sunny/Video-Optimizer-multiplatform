@@ -103,12 +103,16 @@ def evidence(folder, enforce_limit=True):
                 value=dict(file_title=value.get('file_title'),metadata=selected,retrieved_at=value.get('retrieved_at'),
                     full_receipt_sha256=digest(path),full_receipt_preserved=True)
             result[path.name] = value
-    if isinstance(result.get('music-license-evidence.json'),dict):
+    if folder.parent.name=='manual-documentary' and isinstance(result.get('music-license-evidence.json'),dict):
         result['music-license-evidence.json'].update(full_receipt_sha256=digest(folder/'music-license-evidence.json'),full_receipt_preserved=True)
-    result=compact_evidence(result)
+    result=compact_for_scope(folder,result)
     if enforce_limit and len(encode(result).encode()) > 145000:
         raise Failure('generation_dependency_deepseek_review_context_limit')
     return result
+
+def compact_for_scope(folder,result):
+    # Preserve legacy Short input-bound provider handoffs byte for byte.
+    return compact_evidence(result) if Path(folder).parent.name=='manual-documentary' else result
 
 def compact_evidence(result):
     """Lossless rights text/link normalization; select the actual soundtrack.
