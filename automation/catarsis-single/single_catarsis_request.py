@@ -50,6 +50,24 @@ def call(value):
     return json.loads(raw)
 
 
+def check_account():
+    # Reuse the installed read-only account reader. These two functions do not
+    # inspect a job, reset a claim or send a model request.
+    try:
+        from chrome_dome_codex_quota_20261106 import fetch_limits, summarize
+    except ImportError:
+        raise RuntimeError('single_codex_quota_reader_missing') from None
+    value = summarize(fetch_limits(timeout=8))
+    if value.get('ordinary_usage_allowed') is not True:
+        raise RuntimeError('single_codex_usage_not_available')
+    for limit in value.get('limits', []):
+        if limit.get('spend_control_reached') is True or any(
+                isinstance(limit.get(name), dict) and limit[name].get('used_percent', 100) >= 100
+                for name in ('primary', 'secondary')):
+            raise RuntimeError('single_codex_usage_not_available')
+    return True
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--request-file', required=True)
@@ -65,9 +83,10 @@ def main():
         generation_worker.preflight()
         if deepseek_runtime.MAX_ESTIMATE != .20 or deepseek_runtime.LIMITS.get('chat') != 10:
             raise RuntimeError('single_existing_budget_configuration_changed')
+        check_account()
         print(json.dumps(dict(state='checked', channel=request['channel'], request_id=request['request_id'],
             style_profile=VERSION, new_videos=0, ai_requests=0, estimated_usd_ceiling=.20,
-            generation='not_requested', publication='not_requested')), flush=True)
+            codex_usage_allowed=True, generation='not_requested', publication='not_requested')), flush=True)
         return
     result = call(request)
     print(json.dumps(result, ensure_ascii=False), flush=True)
