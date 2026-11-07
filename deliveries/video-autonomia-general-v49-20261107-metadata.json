@@ -1,8 +1,8 @@
 {
   "name": "video-autonomia-general-v49-20261107",
-  "bytes": 70132,
-  "archive_sha256": "7558eda0c6160b7ae07271421abe30b5895b21220e17a4dde11f65d8519dec6c",
-  "base64_git_blob": "5939c5ee2b1b6a001060832d6c086c792c13d81b",
+  "bytes": 70967,
+  "archive_sha256": "dbc66d8354fc7b8be23e76f277c0f70b095a1a4b89205a225f212c46f163bac6",
+  "base64_git_blob": "aded9b96830a98f70632982228e7e5d2eee58e01",
   "files": 22,
-  "offline_tests": 47
+  "offline_tests": 50
 }

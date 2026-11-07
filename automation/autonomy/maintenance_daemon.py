@@ -30,6 +30,7 @@ ROOT=Path('/opt/video-agent-mcp')
 REPO=Path('/home/videoagent/Video-Optimizer-multiplatform')
 AUTOMATION=Path('/home/videoagent/video-automation')
 LOCK=Path('/run/lock/video-generation-install.lock')
+STAGING=Path('/var/lib/video-workflow-test-staging')
 SCHEMAS={'inventory':{'operation'},'source':{'operation','module'},
     'deploy':{'operation','release_id','commit_sha','manifest_sha256'},'status':{'operation','deployment_id'}}
 
@@ -157,17 +158,34 @@ def git_file(commit,path):
 def tests_command(stage,policy):
     # Test code runs as videoagent, offline, with home/credentials/control sockets
     # hidden. No release-provided command is executed by the root controller.
-    return ['systemd-run','--quiet','--wait','--pipe','--collect','--unit=video-workflow-tests-'+stage.name[-16:]+'-'+sha(policy['python'].encode())[:8],
+    if not stage.is_relative_to(STAGING):raise RuntimeError('maintenance_staging_path_not_supported')
+    return ['systemd-run','--wait','--pipe','--collect','--unit=video-workflow-tests-'+stage.name[-16:]+'-'+sha(policy['python'].encode())[:8],
         '--property=User=videoagent','--property=Group=videoagent','--property=PrivateNetwork=yes',
         '--property=PrivateTmp=yes','--property=ProtectHome=tmpfs','--property=ProtectSystem=strict',
         '--property=NoNewPrivileges=yes','--property=PrivateDevices=yes',
-        '--property=InaccessiblePaths=/run/credentials /run/video-agent-prepare /run/video-workflow-maintenance',
+        '--property=TemporaryFileSystem=/run:ro',
+        '--property=InaccessiblePaths=/proc',
         '--property=BindReadOnlyPaths='+str(Path(policy['python']).parent.parent),
         '--property=ReadWritePaths='+str(stage/'work'),
         '--property=WorkingDirectory='+str(stage/'work'),
         '--setenv=PYTHONPATH='+str(stage/'candidate')+':'+str(ROOT),
         '--setenv=PYTHONDONTWRITEBYTECODE=1',
         policy['python'],'-B','-m','unittest','discover','-s',str(stage/'tests'),'-p','test_*.py','-q']
+
+def run_tests(stage,policy):
+    command=tests_command(stage,policy)
+    result=subprocess.run(command,capture_output=True,text=True,timeout=600)
+    output=(result.stdout or '')+'\n'+(result.stderr or '')
+    success=result.returncode==0 and re.search(r'Ran [1-9][0-9]* tests?\b',output) is not None
+    unit=next(arg.split('=',1)[1] for arg in command if arg.startswith('--unit='))+'.service'
+    if not success:
+        # Namespace/exec failures can have empty --pipe output. The journal owns
+        # those startup errors even after --collect removes the transient unit.
+        journal=subprocess.run(['journalctl','-u',unit,'-n','35','-o','cat','--no-pager'],
+            capture_output=True,text=True,timeout=15)
+        output+='\n'+(journal.stdout or '')+'\n'+(journal.stderr or '')
+    return dict(passed=success,unit=unit,exit_code=result.returncode,output=clean(output),
+        phase='tests' if re.search(r'Ran [0-9]+ tests?\b',output) else 'test_unit_startup')
 
 def controls():
     path=Path('/home/videoagent/video-automation/runtime/production/PAUSED')
@@ -241,7 +259,8 @@ def apply(deployment,policy):
             if sha(raw)!=deployment['manifest_sha256']:raise RuntimeError('maintenance_manifest_hash_changed')
             manifest=json.loads(raw);validate_manifest(manifest,policy)
             if manifest['release_id']!=deployment['release_id']:raise RuntimeError('maintenance_release_mismatch')
-            stage=Path(tempfile.mkdtemp(prefix='video-workflow-tests-',dir='/var/tmp'));stage.chmod(0o755)
+            public_directory(STAGING)
+            stage=Path(tempfile.mkdtemp(prefix='video-workflow-tests-',dir=STAGING));stage.chmod(0o755)
             for name in ('candidate','tests','work'):public_directory(stage/name)
             os.chown(stage/'work',policy['client_uid'],policy['client_gid'])
             originals={};candidates={};total=0
@@ -272,11 +291,11 @@ def apply(deployment,policy):
                         if node.targets[0].id=='LIMITS' and isinstance(node.value,ast.Call):values['limits']={k.arg:ast.literal_eval(k.value) for k in node.value.keywords}
                 if values!=dict(ceiling=.2,limits=policy['paid_limits']):raise RuntimeError('maintenance_paid_limits_changed')
             progress('testing')
-            test=subprocess.run(tests_command(stage,policy),capture_output=True,text=True,timeout=600)
-            output=test.stdout+'\n'+test.stderr
-            if test.returncode or not re.search(r'Ran [1-9][0-9]* tests?\b',output):
-                raise RuntimeError('maintenance_offline_tests_failed:'+clean(output))
-            progress('tested',test_summary=clean(output))
+            test=run_tests(stage,policy)
+            if not test['passed']:
+                progress('testing_failed',test_result=test)
+                raise RuntimeError('maintenance_offline_tests_failed:'+test['output'])
+            progress('tested',test_summary=test['output'])
             if controls()!=before_controls:raise RuntimeError('maintenance_daily_controls_changed')
             if broker('manual_activity').get('state')!='idle':raise RuntimeError('maintenance_manual_work_started')
             backup=STORE/'backups'/ident;backup.mkdir(mode=0o700,parents=True,exist_ok=False)

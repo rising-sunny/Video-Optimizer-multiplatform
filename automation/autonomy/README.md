@@ -93,7 +93,11 @@ Manifest schema:
 ```
 
 Tests execute as videoagent with networking disabled and home, credentials and
-control sockets hidden. Only a temporary working directory is writable. Zero
+control sockets hidden. Staged sources live under `/var/lib/video-workflow-test-staging`,
+outside the private `/tmp` and `/var/tmp` namespaces; an empty read-only `/run`
+also hides credentials and control sockets that do not exist yet at bootstrap.
+Host process files under `/proc` are inaccessible to test code.
+Only the isolated working directory and private temporary space are writable. Zero
 discovered tests is a failure. The controller waits for idle jobs, rejects source
 drift, backs up exact bytes, verifies service health and the authentication
 boundary, and rolls back failures. An interrupted installation is reconciled from

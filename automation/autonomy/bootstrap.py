@@ -84,7 +84,8 @@ def mcp_python():
 def stage_test(candidates,policy):
     spec=importlib.util.spec_from_file_location('workflow_admin_test_helper',BUNDLE/'maintenance_daemon.py')
     admin=importlib.util.module_from_spec(spec);spec.loader.exec_module(admin)
-    stage=Path(tempfile.mkdtemp(prefix='video-workflow-bootstrap-',dir='/var/tmp'));stage.chmod(0o755)
+    admin.public_directory(admin.STAGING)
+    stage=Path(tempfile.mkdtemp(prefix='video-workflow-bootstrap-',dir=admin.STAGING));stage.chmod(0o755)
     for name in ('candidate','tests','work'):admin.public_directory(stage/name)
     os.chown(stage/'work',policy['client_uid'],policy['client_gid'])
     for name,data in candidates.items():base.atomic(stage/'candidate'/name,data)
@@ -96,10 +97,12 @@ def stage_test(candidates,policy):
     base.atomic(stage/'candidate'/'maintenance_daemon.py',(BUNDLE/'maintenance_daemon.py').read_bytes())
     for interpreter in dict.fromkeys((base.PYTHON,mcp_python())):
         config=dict(policy,python=interpreter)
-        result=subprocess.run(admin.tests_command(stage,config),capture_output=True,text=True,timeout=600)
-        summary=result.stdout+'\n'+result.stderr
-        if result.returncode or not re.search(r'Ran [1-9][0-9]* tests?\b',summary):
-            print(admin.clean(summary),flush=True);raise RuntimeError('workflow_offline_tests_failed')
+        result=admin.run_tests(stage,config)
+        summary=result['output']
+        if not result['passed']:
+            print(json.dumps(dict(state='blocked',test_environment='render' if interpreter==base.PYTHON else 'mcp',
+                test_result=result,ai_requests=0)),flush=True)
+            raise RuntimeError('workflow_offline_tests_failed')
         print(json.dumps(dict(test_environment='render' if interpreter==base.PYTHON else 'mcp',
             summary=admin.clean(summary),ai_requests=0)),flush=True)
 

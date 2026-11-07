@@ -315,19 +315,37 @@ class MaintenanceTests(unittest.TestCase):
         self.assertTrue(admin.sensitive('value = "https://host/x?access_token=private"'))
         self.assertFalse(admin.sensitive('KEY = Path("/home/user/api-key")\nSOURCE_HASH = "'+'a'*64+'"'))
     def test_root_controller_never_executes_a_release_provided_shell_command(self):
-        command=admin.tests_command(Path('/var/tmp/fixture-abc'),self.policy)
+        command=admin.tests_command(admin.STAGING/'fixture-abc',self.policy)
         self.assertIn('--property=PrivateNetwork=yes',command)
         self.assertIn('--property=ProtectHome=tmpfs',command)
         self.assertIn('--property=User=videoagent',command)
-        self.assertIn('--property=InaccessiblePaths=/run/credentials /run/video-agent-prepare /run/video-workflow-maintenance',command)
+        self.assertIn('--property=TemporaryFileSystem=/run:ro',command)
+        self.assertIn('--property=InaccessiblePaths=/proc',command)
         self.assertNotIn('bash',command)
     def test_ordinary_releases_preserve_the_remote_maintenance_contract(self):
         for name in ('generation_service.py','generation_tools.py','workflow_tools.py'):
             with self.subTest(name=name),self.assertRaises(RuntimeError):admin.invariants({name:b'# removed bridge\n'})
     def test_two_runtime_test_units_have_distinct_names(self):
-        first=admin.tests_command(Path('/var/tmp/test'),dict(self.policy,python='/usr/bin/python3'))
-        second=admin.tests_command(Path('/var/tmp/test'),dict(self.policy,python='/opt/mcp/bin/python3'))
+        first=admin.tests_command(admin.STAGING/'test',dict(self.policy,python='/usr/bin/python3'))
+        second=admin.tests_command(admin.STAGING/'test',dict(self.policy,python='/opt/mcp/bin/python3'))
         self.assertNotEqual(next(x for x in first if x.startswith('--unit=')),next(x for x in second if x.startswith('--unit=')))
+    def test_staging_is_outside_private_tmp_and_private_home(self):
+        for hidden in (Path('/tmp'),Path('/var/tmp'),Path('/home'),Path('/root'),Path('/run')):
+            self.assertFalse(admin.STAGING.is_relative_to(hidden))
+        command=admin.tests_command(admin.STAGING/'test',self.policy)
+        self.assertIn('--property=PrivateTmp=yes',command)
+        self.assertIn('--property=WorkingDirectory='+str(admin.STAGING/'test/work'),command)
+    def test_accidental_private_tmp_staging_is_rejected(self):
+        with self.assertRaisesRegex(RuntimeError,'staging_path_not_supported'):
+            admin.tests_command(Path('/var/tmp/hidden-stage'),self.policy)
+    def test_namespace_startup_errors_are_read_from_the_unit_journal(self):
+        failed=types.SimpleNamespace(returncode=226,stdout='',stderr='')
+        journal=types.SimpleNamespace(returncode=0,stdout='Failed to set up mount namespacing: No such file or directory\nstatus=226/NAMESPACE',stderr='')
+        with patch.object(admin.subprocess,'run',side_effect=[failed,journal]) as run:
+            result=admin.run_tests(admin.STAGING/'test',self.policy)
+        self.assertFalse(result['passed']);self.assertEqual(result['phase'],'test_unit_startup')
+        self.assertIn('226/NAMESPACE',result['output'])
+        self.assertEqual(run.call_args_list[1].args[0][0],'journalctl')
     def test_same_deployment_is_idempotent(self):
         controller=admin.Controller(self.policy)
         request=dict(operation='deploy',release_id='test',commit_sha='a'*40,manifest_sha256='b'*64)
@@ -374,7 +392,7 @@ class DeploymentTransactionTests(unittest.TestCase):
         self.deployment=dict(deployment_id='a'*32,release_id='example',commit_sha='b'*40,manifest_sha256=admin.sha(raw))
         self.policy=dict(modules=['generation_worker.py'],native_modules=[],client_uid=os_uid(),client_gid=os_gid(),python='/usr/bin/python3',paid_limits={})
         self.files={'automation/releases/example/manifest.json':raw,'automation/example/worker.py':self.new,'automation/example/test_worker.py':self.test}
-        for target,name,value in ((admin,'ROOT',self.code),(admin,'STORE',self.store),(admin,'RUN',self.run),(admin,'LOCK',self.root/'install.lock')):
+        for target,name,value in ((admin,'ROOT',self.code),(admin,'STORE',self.store),(admin,'RUN',self.run),(admin,'LOCK',self.root/'install.lock'),(admin,'STAGING',self.root/'stages')):
             mocked=patch.object(target,name,value);mocked.start();self.addCleanup(mocked.stop)
         self.git=patch.object(admin,'git_file',side_effect=lambda commit,path:self.files[path]).start()
         self.broker=patch.object(admin,'broker',return_value={'state':'idle'}).start()
