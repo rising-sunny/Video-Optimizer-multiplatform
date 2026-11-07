@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "release_id": "skylab-official-renditions-v53-5",
+  "files": [
+    {
+      "target": "workflow_skylab_recovery.py",
+      "source": "automation/documentary/skylab-v53/modules/workflow_skylab_recovery.py",
+      "sha256": "464b13c32706c349ab502fc9f9330d42242bd39c2b785468c933c6dd11a4a046",
+      "expected_sha256": "d50026f4d32084cbe34408733f32bc7420e396f8f44d99809c7ac8d59cc9d338"
+    }
+  ],
+  "tests": [
+    {
+      "source": "automation/documentary/skylab-v53/tests/fixture_skylab_v53.py",
+      "sha256": "9c4c641c4494b888f8a8b0ae73f7980b1d9fa0e34389de3ff2a6bd3140a1ce39",
+      "path": "fixture_skylab_v53.py"
+    },
+    {
+      "source": "automation/documentary/skylab-v53/tests/test_skylab_recovery_v53.py",
+      "sha256": "85dd71361a33a357e856c005b53a195792a38a7833e569ede2372b8ea3edf381",
+      "path": "test_skylab_recovery_v53.py"
+    }
+  ]
+}

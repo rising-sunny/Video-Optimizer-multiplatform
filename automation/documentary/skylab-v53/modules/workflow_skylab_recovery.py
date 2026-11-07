@@ -37,9 +37,12 @@ def official_record(title, fetcher):
             if movie:
                 # Select an actual provider rendition; never compute a media URL.
                 candidates = [d for d in info.get('derivatives', [])
-                              if d.get('height') == 360 and str(d.get('type', '')).startswith('video/webm')]
+                    if (str(d.get('height', d.get('data-height', ''))) == '360'
+                        or '.360p.vp9.webm' in str(d.get('src', '')))
+                    and str(d.get('type', '')).startswith('video/webm')]
             for variant in candidates:
                 url = variant.get('src', '')
+                if url.startswith('//upload.wikimedia.org/'):url='https:'+url
                 if not host(url, {'upload.wikimedia.org'}):
                     continue
                 source = 'https://commons.wikimedia.org/?curid='+str(page['pageid'])
@@ -51,7 +54,11 @@ def official_record(title, fetcher):
                          canonical_source_url=info.get('descriptionurl'), chosen_derivative=variant))
                 if row:
                     return row
-    raise RuntimeError('workflow_skylab_official_media_unavailable')
+    structure=[dict(title=p.get('title'),pageid=p.get('pageid'),keys=list(p),
+        info=[dict(keys=list(i),license=i.get('extmetadata',{}).get('LicenseShortName'),
+                   derivatives=[{k:d.get(k) for k in ('type','height','data-height','src')} for d in i.get('derivatives',[])])
+              for i in p.get(prop,[])[:1]]) for p in payload.get('query',{}).get('pages',{}).values()]
+    raise RuntimeError('workflow_skylab_official_media_unavailable:'+json.dumps(structure)[:3000])
 
 
 def curated(value, catalogue, film, photo):

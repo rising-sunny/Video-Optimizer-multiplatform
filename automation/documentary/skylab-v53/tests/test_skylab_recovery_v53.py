@@ -57,6 +57,10 @@ class Curation(unittest.TestCase):
         self.assertEqual(row['url'],'https://upload.wikimedia.org/actual.360p.vp9.webm')
         self.assertEqual(row['source_url'],'https://commons.wikimedia.org/?curid=1')
         self.assertIsNone(row['size'])
+        actual=payload(url='//upload.wikimedia.org/actual.360p.vp9.webm')
+        actual['query']['pages']['1']['videoinfo'][0]['derivatives'][0]['height']='360'
+        row=recovery.official_record(recovery.FILM,lambda *args:json.dumps(actual).encode())
+        self.assertTrue(row['url'].startswith('https://upload.wikimedia.org/'))
         for value in (payload('All rights reserved'),payload(url='https://unverified.example/clip.webm')):
             with self.assertRaisesRegex(RuntimeError,'official_media_unavailable'):
                 recovery.official_record(recovery.FILM,lambda *args:json.dumps(value).encode())
