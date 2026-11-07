@@ -18,6 +18,13 @@ import workflow_common as c
 MAX_ATTEMPTS=3
 PYTHON='/home/videoagent/Video-Optimizer-multiplatform/.venv/bin/python'
 
+def retry_allowed(job,code):
+    # An already charged preparation correction must not spend another worker
+    # continuation repeating its malformed result and hitting the same audit.
+    if code in ('generation_dependency_deepseek_json_invalid','generation_dependency_deepseek_incomplete_handoff') and (job is not None and (Path(job)/'workflow-preparation-repair.json').is_file()):
+        return False
+    return code in c.RETRY_CODES
+
 def selected(task):
     from catarsis_selection import task_channels
     return task_channels(task)
@@ -90,8 +97,9 @@ def validate_saved_plan(job,value,kind,task,channel=None):
     from catarsis_style import validate
     from platform_rules import validate_base_plan
     from workflow_native import implementation
+    from workflow_preparation import normalized_fields
     sys.path.insert(0,'/home/videoagent/video-automation');import editorial
-    value,_=timing(value);value=normalize_plan(job,value)
+    value,_=timing(value);value=normalize_plan(job,value);value=normalized_fields(job,value)
     implementation(editorial).validate_plan(value,channel,task['date'],c.read(job/'music-input.json'),c.read(job/'history-input.json'))
     validate(value);validate_base_plan(value)
     return value
@@ -339,7 +347,7 @@ def perform(kind,ident,token):
         c.write(state/'status.json',status)
         enrollment=c.read(state/'workflow.json')
         codes=[status.get('error_code')]+[row.get('error_code') for row in status.get('channels',{}).values()]
-        again=status['state']!='ready' and any(code in c.RETRY_CODES for code in codes) and len(enrollment['attempts'])<MAX_ATTEMPTS
+        again=status['state']!='ready' and any(retry_allowed(Path(item['job']),status.get('channels',{}).get(channel,{}).get('error_code',status.get('error_code'))) for channel,item in auth['jobs'].items()) and len(enrollment['attempts'])<MAX_ATTEMPTS
         enrollment.update(state='complete' if status['state']=='ready' else 'monitoring' if again else 'needs_attention',next_at=time.time()+min(60,5*2**int(token)) if again else 0)
         enrollment['attempts'][int(token)-1]['state']=status['state'];c.write(state/'workflow.json',enrollment)
 
@@ -360,7 +368,8 @@ def poll(generation):
             if status.get('state')=='ready':enrollment['state']='complete';c.write(path,enrollment);continue
             if status.get('state') not in ('blocked','interrupted','partial'):continue
             codes=[status.get('error_code')]+[r.get('error_code') for r in status.get('channels',{}).values()]
-            if not any(code in c.RETRY_CODES for code in codes):enrollment['state']='needs_attention';c.write(path,enrollment);continue
+            active_jobs=[(c.RUNTIME/('manual-catarsis' if kind=='catarsis' else 'manual-documentary')/ident/channel,row.get('error_code')) for channel,row in status.get('channels',{}).items()] if kind=='catarsis' else [(c.RUNTIME/'manual-documentary'/ident,status.get('error_code'))]
+            if not any(retry_allowed(job,code) for job,code in active_jobs):enrollment['state']='needs_attention';c.write(path,enrollment);continue
             if target is not None:
                 value=start(target,kind,ident)
                 if value.get('state')=='blocked':enrollment['state']='needs_attention';c.write(path,enrollment)

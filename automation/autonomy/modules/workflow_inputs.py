@@ -40,8 +40,20 @@ def resume_inputs(job):
         'attribution', 'credit', 'moods', 'genres', 'tags', 'duration', 'bpm')
     tracks = [{key: public_text(row[key], 1600) for key in fields if key in row}
         for row in music.get('tracks', []) if isinstance(row, dict)][:30]
+    plan_check={}
+    try:
+        from workflow_jobs import plan
+        kind='catarsis' if job.parent.parent.name=='manual-catarsis' else 'documentary'
+        ident=job.parent.name if kind=='catarsis' else job.name
+        task=c.read(c.STATE/kind/ident/'request.json')
+        selected=plan(job,kind,task,job.name if kind=='catarsis' else None)
+        plan_check=dict(state='passed',native_schema_only=True,quality_approval=False,
+            music_title=selected.get('music_title'),music_license_url=selected.get('music_license_url'),
+            project=selected.get('project'),metadata=selected.get('metadata'),assets=selected.get('assets'))
+    except Exception as exc:
+        plan_check=dict(state='blocked',error_code=c.clean(exc,500))
     return dict(read_only=True, ai_requests=0, network_requests=0,
         fetched_sources=fetches[:14], factual_snapshots=snapshots,
         saved_snapshot_text=saved[:6], music=dict(fields=list(music), tracks=tracks),
-        preparation=c.read(job/'workflow-preparation.json') if (job/'workflow-preparation.json').is_file() else None,
+        plan_check=plan_check,preparation=c.read(job/'workflow-preparation.json') if (job/'workflow-preparation.json').is_file() else None,
         evidence_notice='Public saved input data only; a saved source or catalogue is not a quality approval.')

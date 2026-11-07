@@ -4,8 +4,37 @@ import hashlib
 import json
 from pathlib import Path
 import sys
+from urllib.parse import urlsplit,urlunsplit,parse_qsl,urlencode
 
 import workflow_common as c
+
+def normalized_fields(job,value):
+    """Use verified labels and the actual publisher template; no factual rewrite."""
+    value=copy.deepcopy(value)
+    for scene in value.get('project',{}).get('sequence',[]):
+        index=scene.get('media')
+        if scene.get('kind') not in ('media','overlay') or type(index) is not int:continue
+        assets=value.get('assets',[])
+        if not 0<=index<len(assets):continue
+        asset=assets[index];label=asset.get('label')
+        if asset.get('role')=='context' and label:
+            scene['kind']='overlay'
+            if label not in str(scene.get('text','')):scene['text']=label
+    music_path=job/'music-input.json';receipt_path=job/'music-license-evidence.json'
+    if music_path.is_file() and receipt_path.is_file():
+        music=c.read(music_path);receipt=c.read(receipt_path)
+        selected=[row for row in music.get('tracks',[]) if row.get('title')==value.get('music_title')]
+        if len(selected)==1 and selected[0].get('isrc'):
+            selected=selected[0]
+            checked=[row for row in receipt.get('tracks',[]) if row.get('isrc')==selected['isrc'] and row.get('title')==selected['title']]
+            template=receipt.get('template_url','');url=urlsplit(template)
+            current=value.get('music_license_url')
+            if checked and url.scheme=='https' and url.hostname in ('incompetech.com','www.incompetech.com') and current==selected.get('license_url'):
+                for name,expected in receipt.get('evidence_files',{}).items():
+                    if Path(name).name!=name or c.digest(job/name)!=expected:raise RuntimeError('workflow_publisher_receipt_changed')
+                query=dict(parse_qsl(url.query));query['isrc']=selected['isrc']
+                value['music_license_url']=urlunsplit((url.scheme,url.netloc,url.path,urlencode(query),''))
+    return value
 
 
 def identity(job,value,kind,task,channel):

@@ -58,6 +58,16 @@ the actual native validation, sandbox, encoding, reviews and approval still run.
 Other guards are never removed. The adapter applies to future Short builds as
 well as saved Short continuations; documentary functions retain their own pipeline.
 
+The JSON parser also recognizes the precise pair of premature object closes
+that puts YouTube tags and Facebook outside platform metadata before a trailing
+Instagram member. It removes only those two structural characters, preserves
+all text/credits, and still rejects duplicates, ambiguous boundaries and unrelated
+suffixes. Diagnostics validate the recovered native plan without starting a
+worker or spending tokens. Context scenes become overlays with their existing
+labels; music license links use the already retrieved publisher template and
+the exact catalogue ISRC, with receipt hashes checked. A failed charged repair
+does not automatically spend another continuation repeating the same result.
+
 Shorts retain their chosen music, native rendering, actual factual/rights and
 visual reviews, and native approval. Documentaries retain the installed narration,
 SRT, source acquisition and shot-checkpoint functions. Existing valid MP4 review
