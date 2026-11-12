@@ -427,8 +427,22 @@ def build_long_form(
         # documentary path (no #shorts, is_short:False, auto chapters).
         youtube_metadata, _fb, _ig = generate_platform_metadata(storyboard, out)
 
+    # Arranque y empaquetado (laboratorio de ganchos 2026-11-12): solo avisa, no bloquea.
+    hook_findings = []
+    try:
+        from documentary_kit.hook_check import report_opening
+        title_for_check = (youtube_metadata or {}).get("title") or topic
+        text, hook_findings = report_opening(
+            [(float(s.get("start_time") or 0.0), s["text"]) for s in all_segments], title_for_check)
+        _log("\n" + text)
+        (out / "hook_check.json").write_text(json.dumps(
+            {"title": title_for_check, "findings": hook_findings}, ensure_ascii=False, indent=1), encoding="utf-8")
+    except Exception as exc:  # una comprobacion opcional nunca debe tumbar el build
+        _log(f"[WARN] hook_check no se pudo ejecutar: {exc}")
+
     duration_s = all_segments[-1]["end_time"] if all_segments else 0
     result = {
+        "hook_check": hook_findings,
         "output_dir": str(out),
         "storyboard_path": str(out / "storyboard.json"),
         "video_path": video_path,

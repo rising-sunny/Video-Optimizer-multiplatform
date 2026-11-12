@@ -1207,7 +1207,9 @@ def render(shots: list[Shot], out: Path, music=None, break_span=None, *, vignett
     if preview:
         cmd += ["-vf", "scale=540:960"]
     cmd += ["-t", f"{T:.3f}", "-c:v", "libx264", "-preset", "veryfast" if preview else "medium",
-            "-crf", "26" if preview else "21", "-pix_fmt", "yuv420p", "-movflags", "+faststart", str(out)]
+            "-crf", "26" if preview else "21",
+            *([] if preview else ["-maxrate", "8M", "-bufsize", "16M"]),   # sin tope un Short de 50 s llegaba a 115 MB y Instagram/Cloudinary lo rechazaban
+            "-pix_fmt", "yuv420p", "-movflags", "+faststart", str(out)]
 
     rng = np.random.default_rng(seed)
     noise = rng.normal(0, 12, (6, H // 2, W // 2)).astype(np.float32)

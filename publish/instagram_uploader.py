@@ -712,12 +712,43 @@ def upload_video(video_path: str, title: str, description: str = "", share_to_fe
     return result
 
 
+INSTAGRAM_MAX_UPLOAD_MB = float(os.getenv("INSTAGRAM_MAX_UPLOAD_MB", "90") or 90)   # Cloudinary (plan gratis) rechaza >100 MB con 413
+INSTAGRAM_REENCODE_MAXRATE = os.getenv("INSTAGRAM_REENCODE_MAXRATE", "8M") or "8M"
+
+
+def ensure_instagram_size(video_path: str, on_status=None) -> str:
+    """Devuelve una ruta apta para subir: si el mp4 pesa mas que INSTAGRAM_MAX_UPLOAD_MB lo recodifica con tope de
+    bitrate (H.264/AAC, faststart) en un archivo hermano `<nombre>_ig.mp4` (se reutiliza si ya existe y es mas nuevo).
+    Caso real (2026-11-10): un Short de 50 s a crf 21 pesaba 115 MB; Cloudinary respondio 413 y la subida directa a Meta
+    fallo; recodificado a 42 MB (maxrate 8M) se publico bien."""
+    import shutil
+    import subprocess
+    src = Path(video_path)
+    if src.stat().st_size <= INSTAGRAM_MAX_UPLOAD_MB * 1_000_000:
+        return str(src)
+    out = src.with_name(src.stem + "_ig.mp4")
+    if out.exists() and out.stat().st_mtime >= src.stat().st_mtime and out.stat().st_size <= INSTAGRAM_MAX_UPLOAD_MB * 1_000_000:
+        return str(out)
+    ffmpeg = shutil.which("ffmpeg") or "ffmpeg"
+    _status(on_status, f"El video pesa {src.stat().st_size / 1_000_000:.0f} MB (> {INSTAGRAM_MAX_UPLOAD_MB:.0f}); recodificando para Instagram...")
+    cmd = [ffmpeg, "-y", "-loglevel", "error", "-i", str(src), "-c:v", "libx264", "-preset", "medium", "-crf", "23",
+           "-maxrate", INSTAGRAM_REENCODE_MAXRATE, "-bufsize", "2x".replace("2x", str(int(float(INSTAGRAM_REENCODE_MAXRATE.rstrip("MmKk")) * 2)) + INSTAGRAM_REENCODE_MAXRATE[-1]),
+           "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", str(out)]
+    r = subprocess.run(cmd, capture_output=True, text=True)
+    if r.returncode != 0 or not out.exists():
+        raise RuntimeError(f"No se pudo recodificar para Instagram: {(r.stderr or '')[-300:]}")
+    if out.stat().st_size > INSTAGRAM_MAX_UPLOAD_MB * 1_000_000:
+        raise RuntimeError(f"El video recodificado sigue pesando {out.stat().st_size / 1_000_000:.0f} MB")
+    return str(out)
+
+
 def _upload_video_once(video_path: str, title: str, description: str, share_to_feed: Optional[bool],
                        on_progress, api_version: Optional[str], on_status, cover_url: Optional[str],
                        identity: Optional[dict]) -> dict:
     video_file = Path(video_path)
     if not video_file.exists():
         raise FileNotFoundError(f"Video not found: {video_file}")
+    video_file = Path(ensure_instagram_size(str(video_file), on_status))
 
     identity = identity or _resolve_instagram_identity(api_version=api_version)
     access_token = str(identity.get("access_token") or "").strip()

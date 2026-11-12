@@ -6,7 +6,7 @@
 > estrategia), **actualizá la sección correspondiente y el Changelog al final**.
 > Mantené los hechos verificables; no inventes rutas ni claves.
 
-Última actualización: **2026-08-14**.
+Última actualización: **2026-11-09**.
 
 ---
 
@@ -287,6 +287,42 @@ Herramienta (solo lectura): `long_form_research.py`
 
 ---
 
+### 6e. Calidad documental para largos (2026-11-09)
+
+**Diagnostico medido** (linter sobre "Why Did Nobody Run? The Texas City Disaster, 1947", 22,5 min): 48 % tarjetas de texto/citas, 35 % paginas de documento,
+13 % fotos, **0 % metraje**; un hueco de **232 s seguidos sin foto ni video real** (en el nucleo de la historia). Suena a presentacion, no a documental.
+
+**Herramientas nuevas** (`documentary_kit/`): 
+- `linter.py` — mide el plan de tomas ANTES de renderizar (material real >=50 %, metraje >=15 %, texto <=25 %, documentos <=20 %, ningun hueco >45 s sin material
+  real, fotos reutilizadas <=3, toma media <=7 s). Se usa asi: construir la lista `{kind, dur, asset}` del plan y llamar `report(shots)`. Linea base de Texas City: 1/9.
+- `footage_finder.py` — busca metraje (Internet Archive, Commons) y clasifica derechos: `pd_gov` / `pd_claim` / `check` / `no`. **Solo descubre; nunca aprueba ni baja.**
+  El noticiero de Texas City salio `check` (correcto). Leccion: **la disponibilidad de metraje de dominio publico depende del tema** (sobra en NASA, pruebas militares,
+  peliculas del gobierno; casi nada en desastres industriales de 1947). Al elegir tema, correr el buscador y puntuar la disponibilidad ANTES de comprometerse.
+- `sound.py` — diseno sonoro sintetizado sin derechos (rumble, wind, tick, riser, boom, hit, heart, y `void` = silencio forzado). Probado: el silencio antes de la
+  explosion queda en 0 y el golpe siguiente es ~4x mas fuerte que el ambiente previo. Pendiente de integrar a `compose.build` (mezcla con sidechain bajo la voz).
+- `docvoice.py` — dos voces: narrador (Christopher) y lector de citas/documentos (Thomas, UK, -10 %, -4 Hz) con marcado `«...»` dentro de la frase y pausas segun
+  puntuacion (`?` 0,55 s, `:` 0,40 s, `~~` = +0,6 s). Compatible con los `timings.json` de `compose.py`.
+
+**Reglas nuevas de investigacion:** (1) fuente primaria PRIMERO (informe oficial, fallo, ley, testimonio) y Wikipedia despues; en Texas City el informe de la Guardia Costera
+(Wayback del PDF de dco.uscg.mil, leido a mano porque no hay OCR) cambio las horas, el reparto de culpas y la causa. (2) Tabla de discrepancias entre fuentes y regla de redaccion
+por cada una. (3) El juez DeepSeek verifica contra las fuentes entregadas, no contra su memoria. (4) Revisar `~/video-projects/` y el canal antes de elegir tema.
+
+**Limites y permisos (NO esquivar):** el cliente de Epidemic de `video-automation/epidemic_mcp.py` solo permite `SearchRecordings`/`DownloadRecording`; la politica
+`music-policy.json` marca `ai_edits_enabled: false`. Los efectos de sonido y la voz generada de Epidemic existen pero **no estan autorizados**: pedir permiso explicito al usuario.
+Otras guardas: `blender_shots.render_shot` aborta a los 60 min (el tablero 3D en Normal los supero y se perdio); un encode con grano (`noise`) sin `-maxrate` llego a >5 GB y casi llena el disco
+compartido (usar `-maxrate 9M -bufsize 18M`, dejar >=15 GB libres, borrar `work/shots` al terminar); nunca `pkill ffmpeg` (mata procesos ajenos): matar por PID propio.
+
+**Arranque y empaquetado (2026-11-12, laboratorio de ganchos):** `documentary_kit/hook_check.py` revisa el guion ANTES de grabar la voz:
+primera frase con ancla concreta (fecha, cifra o nombres; FAIL si arranca con "This is the story of"/"In this video"), una cifra antes de 40 s,
+la consecuencia antes de 30 s, la pregunta del titulo retomada antes de ~60 s, y el titulo/miniatura (<=60 caracteres, una cifra, sin "Tema: subtitulo",
+2-4 palabras en la miniatura). Uso: `python -m documentary_kit.hook_check --timings <proyecto>/timings.json --title "..." --thumb "..."` (o `--script script_data.py`).
+`pipeline/long_form_builder.py` lo corre solo y deja `hook_check.json` (avisa, no bloquea). Base: 83 outliers de canales chicos del nicho vs 328 videos,
+3 transcripciones (vidIQ) y la retencion de 5 documentales propios; datos en `~/video-projects/hooklab/`. Reglas volcadas al Bible (`long_form_rules`).
+
+**Siguiente (piloto):** un largo nuevo con tema de alta disponibilidad de metraje, aplicando linter + dos voces + diseno sonoro + tope de texto, y comparar retencion contra Texas City (48 h y 7 dias).
+
+---
+
 ## 7. El Channel Bible (Stunning Revelations)
 
 Archivo: `daily_shorts/channel_strategy_profile.json` (cargado por `channel_strategy.py`).
@@ -368,6 +404,19 @@ concreta + sujeto nombrado**, duración corta. Ej: "72 Seconds: The Wow! Signal"
 ---
 
 ## Changelog
+
+- **2026-11-12** — **Laboratorio de ganchos y `documentary_kit/hook_check.py` (§6e).** Comprobacion de arranque (primeros 40 s) y empaquetado para largos, integrada en `long_form_builder` (avisa, no bloquea); reglas `first_30_seconds`/`packaging` del Bible reescritas con datos de outliers. **Bug corregido:** `daily_shorts/channel_strategy_profile.json` era JSON invalido desde a4a1f53 (comillas sin escapar en `topic_gate`), asi que el canal por defecto no cargaba su Bible. Guardas: `tests/test_hook_check.py` (7).
+- **2026-11-10** — **Instagram rechazaba MP4 grandes.** Un Short Catarsis de 50 s a crf 21 pesaba 115 MB: la subida directa a Meta devolvia 400 y Cloudinary (plan gratis) 413 por >100 MB. Ahora `catharsis_editor.render` sale con `-maxrate 8M -bufsize 16M` (~45 MB) y `instagram_uploader.ensure_instagram_size` recodifica a `<nombre>_ig.mp4` lo que pase de `INSTAGRAM_MAX_UPLOAD_MB` (90). En la VPS `INSTAGRAM_UPLOAD_MODE=url` (la subida directa sigue fallando del lado de Meta). Guardas: `tests/test_instagram_size_guard.py` (2). La regla de no subir automaticamente se levanto para los Shorts de Stunning Facts of History (CLAUDE.md).
+- **2026-11-09** — **Calidad documental para largos (`documentary_kit/`, §6e).** Linter de plan (linea base Texas City 1/9: 0 % metraje, 48 % texto, hueco de 232 s sin material real),
+  buscador de metraje con evidencia de derechos, diseno sonoro sintetizado, voz de dos roles con pausas. Texas City 1947 publicado (youtu.be/jWrMTNvv45U): guion apoyado en el informe de la
+  Guardia Costera de 1947, 3 animaciones (2 Blender + anillos 2D propia), musica Epidemic. Guardas aprendidas: limite de 60 min de Blender, `-maxrate` en el encode final, sin `pkill ffmpeg`.
+
+- **2026-11-04** — **Tercer canal: Nostalgic Mood (`nostalgic-mood`, `UCmJPkyu-VyieqHVa9hbyS4w`).** Canal aparte de MathRelaxing:
+  Shorts de arte generativo hecho con codigo, sin IA de imagenes. Token `token_nostalgic-mood.json`, perfil
+  `channel_profiles/nostalgic-mood.json`. Nuevo paquete `codeart/` (escenas `tree`, `rain`, `aurora`, `sunflower`; numpy + OpenCV,
+  pad de audio generado): `.venv/bin/python -m codeart.make_short <escena> [segundos]` deja en `auto_videos/codeart/<escena>_<fecha>/`
+  el MP4 y `metadata.json`. Nunca sube: despues `upload_from_metadata(carpeta, privacy_status="unlisted")`. `upload_from_metadata` ahora
+  respeta `tag_research` del metadata (este canal usa tags curados; la investigacion esta pensada para historia).
 
 - **2026-11-03** — **Campana de horas de monetizacion.** Diagnostico con YouTube Analytics (seccion 6d): los largos suman
   16,4 h en 12 meses, sin trafico de inicio, y pierden la mitad del publico en 30 s. Nuevo `long_form_research.py`
