@@ -1,0 +1,13 @@
+{
+  "release": "single-channel-catarsis-v48",
+  "after": {
+    "generation_service.py": "5d697ede31a35a49fe03bf95cc85b6872e963f6c9929e88068cb7fdaf60ddb7b",
+    "generation_worker.py": "09260ea99cafa3a211068619141c14fd8eac7ef96b5640703beca31d377dd461",
+    "documentary_service.py": "d72767abde3475795539f75ccc5bd62bed73534208dbbd982f8ecf77d6b530f0"
+  },
+  "backup": "/var/backups/video-agent-mcp/single-catarsis-v48-20261107T005718839914Z",
+  "install_ai_requests": 0,
+  "generation_scope": "one_selected_channel",
+  "daily_timers_modified": false,
+  "publication": "not_requested"
+}

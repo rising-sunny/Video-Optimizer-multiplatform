@@ -420,10 +420,9 @@ def _resumable_upload(request, on_progress=None) -> dict:
     retry = 0
 
     while response is None:
+        status = None
         try:
             status, response = request.next_chunk()
-            if status and on_progress:
-                on_progress(status.resumable_progress, status.total_size)
         except HttpError as e:
             if e.resp.status in RETRY_STATUSES and retry < MAX_RETRIES:
                 retry += 1
@@ -438,6 +437,13 @@ def _resumable_upload(request, on_progress=None) -> dict:
                 time.sleep(wait)
             else:
                 raise
+        # Fuera del try: un error del callback no es un error de red; reintentarlo
+        # subia otro bloque por intento y abandonaba la sesion a medias (2026-11-03).
+        if status and on_progress and response is None:
+            try:
+                on_progress(status.resumable_progress, status.total_size)
+            except Exception as exc:
+                print(f"[WARN] on_progress fallo ({type(exc).__name__}: {exc}); la subida sigue")
 
     return response
 
@@ -520,6 +526,7 @@ def upload_from_metadata(
         on_status=on_status,
         title_mode=metadata.get("title_mode"),
         archetype=metadata.get("format_archetype"),
+        tag_research=metadata.get("tag_research", True),
     )
 
     # Save upload result

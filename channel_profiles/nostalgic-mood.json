@@ -1,0 +1,30 @@
+{
+  "channel_identity": {
+    "channel_id": "UCmJPkyu-VyieqHVa9hbyS4w",
+    "channel_name": "Nostalgic Mood",
+    "channel_handle": "thenostalgicmood",
+    "language": "en",
+    "niche": "Generative art made with code: calm, nostalgic, procedural visuals (fractal trees, rain, aurora, sunsets) as short vertical loops",
+    "positioning": "Code-made atmospheres. No AI image models: every frame is math and algorithms. Separate channel from MathRelaxing."
+  },
+  "production_policy": {
+    "preferred_format": "code_generated_short",
+    "automatic_scaling": false,
+    "shorts_campaign_enabled": true,
+    "long_ambient_enabled": false,
+    "upload_privacy_first": "unlisted"
+  },
+  "render_spec": {"resolution": "720x1280", "fps": 60, "target_seconds": 16, "min_seconds": 10, "max_seconds": 20, "engine": "python procedural (no diffusion / no generative-AI imagery)"},
+  "audio": {"music_source": "Epidemic Sound", "style": "ambient, calm, lofi", "note": "credit the track in the description"},
+  "metadata_rules": {
+    "title_pattern": "<Hook that states the idea> <emoji> <Scene> #shorts",
+    "description_disclosure": "State it was generated with code, no AI image models; explain the algorithm in 1-2 sentences",
+    "forbidden_tags": ["mathrelaxing"],
+    "tags_base": ["generative art", "creative coding", "procedural", "python", "relaxing", "ambient", "aesthetic", "nostalgic", "satisfying", "lofi"]
+  },
+  "learnings_2026-11": {
+    "best_retention": "Explainer hooks (e.g. 'One Rule Grew 11,542 Branches') retained 94%; plain mood titles ~66-70%",
+    "problem": "Shorts bring views (~89% of channel views) but 0 subscribers gained; add channel CTA / series identity",
+    "last_published": "2026-09-08"
+  }
+}

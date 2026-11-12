@@ -1,0 +1,45 @@
+#!/bin/bash
+set -euo pipefail
+umask 077
+
+if [ "$(id -u)" != 0 ]; then
+    echo 'Ejecutar como root; el trabajo usará el usuario videoagent.' >&2
+    exit 2
+fi
+
+jobVideo=
+previoVideo=
+for argumentoVideo in "$@"; do
+    if [ "$previoVideo" = --job-id ]; then
+        jobVideo=$argumentoVideo
+    fi
+    previoVideo=$argumentoVideo
+done
+if [[ ! "$jobVideo" =~ ^[a-f0-9]{32}$ ]]; then
+    echo 'Falta --job-id seguido del identificador de 32 caracteres.' >&2
+    exit 2
+fi
+
+pythonVideo=/home/videoagent/Video-Optimizer-multiplatform/.venv/bin/python
+scriptVideo=/home/videoagent/video-automation/ops/documentary/publication/publish_documentary.py
+unidadVideo="video-documentary-youtube-$jobVideo"
+for argumentoVideo in "$@"; do
+    if [ "$argumentoVideo" = --inspect ]; then
+        exec runuser -u videoagent -- "$pythonVideo" -B "$scriptVideo" "$@"
+    fi
+done
+if systemctl is-active --quiet "$unidadVideo.service"; then
+    echo 'El publicador de ese documental ya está activo.'
+    journalctl -u "$unidadVideo.service" -n 40 -o cat --no-pager
+    exit 0
+fi
+inicioVideo=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
+resultadoVideo=0
+systemd-run --unit="$unidadVideo" --wait --collect --property=Type=exec \
+    --property=User=videoagent --property=Group=videoagent \
+    --property=WorkingDirectory=/home/videoagent/Video-Optimizer-multiplatform \
+    --property=UMask=0077 --property=RuntimeMaxSec=2h \
+    --property=StandardOutput=journal --property=StandardError=journal \
+    "$pythonVideo" -B -u "$scriptVideo" "$@" || resultadoVideo=$?
+journalctl -u "$unidadVideo.service" --since "$inicioVideo" -n 100 -o cat --no-pager
+exit "$resultadoVideo"

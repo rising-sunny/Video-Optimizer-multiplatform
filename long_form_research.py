@@ -3,6 +3,7 @@
     .venv/bin/python long_form_research.py demand "Kursk submarine disaster" "Sea Peoples bronze age collapse"
     .venv/bin/python long_form_research.py retention 9Mre9fHxDaU sGDGHRRg_hU
     .venv/bin/python long_form_research.py summary
+    .venv/bin/python long_form_research.py reach JQsan954wac bXZ-XCLw5_k
 
 - demand: busca en YouTube (videos 4-20 min desde 2024) y mide la demanda del tema:
   mediana de vistas y cuantos canales chicos (<50k subs) superan 20k vistas.
@@ -11,15 +12,21 @@
 - summary: vistas y minutos por tipo de contenido (Shorts vs largos) en los ultimos 365 dias.
   Solo los largos (videoOnDemand) cuentan para las 4.000 horas del Programa de Socios.
 
+- reach: impresiones y CTR de miniaturas por video (Reporting API, informe diario channel_reach_basic_a1).
+  Los informes tardan 1-2 dias en aparecer tras crear la tarea; los CSV se guardan en generated_media/reach_reports/.
+
 Usa el token de `--channel` (por defecto stunning-revelations), que necesita el scope
 yt-analytics.readonly para `retention` y `summary`.
 """
 from __future__ import annotations
 
 import argparse
+import csv
+import io
 import re
 import statistics
 from datetime import date, timedelta
+from pathlib import Path
 
 from dotenv import load_dotenv
 
@@ -112,6 +119,40 @@ def content_type_summary(ya) -> list:
     ).execute().get("rows", [])
 
 
+def reach_reports(reporting, video_ids=None, report_type="channel_reach_basic_a1") -> dict:
+    """Baja los CSV nuevos del informe de alcance y suma impresiones/CTR por video."""
+    jobs = reporting.jobs().list().execute().get("jobs", [])
+    job = next((j for j in jobs if j["reportTypeId"] == report_type), None)
+    if not job:
+        return {"status": "sin_tarea", "videos": {}, "days": 0, "columns": []}
+    cache = Path("generated_media/reach_reports")
+    cache.mkdir(parents=True, exist_ok=True)
+    reports, token = [], None
+    while True:
+        r = reporting.jobs().reports().list(jobId=job["id"], pageToken=token).execute()
+        reports += r.get("reports", [])
+        token = r.get("nextPageToken")
+        if not token:
+            break
+    totals, columns = {}, []
+    for rep in reports:
+        f = cache / f"{report_type}_{rep['startTime'][:10]}_{rep['id']}.csv"
+        if not f.exists():
+            f.write_bytes(reporting.media().download(resourceName=rep["downloadUrl"].split("/media/")[1].split("?")[0]).execute())
+        rows = list(csv.DictReader(io.StringIO(f.read_text(encoding="utf-8"))))
+        for row in rows:
+            columns = list(row)
+            vid = row.get("video_id")
+            if video_ids and vid not in video_ids:
+                continue
+            imp = float(row.get("video_thumbnail_impressions") or 0)
+            ctr = float(row.get("video_thumbnail_impressions_ctr") or 0)
+            t = totals.setdefault(vid, {"impressions": 0.0, "clicks": 0.0})
+            t["impressions"] += imp
+            t["clicks"] += imp * ctr
+    return {"status": "ok" if reports else "pendiente", "videos": totals, "days": len(reports), "columns": columns}
+
+
 def main() -> None:
     load_dotenv(".env")
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
@@ -120,7 +161,20 @@ def main() -> None:
     sub.add_parser("demand").add_argument("queries", nargs="+")
     sub.add_parser("retention").add_argument("video_ids", nargs="+")
     sub.add_parser("summary")
+    sub.add_parser("reach").add_argument("video_ids", nargs="*")
     args = parser.parse_args()
+    if args.cmd == "reach":
+        from googleapiclient.discovery import build
+
+        creds = _get_credentials(interactive=False, channel_profile=args.channel)
+        r = reach_reports(build("youtubereporting", "v1", credentials=creds), set(args.video_ids) or None)
+        print(f"estado: {r['status']} | informes diarios: {r['days']}")
+        if r["status"] == "pendiente":
+            print("YouTube aun no genero informes (suele tardar 1-2 dias desde que se creo la tarea).")
+        for vid, t in sorted(r["videos"].items(), key=lambda kv: -kv[1]["impressions"]):
+            ctr = t["clicks"] / t["impressions"] * 100 if t["impressions"] else 0
+            print(f"{vid}  impresiones {t['impressions']:>9,.0f}  CTR {ctr:5.2f}%")
+        return
     yt, ya = _services(args.channel)
 
     if args.cmd == "demand":

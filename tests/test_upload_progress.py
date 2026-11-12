@@ -101,5 +101,31 @@ class LaGuiCableaElProgreso(unittest.TestCase):
         self.assertIn("make_byte_progress_reporter", fb_block)
 
 
+class YouTubeCallbackRotoNoCortaLaSubida(unittest.TestCase):
+    """2026-11-03: un TypeError en on_progress caia en el `except Exception` de reintentos de red:
+    cada reintento subia otro bloque y, al agotarlos, la sesion quedaba abandonada a medias
+    (video creado en YouTube con duracion P0D)."""
+
+    def test_callback_con_firma_incorrecta(self):
+        from publish.youtube_uploader import _resumable_upload
+
+        class Estado:
+            resumable_progress, total_size = 5, 10
+
+        class Pedido:
+            def __init__(self):
+                self.n = 0
+
+            def next_chunk(self):
+                self.n += 1
+                return (Estado(), None) if self.n < 3 else (None, {"id": "X"})
+
+        pedido = Pedido()
+        with patch("builtins.print"):
+            out = _resumable_upload(pedido, on_progress=lambda enviado: None)
+        self.assertEqual(out, {"id": "X"})
+        self.assertEqual(pedido.n, 3)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

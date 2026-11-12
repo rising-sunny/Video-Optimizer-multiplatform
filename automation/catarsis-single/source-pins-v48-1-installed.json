@@ -1,0 +1,29 @@
+{
+  "release": "approved-native-source-pins-v48.1",
+  "state": "installed",
+  "before_sha256": "24cdd6e83fc8e58a4ff8315eef5c10f003c21e3cba88c5e9c64d8bddcb3d23c3",
+  "corrected_worker_sha256": "00e4d2956db13eaaa63c40b80da20c7f1bd9bdddbbf66011b9d6598f75cf99c9",
+  "corrected_single_worker_sha256": "09260ea99cafa3a211068619141c14fd8eac7ef96b5640703beca31d377dd461",
+  "readiness_sha256": "a84e0b75dca2d174c05faaa6235c2fe5d57c9395cd06484b09cbb76ab469cc56",
+  "source_hashes": {
+    "runner.py": "3746cb10296bdff378d1ab026be1102795052c6ab450187bd71c039bdf73d9e2",
+    "daily_core.py": "896a24a21c67966f3cb889c776b6a238a7b3be3eb2fd7719f4565d7c56d5907b",
+    "daily_remote.py": "d0edd530d9929d516f3f2c96079daf4245cacbc144e3c39eebaa9eea5e196a51",
+    "editorial.py": "f09de5bf5817611dbb802f02e65af7f4a733a4a2c5ce58039a905e0309b012ec",
+    "render_adapter.py": "3f88cff95be05f808796d1361b78fcc22c7a3b20b9f6d6ee8a8cb1b31c9d41bf",
+    "music_provider.py": "8f7cf5719f0494186ac27eea5bc81eb60077159c4346246a7c323bd01a53ce13",
+    "epidemic_mcp.py": "d0e28e4bd91a0d10e8dab9f77c7c1fd10a2dc587ae6128c23400a814c7c2f699"
+  },
+  "changed_pins": [
+    "runner.py",
+    "daily_core.py",
+    "daily_remote.py",
+    "editorial.py"
+  ],
+  "backup": "/var/backups/video-agent-mcp/source-pins-v48-1-20261107T005717576033Z",
+  "install_ai_requests": 0,
+  "automation_sources_modified": false,
+  "readiness_modified": false,
+  "paid_limits_increased": false,
+  "publication": "not_requested"
+}

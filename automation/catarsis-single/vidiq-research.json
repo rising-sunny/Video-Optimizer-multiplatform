@@ -1,0 +1,61 @@
+{
+  "recorded_at": "2026-11-06",
+  "selected_topic": "Marie Curie's mobile X-ray units during World War I",
+  "channel": "stunning-facts-of-history",
+  "format": "English vertical 50–59 second text-led Catarsis",
+  "history_review": {
+    "snapshot": "228838f16c8446119a60bc8aed3cad53",
+    "complete_facts_platform_counts": [
+      {
+        "platform": "youtube",
+        "read": 84,
+        "next_cursor": null
+      },
+      {
+        "platform": "facebook",
+        "read": 83,
+        "next_cursor": null
+      },
+      {
+        "platform": "instagram",
+        "read": 55,
+        "next_cursor": null
+      }
+    ],
+    "topic_matches_in_facts": 0,
+    "curie_title_text_searches_in_revelations": 0,
+    "native_cross_channel_semantic_review": "required_again_before_generation"
+  },
+  "evidence_level": "Search titles, returned counts and platform annotations; no external reference video watched. Not a factual source for the story.",
+  "youtube_references": [
+    {
+      "video_id": "jsEIDI5ZHuM",
+      "channel": "History Diaries",
+      "title": "The Woman Who Made History TWICE | Marie Curie #history #youtubeshorts #shorts #femaleicon",
+      "views": 17800,
+      "breakout_score": 9.4,
+      "role": "Curie topic interest; not specific demand for WWI radiography"
+    },
+    {
+      "video_id": "pMr_1utws9Q",
+      "channel": "xtheticshinobu",
+      "views": 517900,
+      "breakout_score": 3,
+      "role": "Curie topic recognition; different format and story"
+    }
+  ],
+  "excluded_topics_already_published": [
+    "Desmond Doss",
+    "Franz Stigler and Charlie Brown"
+  ],
+  "excluded_search_results": "Broad rescue query returned unrelated modern or fictional content; those examples were not used as history demand evidence.",
+  "confirmed_vidiq_credits": 10,
+  "instagram_tiktok_search_charge": "not_reported",
+  "creative_direction": {
+    "opening": "Her wartime laboratory had wheels.",
+    "payoff": "Science reaching people in need",
+    "narration": false,
+    "reuse_external_footage": false,
+    "factual_sources": "Native editor must fetch and verify primary/museum sources; these discovery examples do not verify historical claims."
+  }
+}
