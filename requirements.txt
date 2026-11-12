@@ -55,3 +55,5 @@ yt-dlp>=2024.1.0
 
 # Nota: Claude Code CLI no requiere dependencias Python adicionales
 # Se ejecuta como proceso local del sistema operativo
+rembg[cpu]==2.0.69  # recorte de sujetos para miniaturas (documentary_kit/imgtools.py); baja su modelo a ~/.u2net al primer uso
+spandrel==0.4.2  # carga Real-ESRGAN x4plus (pesos en ~/apps/models) sobre el torch de arriba; en la VPS: torch 2.15 CPU
