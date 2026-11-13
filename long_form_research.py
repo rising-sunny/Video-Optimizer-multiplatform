@@ -119,6 +119,18 @@ def content_type_summary(ya) -> list:
     ).execute().get("rows", [])
 
 
+def _download_report(reporting, resource: str) -> bytes:
+    """Baja un CSV del Reporting API (download_media devuelve el contenido en streaming; execute() puede devolver str)."""
+    from googleapiclient.http import MediaIoBaseDownload
+
+    buf = io.BytesIO()
+    dl = MediaIoBaseDownload(buf, reporting.media().download_media(resourceName=resource))
+    done = False
+    while not done:
+        _, done = dl.next_chunk()
+    return buf.getvalue()
+
+
 def reach_reports(reporting, video_ids=None, report_type="channel_reach_basic_a1") -> dict:
     """Baja los CSV nuevos del informe de alcance y suma impresiones/CTR por video."""
     jobs = reporting.jobs().list().execute().get("jobs", [])
@@ -138,7 +150,7 @@ def reach_reports(reporting, video_ids=None, report_type="channel_reach_basic_a1
     for rep in reports:
         f = cache / f"{report_type}_{rep['startTime'][:10]}_{rep['id']}.csv"
         if not f.exists():
-            f.write_bytes(reporting.media().download(resourceName=rep["downloadUrl"].split("/media/")[1].split("?")[0]).execute())
+            f.write_bytes(_download_report(reporting, rep["downloadUrl"].split("/media/")[1].split("?")[0]))
         rows = list(csv.DictReader(io.StringIO(f.read_text(encoding="utf-8"))))
         for row in rows:
             columns = list(row)

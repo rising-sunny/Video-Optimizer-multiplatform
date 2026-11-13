@@ -35,7 +35,7 @@ billion dozens dozen half""".split())
 MONTHS = set('january february march april may june july august september october november december'.split())
 STAKES = re.compile(r"\b(die[sd]?|dead|death|deaths|killed|kill|lost|crushed|sank|sunk|vanish(?:ed)?|disappear(?:ed)?|never|missing|"
                     r"trapped|burn(?:ed|t)?|explod(?:ed|es)|collaps(?:ed|e)|surviv(?:ed|e|ors?)|forgot(?:ten)?|secret|alive|"
-                    r"crash(?:ed)?|destroy(?:ed)?|wreck(?:age|ed)?|fell|fall(?:s|ing|en)?|fire\w*|collid(?:ed|e)|only|last|warning|ignored|wrong)\b", re.I)
+                    r"crash(?:ed)?|destroy(?:ed)?|wreck(?:age|ed)?|fell|fall(?:s|ing|en)?|fire\w*|collid(?:ed|e)|only|last|warning|ignored|wrong|abandon(?:ed)?|not come home|never came home|never returned|did not return)\b", re.I)
 META = re.compile(r"^\s*(this is the story of|in this video|welcome|today,? we|hey|hi everyone|let'?s talk about|"
                   r"have you ever wondered)", re.I)
 WEAK_TITLE_WORDS = {'disaster', 'history', 'story', 'explained', 'documentary'}

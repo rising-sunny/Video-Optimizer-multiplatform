@@ -15,12 +15,22 @@ def dur_min(d):
     m = re.match(r'PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?', d or ''); h, mi, s = (int(x or 0) for x in m.groups()); return h * 60 + mi + s / 60
 
 
-def scout_topic(yt, topic, own_ids=frozenset(), footage=True, n=10):
+EN_WORDS = re.compile(r"\b(the|of|how|why|what|when|that|and|in|was|day|who|most|ever)\b", re.I)
+
+
+def _is_english(snippet):
+    lang = (snippet.get('defaultAudioLanguage') or snippet.get('defaultLanguage') or '')
+    return lang.startswith('en') or (not lang and snippet['title'].isascii() and len(EN_WORDS.findall(snippet['title'])) >= 2)
+
+
+def scout_topic(yt, topic, own_ids=frozenset(), footage=True, n=10, english_only=False):
     after = (datetime.now(timezone.utc) - timedelta(days=365)).strftime('%Y-%m-%dT%H:%M:%SZ')
-    r = yt.search().list(part='id', q=topic + ' documentary', type='video', videoDuration='long', order='viewCount', publishedAfter=after, maxResults=n, relevanceLanguage='en').execute()
+    r = yt.search().list(part='id', q=topic + ' documentary', type='video', videoDuration='long', order='viewCount', publishedAfter=after, maxResults=(40 if english_only else n), relevanceLanguage='en', **({'regionCode': 'US'} if english_only else {})).execute()
     ids = [i['id']['videoId'] for i in r.get('items', [])]
     if not ids: return dict(topic=topic, videos=0)
     vs = yt.videos().list(part='snippet,statistics,contentDetails', id=','.join(ids)).execute()['items']
+    if english_only: vs = [v for v in vs if _is_english(v['snippet'])]
+    if not vs: return dict(topic=topic, videos=0, note='sin resultados en ingles')
     chs = yt.channels().list(part='statistics', id=','.join({v['snippet']['channelId'] for v in vs})).execute()['items']
     subs = {c['id']: int(c['statistics'].get('subscriberCount', 0) or 0) for c in chs}
     rows = []
@@ -44,7 +54,7 @@ def scout_topic(yt, topic, own_ids=frozenset(), footage=True, n=10):
 
 
 def main():
-    ap = argparse.ArgumentParser(); ap.add_argument('topics', nargs='+'); ap.add_argument('--json'); ap.add_argument('--no-footage', action='store_true'); a = ap.parse_args()
+    ap = argparse.ArgumentParser(); ap.add_argument('topics', nargs='+'); ap.add_argument('--json'); ap.add_argument('--no-footage', action='store_true'); ap.add_argument('--en', action='store_true', help='solo videos en ingles (los ganadores pequenos suelen ser de otros idiomas)'); a = ap.parse_args()
     from dotenv import load_dotenv; load_dotenv('/home/videoagent/Video-Optimizer-multiplatform/.env')
     from publish.youtube_uploader import get_youtube_service
     yt = get_youtube_service(interactive=False, channel_profile='stunning-revelations')
@@ -52,7 +62,7 @@ def main():
     own = {i['snippet']['resourceId']['videoId'] for i in yt.playlistItems().list(part='snippet', playlistId=up, maxResults=50).execute()['items']}
     res = []
     for t in a.topics:
-        try: r = scout_topic(yt, t, own, not a.no_footage)
+        try: r = scout_topic(yt, t, own, not a.no_footage, english_only=a.en)
         except Exception as e: r = dict(topic=t, error=str(e)[:100])
         res.append(r); print(json.dumps({k: v for k, v in r.items() if k != 'best_small'}, ensure_ascii=False)); 
         for b in r.get('best_small', []): print(f"     ganador pequeno: {b['title']} | {b['channel']} ({b['subs']:,} subs) {b['views']:,} vistas, {b['mins']} min")
