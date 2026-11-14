@@ -13,9 +13,9 @@ from .metadata import build_metadata
 ROOT = Path(__file__).resolve().parent.parent
 
 
-def make(scene, seconds=16):
-    folder = ROOT / "auto_videos" / "codeart" / f"{scene}_{time.strftime('%Y%m%d_%H%M%S')}"
-    mp4 = render(scene, seconds, folder)
+def make(scene, seconds=16, params=None, folder=None):
+    folder = Path(folder) if folder else ROOT / "auto_videos" / "codeart" / f"{scene}_{time.strftime('%Y%m%d_%H%M%S')}"
+    mp4 = render(scene, seconds, folder, params=params)
     info = json.loads((folder / "render_info.json").read_text())
     meta = build_metadata(scene, info["stats"])
     (folder / "metadata.json").write_text(json.dumps(meta, indent=1, ensure_ascii=False), encoding="utf-8")

@@ -32,6 +32,39 @@ COPY = {
                  "scaled by how far each branch sits from the trunk, which is why the trunk barely moves and the tips swing."),
         "extra": ["fractal tree", "l-system", "recursion", "autumn", "sunset"],
     },
+    "pendulum": {
+        "title": "{count} Pendulums, One Tiny Difference \U0001F3B5 Pendulum Wave #shorts",
+        "body": ("{count} pendulums, each a little shorter than the last. The first swings {first} times in the time it takes the last to swing {last}.\n\n"
+                 "Because their rates differ by exactly one swing per loop, they drift out of step into snakes and waves, and line up again at "
+                 "the end. A pendulum's rate depends on its length, so the lengths are chosen to make the swing counts whole numbers. "
+                 "Each bob plays a note on a pentatonic scale every time it passes the lowest point."),
+        "sound": "Sound: generated with code (soft notes from the pendulums over an ambient pad).",
+        "extra": ["pendulum wave", "pendulum", "physics", "harmonic motion", "satisfying", "mesmerizing", "science", "waves"],
+    },
+    "lava": {
+        "title": "{blobs} Circles, One Equation \U0001F525 Lava Lamp Blobs #shorts",
+        "body": ("Nothing here is a blob. There are {blobs} invisible points, and each one adds a field that fades with the square of the distance.\n\n"
+                 "Where the sum of all the fields passes 1, the pixel is inside; where two points are close, their fields add up and the shapes "
+                 "melt into one. This is the idea behind metaballs, a computer graphics technique from the early 1980s."),
+        "sound": "Sound: procedurally generated ambient pad.",
+        "extra": ["metaballs", "lava lamp", "blobs", "shader", "generative art", "mesmerizing", "math", "satisfying"],
+    },
+    "clouds": {
+        "title": "These Clouds Are Just Noise \u2601\ufe0f Sunset Sky #shorts",
+        "body": ("{layers} layers of random numbers, filtered so the big shapes dominate and the small ones add detail, then lit from below by a setting sun.\n\n"
+                 "Each layer is noise with the same statistics at every scale (1/f noise), the same family of tricks used in computer graphics "
+                 "for clouds, terrain and fire. The layers slide at different speeds, which is what makes the sky feel deep."),
+        "sound": "Sound: procedurally generated ambient pad.",
+        "extra": ["clouds", "sunset", "noise", "fractal noise", "sky", "golden hour", "procedural", "timelapse"],
+    },
+    "stars": {
+        "title": "{stars:,} Stars That Do Not Move \U0001F30C Star Trails at Night #shorts",
+        "body": ("Not one of these {stars:,} stars moves. The whole sky turns around a single point, which is how it looks from the ground because the Earth rotates.\n\n"
+                 "At the speed of the real sky, each star would trace about 15 degrees of arc per hour; here it is sped up so you can watch it happen in "
+                 "a few seconds. Long-exposure photographers capture the same circles by leaving the shutter open for hours."),
+        "sound": "Sound: procedurally generated ambient pad.",
+        "extra": ["star trails", "night sky", "stars", "astronomy", "earth rotation", "timelapse", "night", "space"],
+    },
     "rain": {
         "title": "{drops} Raindrops, Each One a Tiny Lens \U0001F327 Night Rain Bokeh #shorts",
         "body": ("Each of these {drops} droplets is a tiny lens: it shows the city lights behind the glass flipped upside down, "
@@ -50,7 +83,7 @@ COPY = {
 
 FOOT = ("\n\nGenerated entirely with code (Python, numpy, OpenCV). No AI image models. Rendered frame by frame at 720x1280 / 60 fps.\n"
         "{sound}\n\n"
-        "Subscribe to Nostalgic Mood for a new code-made atmosphere every week.\n\n"
+        "Code Atmospheres: a new code-made scene three times a week. Subscribe to Nostalgic Mood so you do not miss the next one.\n\n"
         "#nature #generativeart #relaxing #shorts")
 
 
