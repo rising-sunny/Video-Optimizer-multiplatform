@@ -1,0 +1,26 @@
+--- a/foh_publish.py
++++ b/foh_publish.py
+@@ -1,6 +1,6 @@
+ """Publicacion en YouTube (Short), Facebook (reel) e Instagram (reel) del canal Stunning Facts of History. Cada plataforma se
+ registra en el recibo del dia: una plataforma ya publicada no se repite jamas (un reintento solo cubre las que faltan)."""
+-import json, os, sys
++import json, os, subprocess, sys
+ from pathlib import Path
+ from common import *
+ 
+@@ -13,12 +13,15 @@
+     plats = receipt.setdefault('platforms', {})
+     if not plats.get('youtube', {}).get('ok'):
+         try:
++            subprocess.run(['/opt/youtube-short-covers/cover.py', 'history', str(video), meta['title'],
++                            str(day_dir/'youtube-short-cover.jpg')], check=True)
+             from publish.youtube_tags import finalize_youtube_tags
+             from publish.youtube_uploader import upload_video
+             r = upload_video(str(video), meta['title'], description=meta['description'], tags=finalize_youtube_tags(meta['tags']), category_id='27',
+                              privacy_status='public', publish_at=None, made_for_kids=False, is_short=True, thumbnail_path=None,
+                              channel_profile=CHANNEL, tag_research=False, title_mode='off')
+             plats['youtube'] = dict(ok=True, video_id=r.get('video_id'), url=r.get('url'))
++            atomic(day_dir/'receipt.json', receipt)
+         except Exception as e:
+             plats['youtube'] = dict(ok=False, error=str(e)[:300])
+     social = day_dir / 'social'; social.mkdir(exist_ok=True)

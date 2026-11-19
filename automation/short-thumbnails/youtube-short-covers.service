@@ -1,0 +1,17 @@
+[Unit]
+Description=Apply channel covers to processed automatic YouTube Shorts
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/youtube-short-covers
+ExecStart=/opt/mathrelaxing-publisher/venv/bin/python -B -u /opt/youtube-short-covers/reconcile.py
+StateDirectory=youtube-short-covers
+StateDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+TimeoutStartSec=15min

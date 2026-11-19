@@ -1,0 +1,41 @@
+--- a/worker.py
++++ b/worker.py
+@@ -41,6 +41,10 @@
+     run([python,str(HERE/('expression_renderer.py' if e['family']=='expression' else 'renderer.py')),'--recipe',str(recipe),'--out',str(out)]+(['--smoke'] if smoke else []),timeout=6*3600)
+     return out
+ 
++def prepare_youtube_cover(e, video):
++    subprocess.run(['/opt/youtube-short-covers/cover.py', 'math', str(video), e['metadata']['title'],
++                    str(DATA/'covers'/(e['id']+'.jpg'))], check=True)
++
+ def prepare_render(e,out,state):
+     validation=json.loads((out/'validation.json').read_text())
+     if validation.get('preview') or not validation.get('full_decode_passed'):raise RuntimeError('Preview or invalid render')
+@@ -64,6 +68,11 @@
+     # DynamicUser service must still be able to read this root-written file.
+     draft_path.chmod(0o644)
+     state.update(stage='ready',video=str(video));write(item_state(e),state)
++    if 'youtube' in e.get('publish_platforms', PLATFORMS):
++        try:
++            prepare_youtube_cover(e, video)
++        except Exception as exc:
++            alert(e['id'], 'Thumbnail will be retried at publication: '+str(exc))
+ 
+ def render_queue(items):
+     now=datetime.now(TZ)
+@@ -104,6 +113,15 @@
+             journal=Path('/var/lib/mathrelaxing-publisher-cli')/f'{job}-{platform}.json'
+             record=read(journal,{})
+             stage=record.get('stage')
++            if platform=='youtube' and not record:
++                try:
++                    video=state.get('video')
++                    if not video or not Path(video).is_file():
++                        video=Path('/var/lib/mathrelaxing-publisher')/job/'video.mp4'
++                    prepare_youtube_cover(e, video)
++                except Exception as exc:
++                    alert(e['id'], 'Thumbnail preparation: '+str(exc))
++                    continue
+             if stage in ('needs_review','creating','starting','uploading','finishing','publishing'):
+                 platforms[platform]='needs_review';alert(e['id'],platform+': interrupted/ambiguous attempt; manual review required');write(item_state(e),state);continue
+             try:

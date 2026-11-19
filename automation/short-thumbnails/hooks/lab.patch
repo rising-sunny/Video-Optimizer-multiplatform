@@ -1,0 +1,19 @@
+--- a/publisher.py
++++ b/publisher.py
+@@ -4,6 +4,7 @@
+ import json
+ import os
+ import re
++import subprocess
+ import tempfile
+ from datetime import date, datetime, timedelta, timezone
+ from pathlib import Path
+@@ -130,6 +131,8 @@
+     if previous:
+         raise RuntimeError('Earlier upload attempt remains unresolved; duplicate upload prevented')
+     video=render(episode.key,data/'videos')
++    subprocess.run(['/opt/youtube-short-covers/cover.py', 'lab', str(video), episode.question,
++                    str(data/'covers'/f'{episode.key}.jpg')], check=True)
+     if (data/'STOP').exists() or not (data/'ENABLED').is_file():
+         print('Publishing paused after render')
+         return

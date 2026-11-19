@@ -1,0 +1,12 @@
+--- a/test_worker.py
++++ b/test_worker.py
+@@ -23,6 +23,9 @@
+         self.entry={'id':'day01','publish_at':'2026-10-21T18:00:00-03:00'}
+         w.write(w.item_state(self.entry),{'stage':'ready','draft_id':'draft01','platforms':{}})
+         self.calls=[]
++        cover_patch = patch.object(w, 'prepare_youtube_cover')
++        self.cover = cover_patch.start()
++        self.addCleanup(cover_patch.stop)
+     def tearDown(self):
+         self.patch.stop();self.clock.stop();w.DATA=self.old;self.tmp.cleanup()
+     def runfake(self,args,timeout=0):

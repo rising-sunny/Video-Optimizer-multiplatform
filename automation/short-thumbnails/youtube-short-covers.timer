@@ -1,0 +1,10 @@
+[Unit]
+Description=Reconcile new YouTube Short thumbnails every two minutes
+
+[Timer]
+OnCalendar=*-*-* *:0/2:00
+Persistent=true
+AccuracySec=10s
+
+[Install]
+WantedBy=timers.target

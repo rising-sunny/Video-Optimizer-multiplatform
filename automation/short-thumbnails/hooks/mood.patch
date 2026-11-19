@@ -1,0 +1,14 @@
+--- a/run_day.py
++++ b/run_day.py
+@@ -68,8 +68,10 @@
+             except Exception as e:
+                 last = [str(e)[:200]]; log(f'ronda {n + 1} fallo: {str(e)[:200]}')
+         if not folder: receipt['skipped'] = str(last); atomic(ddir / 'receipt.json', receipt); raise Skip(f'QA o render fallido tras los reintentos: {last}')
++    meta = json.loads((folder / 'metadata.json').read_text()); mp4 = str(next(folder.glob('*.mp4')))
++    subprocess.run(['/opt/youtube-short-covers/cover.py', 'mood', mp4, meta['title'],
++                    str(ddir/'youtube-short-cover.jpg')], check=True)
+     if args.dry_run: log('--dry-run: sin publicar'); return
+-    meta = json.loads((folder / 'metadata.json').read_text()); mp4 = str(next(folder.glob('*.mp4')))
+     os.environ['YOUTUBE_TITLE_MODE'] = 'off'
+     from dotenv import load_dotenv; load_dotenv(REPO / '.env')
+     from publish.youtube_uploader import upload_video, get_youtube_service
