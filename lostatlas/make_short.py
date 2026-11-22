@@ -88,7 +88,7 @@ def render(questions, out_dir, episode=1, with_audio=True, bgm=None, bgm_start=0
         from .sound import build_audio
         wav = out_dir / "mix.wav"
         build_audio(tl, wav, bgm, bgm_start)
-        cmd += ["-i", str(wav), "-af", "loudnorm=I=-14:TP=-1.5:LRA=7,aresample=44100", "-c:a", "aac", "-b:a", "160k", "-ar", "44100", "-shortest"]
+        cmd += ["-i", str(wav), "-af", "loudnorm=I=-14:TP=-2.0:LRA=7,aresample=44100", "-c:a", "aac", "-b:a", "160k", "-ar", "44100", "-shortest"]
     cmd += ["-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p", "-movflags", "+faststart", str(mp4)]
     p = subprocess.Popen(cmd, stdin=subprocess.PIPE)
     n = int(tl.total * FPS)

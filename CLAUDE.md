@@ -15,6 +15,7 @@ al día si cambiás un entry point o la estrategia.
 
 - Corré todo con el venv local: `\.venv\Scripts\python.exe <script.py>` (no el Python global).
 - **Nostalgic Mood — subida automática autorizada (2026-11-14):** lun/mié/vie, solo YouTube, con interruptor `~/nm-daily/STOP`, sin recuperar días atrasados y saltando el día si falla el QA. Serie "Code Atmospheres".
+- **The Lost Atlas — subida automática autorizada (2026-11-22):** un Short de quiz por día (geo/year/empire, paquete `lostatlas/`), todos los días 17:00 UTC (+reintentos 18/19), solo YouTube, con interruptor `~/tla-daily/STOP`, sin recuperar días atrasados y saltando el día si falla la verificación de hechos (Wikipedia) o el QA. Música Incompetech (CC BY) rotativa con atribución. Ver `~/tla-daily/README.md`.
 - **Subida automática autorizada (2026-11-10):** el usuario levantó la restricción. Las automatizaciones y los Shorts de Stunning Facts of History pueden publicarse solos (YouTube, Facebook, Instagram). Los largos de Stunning Revelations: seguí preguntando salvo que el usuario lo pida. Siempre con interruptor de parada, sin recuperar días atrasados y saltando el día si fallan la verificación de hechos o el QA.
 - Secretos en `.env` (gitignored) — nunca los commitees.
 - Setup de una PC nueva: `CONTEXTO_OTRA_PC.md` / `SETUP_OTRA_PC.md`.
