@@ -181,7 +181,7 @@ def verify(topic, statements, queries):
 def write_clues(entity, answer, kind, evid, forbidden, avoid_digits=None, notes=""):
     """3 pistas (de la mas dificil a la mas facil) escritas SOLO con la evidencia. [] si no cumplen las reglas."""
     guide = {
-        "geo": 'Clue 3 should be "Capital: <city>" if the country has a clear capital. Clues 1-2: distinctive geography, nature, landmarks, history or culture. No demonyms.',
+        "geo": 'Clue 3 should be "Capital: <city>" if it has a clear capital, BUT if the capital\'s name contains the answer (Oklahoma City, Mexico City, Panama City...) do NOT use a capital clue: use another verifiable fact. Clues 1-2: distinctive geography, nature, landmarks, history or culture. No demonyms.',
         "year": "Describe the event without stating its year. Clue 3 names the event plainly (e.g. 'RMS Titanic sinks').",
         "empire": "Describe the state without naming it. Clue 3 identifies it plainly (capital or its most famous ruler).",
     }[kind]
@@ -200,8 +200,8 @@ def write_clues(entity, answer, kind, evid, forbidden, avoid_digits=None, notes=
     for c in clues:
         if not c or len(c) > MAX_CLUE or not c.isascii():
             return []
-        if any(norm(f) and norm(f) in norm(c) for f in forbidden):
-            return []
+        if any(norm(f) and re.search(r"(?<![a-z0-9])" + re.escape(norm(f)) + r"(?![a-z0-9])", norm(c)) for f in forbidden):
+            return []                                              # palabra COMPLETA: "Indianapolis" no contiene "Indiana", "Oklahoma City" si contiene "Oklahoma"
         if avoid_digits and re.search(re.escape(str(avoid_digits)), c):
             return []
     return clues

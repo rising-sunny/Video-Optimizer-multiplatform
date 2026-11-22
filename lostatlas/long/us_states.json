@@ -1,0 +1,806 @@
+{
+ "Maine": {
+  "state": "Maine",
+  "tier": 0,
+  "tier_label": "Easy",
+  "clues": [
+   "Admitted as 23rd state in 1820",
+   "Borders only one other state",
+   "Capital: Augusta"
+  ],
+  "verified": true,
+  "verified_by": "wikipedia+deepseek",
+  "wiki": [
+   "Maine",
+   "2026 United States House of Representatives elections in Maine"
+  ]
+ },
+ "Louisiana": {
+  "state": "Louisiana",
+  "tier": 0,
+  "tier_label": "Easy",
+  "clues": [
+   "Only state with parishes",
+   "Over half the state is forested",
+   "Capital: Baton Rouge"
+  ],
+  "verified": true,
+  "verified_by": "wikipedia+deepseek",
+  "wiki": [
+   "Louisiana",
+   "Louisiana State Capitol"
+  ]
+ },
+ "Texas": {
+  "state": "Texas",
+  "tier": 0,
+  "tier_label": "Easy",
+  "clues": [
+   "Borders Mexico along the Rio Grande",
+   "Nicknamed the Lone Star State",
+   "Capital: Austin"
+  ],
+  "verified": true,
+  "verified_by": "wikipedia+deepseek",
+  "wiki": [
+   "Texas",
+   "U.S. Route 59 in Texas"
+  ]
+ },
+ "California": {
+  "state": "California",
+  "tier": 0,
+  "tier_label": "Easy",
+  "clues": [
+   "Bordered by Oregon to the north",
+   "Gold rush started in 1848",
+   "Capital: Sacramento"
+  ],
+  "verified": true,
+  "verified_by": "wikipedia+deepseek",
+  "wiki": [
+   "California",
+   "U.S. Route 395 in California"
+  ]
+ },
+ "Alaska": {
+  "state": "Alaska",
+  "tier": 0,
+  "tier_label": "Easy",
+  "clues": [
+   "Sold to US in 1867 for $7.2M",
+   "Borders Yukon and British Columbia",
+   "Capital: Juneau"
+  ],
+  "verified": true,
+  "verified_by": "wikipedia+deepseek",
+  "wiki": [
+   "Alaska",
+   "2026 United States Senate election in Alaska"
+  ]
+ },
+ "Michigan": {
+  "state": "Michigan",
+  "tier": 0,
+  "tier_label": "Easy",
+  "clues": [
+   "Two peninsulas split by Mackinac",
+   "Longest freshwater coastline in US",
+   "Capital: Lansing"
+  ],
+  "verified": true,
+  "verified_by": "wikipedia+deepseek",
+  "wiki": [
+   "Michigan",
+   "2026 United States House of Representatives elections in Michigan"
+  ]
+ },
+ "Hawaii": {
+  "state": "Hawaii",
+  "tier": 0,
+  "tier_label": "Easy",
+  "clues": [
+   "137 volcanic islands form the state",
+   "Admitted to Union Aug 21, 1959",
+   "Capital: Honolulu"
+  ],
+  "verified": true,
+  "verified_by": "wikipedia+deepseek",
+  "wiki": [
+   "Hawaii",
+   "List of United States senators from Hawaii",
+   "Hawaii State Legislature"
+  ]
+ },
+ "New York": {
+  "state": "New York",
+  "tier": 0,
+  "tier_label": "Easy",
+  "clues": [
+   "Erie Canal built in 19th century",
+   "Finger Lakes are a landmark",
+   "Capital: Albany"
+  ],
+  "verified": true,
+  "verified_by": "wikipedia+deepseek",
+  "wiki": [
+   "New York (state)",
+   "2026 United States House of Representatives elections in New York"
+  ]
+ },
+ "Ohio": {
+  "state": "Ohio",
+  "tier": 1,
+  "tier_label": "Medium",
+  "clues": [
+   "Named from Seneca for \"great river\"",
+   "Borders Ontario across Lake Erie",
+   "Capital: Columbus"
+  ],
+  "verified": true,
+  "verified_by": "wikipedia+deepseek",
+  "wiki": [
+   "Ohio",
+   "2024 United States House of Representatives elections in Ohio"
+  ]
+ },
+ "Washington": {
+  "state": "Washington",
+  "tier": 1,
+  "tier_label": "Medium",
+  "clues": [
+   "Mount Rainier rises 14,400 feet",
+   "Capital: Olympia",
+   "Borders Pacific Ocean to west"
+  ],
+  "verified": true,
+  "verified_by": "wikipedia+deepseek",
+  "wiki": [
+   "Washington (state)",
+   "List of governors of Washington"
+  ]
+ },
+ "Georgia": {
+  "state": "Georgia",
+  "tier": 1,
+  "tier_label": "Medium",
+  "clues": [
+   "Flag motto: In God We Trust",
+   "Founded as colony in 1732",
+   "Capital: Atlanta"
+  ],
+  "verified": true,
+  "verified_by": "wikipedia+deepseek",
+  "wiki": [
+   "Georgia (U.S. state)",
+   "Flag of Georgia (U.S. state)"
+  ]
+ },
+ "Massachusetts": {
+  "state": "Massachusetts",
+  "tier": 1,
+  "tier_label": "Medium",
+  "clues": [
+   "Plymouth Colony founded 1620",
+   "Salem witch trials in 1692",
+   "Capital: Boston"
+  ],
+  "verified": true,
+  "verified_by": "wikipedia+deepseek",
+  "wiki": [
+   "Massachusetts",
+   "Commonwealth (U.S. state)"
+  ]
+ },
+ "Maryland": {
+  "state": "Maryland",
+  "tier": 1,
+  "tier_label": "Medium",
+  "clues": [
+   "Settled in 1634 as Catholic haven",
+   "Borders four states and Atlantic",
+   "Capital: Annapolis"
+  ],
+  "verified": true,
+  "verified_by": "wikipedia+deepseek",
+  "wiki": [
+   "Maryland",
+   "2026 United States House of Representatives elections in Maryland"
+  ]
+ },
+ "Minnesota": {
+  "state": "Minnesota",
+  "tier": 1,
+  "tier_label": "Medium",
+  "clues": [
+   "14,420 lakes of 10+ acres",
+   "Only US state motto in French",
+   "Capital: Saint Paul"
+  ],
+  "verified": true,
+  "verified_by": "wikipedia+deepseek",
+  "wiki": [
+   "Minnesota",
+   "2026 United States House of Representatives elections in Minnesota"
+  ]
+ },
+ "Virginia": {
+  "state": "Virginia",
+  "tier": 1,
+  "tier_label": "Medium",
+  "clues": [
+   "World's largest naval base: Norfolk",
+   "Borders Kentucky and Maryland",
+   "Capital: Richmond"
+  ],
+  "verified": true,
+  "verified_by": "wikipedia+deepseek",
+  "wiki": [
+   "Virginia",
+   "West Virginia"
+  ]
+ },
+ "Illinois": {
+  "state": "Illinois",
+  "tier": 1,
+  "tier_label": "Medium",
+  "clues": [
+   "Route 66 started in Chicago",
+   "Borders Lake Michigan northeast",
+   "Capital: Springfield"
+  ],
+  "verified": true,
+  "verified_by": "wikipedia+deepseek",
+  "wiki": [
+   "Illinois",
+   "U.S. Route 66"
+  ]
+ },
+ "Nevada": {
+  "state": "Nevada",
+  "tier": 1,
+  "tier_label": "Medium",
+  "clues": [
+   "36th state, admitted Oct 31, 1864",
+   "Known as the Silver State",
+   "Capital: Carson City"
+  ],
+  "verified": true,
+  "verified_by": "wikipedia+deepseek",
+  "wiki": [
+   "Nevada",
+   "U.S. Route 95 in Nevada",
+   "U.S. Route 50 in Nevada"
+  ]
+ },
+ "Arizona": {
+  "state": "Arizona",
+  "tier": 2,
+  "tier_label": "Hard",
+  "clues": [
+   "Longest numbered highway: 516.5 mi",
+   "Shares Four Corners with 3 states",
+   "Capital: Phoenix"
+  ],
+  "verified": true,
+  "verified_by": "wikipedia+deepseek",
+  "wiki": [
+   "Arizona",
+   "U.S. Route 191 in Arizona"
+  ]
+ },
+ "Pennsylvania": {
+  "state": "Pennsylvania",
+  "tier": 2,
+  "tier_label": "Hard",
+  "clues": [
+   "Founded by William Penn in 1681",
+   "Second state to ratify Constitution",
+   "Capital: Harrisburg"
+  ],
+  "verified": true,
+  "verified_by": "wikipedia+deepseek",
+  "wiki": [
+   "Pennsylvania",
+   "Commonwealth (U.S. state)"
+  ]
+ },
+ "Oregon": {
+  "state": "Oregon",
+  "tier": 2,
+  "tier_label": "Hard",
+  "clues": [
+   "Deepest lake in the U.S.",
+   "Highest point: Mount Hood",
+   "Capital: Salem"
+  ],
+  "verified": true,
+  "verified_by": "wikipedia+deepseek",
+  "wiki": [
+   "Oregon",
+   "U.S. Route 101 in Oregon"
+  ]
+ },
+ "Missouri": {
+  "state": "Missouri",
+  "tier": 2,
+  "tier_label": "Hard",
+  "clues": [
+   "Called the Cave State",
+   "Ragtime music birthplace",
+   "Capital: Jefferson City"
+  ],
+  "verified": true,
+  "verified_by": "wikipedia+deepseek",
+  "wiki": [
+   "Missouri",
+   "2026 United States House of Representatives elections in Missouri"
+  ]
+ },
+ "Tennessee": {
+  "state": "Tennessee",
+  "tier": 2,
+  "tier_label": "Hard",
+  "clues": [
+   "Great Smoky Mountains park is here",
+   "Borders eight other states",
+   "Capital: Nashville"
+  ],
+  "verified": true,
+  "verified_by": "wikipedia+deepseek",
+  "wiki": [
+   "Tennessee",
+   "2026 United States House of Representatives elections in Tennessee"
+  ]
+ },
+ "West Virginia": {
+  "state": "West Virginia",
+  "tier": 2,
+  "tier_label": "Hard",
+  "clues": [
+   "Admitted to Union June 20, 1863",
+   "Only state entirely in Appalachia",
+   "Capital: Charleston"
+  ],
+  "verified": true,
+  "verified_by": "wikipedia+deepseek",
+  "wiki": [
+   "West Virginia",
+   "2018 United States Senate election in West Virginia"
+  ]
+ },
+ "North Carolina": {
+  "state": "North Carolina",
+  "tier": 2,
+  "tier_label": "Hard",
+  "clues": [
+   "Mount Mitchell: 6,684 ft high",
+   "Wright brothers flew at Kitty Hawk",
+   "Capital: Raleigh"
+  ],
+  "verified": true,
+  "verified_by": "wikipedia+deepseek",
+  "wiki": [
+   "North Carolina",
+   "2026 North Carolina Senate election"
+  ]
+ },
+ "Kentucky": {
+  "state": "Kentucky",
+  "tier": 2,
+  "tier_label": "Hard",
+  "clues": [
+   "Northern border is the Ohio River",
+   "Admitted as 15th state in 1792",
+   "Capital: Frankfort"
+  ],
+  "verified": true,
+  "verified_by": "wikipedia+deepseek",
+  "wiki": [
+   "Kentucky",
+   "2026 United States House of Representatives elections in Kentucky"
+  ]
+ },
+ "Iowa": {
+  "state": "Iowa",
+  "tier": 3,
+  "tier_label": "Very Hard",
+  "clues": [
+   "Landlocked in the Upper Midwest",
+   "Flag patterned after France's flag",
+   "Capital: Des Moines"
+  ],
+  "verified": true,
+  "verified_by": "wikipedia+deepseek",
+  "wiki": [
+   "Iowa",
+   "2026 United States House of Representatives elections in Iowa"
+  ]
+ },
+ "Mississippi": {
+  "state": "Mississippi",
+  "tier": 3,
+  "tier_label": "Very Hard",
+  "clues": [
+   "Admitted as 20th state in 1817",
+   "Borders Gulf of Mexico to south",
+   "Capital: Jackson"
+  ],
+  "verified": true,
+  "verified_by": "wikipedia+deepseek",
+  "wiki": [
+   "Mississippi",
+   "2026 United States Senate election in Mississippi"
+  ]
+ },
+ "Wisconsin": {
+  "state": "Wisconsin",
+  "tier": 3,
+  "tier_label": "Very Hard",
+  "clues": [
+   "Admitted as a state in 1848",
+   "Third-longest Great Lakes coastline",
+   "Capital: Madison"
+  ],
+  "verified": true,
+  "verified_by": "wikipedia+deepseek",
+  "wiki": [
+   "Wisconsin",
+   "Wisconsin State Legislature"
+  ]
+ },
+ "Delaware": {
+  "state": "Delaware",
+  "tier": 3,
+  "tier_label": "Very Hard",
+  "clues": [
+   "First state to ratify Constitution",
+   "On Delmarva Peninsula",
+   "Capital: Dover"
+  ],
+  "verified": true,
+  "verified_by": "wikipedia+deepseek",
+  "wiki": [
+   "Delaware",
+   "U.S. Route 301 in Delaware"
+  ]
+ },
+ "Connecticut": {
+  "state": "Connecticut",
+  "tier": 3,
+  "tier_label": "Very Hard",
+  "clues": [
+   "Longest river in New England",
+   "Borders Long Island Sound",
+   "Capital: Hartford"
+  ],
+  "verified": true,
+  "verified_by": "wikipedia+deepseek",
+  "wiki": [
+   "Connecticut",
+   "2026 United States House of Representatives elections in Connecticut"
+  ]
+ },
+ "Utah": {
+  "state": "Utah",
+  "tier": 3,
+  "tier_label": "Very Hard",
+  "clues": [
+   "First state firearm: March 2011",
+   "Borders Arizona, Colorado, NM",
+   "Capital: Salt Lake City"
+  ],
+  "verified": true,
+  "verified_by": "wikipedia+deepseek",
+  "wiki": [
+   "Utah",
+   "List of U.S. state firearms"
+  ]
+ },
+ "Arkansas": {
+  "state": "Arkansas",
+  "tier": 3,
+  "tier_label": "Very Hard",
+  "clues": [
+   "Admitted as 25th state in 1836",
+   "Ozark and Ouachita Mountains",
+   "Capital: Little Rock"
+  ],
+  "verified": true,
+  "verified_by": "wikipedia+deepseek",
+  "wiki": [
+   "Arkansas",
+   "2026 United States House of Representatives elections in Arkansas"
+  ]
+ },
+ "Alabama": {
+  "state": "Alabama",
+  "tier": 3,
+  "tier_label": "Very Hard",
+  "clues": [
+   "Oldest city: Mobile, founded 1702",
+   "Nicknamed Yellowhammer State",
+   "Capital: Montgomery"
+  ],
+  "verified": true,
+  "verified_by": "wikipedia+deepseek",
+  "wiki": [
+   "Alabama",
+   "U.S. Route 78 in Alabama"
+  ]
+ },
+ "New Jersey": {
+  "state": "New Jersey",
+  "tier": 3,
+  "tier_label": "Very Hard",
+  "clues": [
+   "Fifth-smallest U.S. state by area",
+   "Bordered east by the Atlantic Ocean",
+   "Capital: Trenton"
+  ],
+  "verified": true,
+  "verified_by": "wikipedia+deepseek",
+  "wiki": [
+   "New Jersey",
+   "New Jersey Democratic State Committee"
+  ]
+ },
+ "Montana": {
+  "state": "Montana",
+  "tier": 4,
+  "tier_label": "Impossible",
+  "clues": [
+   "Gold discovered there in 1858",
+   "Big Sky Country nickname",
+   "Capital: Helena"
+  ],
+  "verified": true,
+  "verified_by": "wikipedia+deepseek",
+  "wiki": [
+   "Montana",
+   "2026 United States House of Representatives elections in Montana"
+  ]
+ },
+ "Nebraska": {
+  "state": "Nebraska",
+  "tier": 4,
+  "tier_label": "Impossible",
+  "clues": [
+   "Unicameral legislature, nonpartisan",
+   "Borders Iowa across Missouri River",
+   "Capital: Lincoln"
+  ],
+  "verified": true,
+  "verified_by": "wikipedia+deepseek",
+  "wiki": [
+   "Nebraska",
+   "2024 United States House of Representatives elections in Nebraska"
+  ]
+ },
+ "North Dakota": {
+  "state": "North Dakota",
+  "tier": 4,
+  "tier_label": "Impossible",
+  "clues": [
+   "Rugby marks continent's center",
+   "KVLY-TV mast once tallest in West",
+   "Capital: Bismarck"
+  ],
+  "verified": true,
+  "verified_by": "wikipedia+deepseek",
+  "wiki": [
+   "North Dakota",
+   "North Dakota State University"
+  ]
+ },
+ "Colorado": {
+  "state": "Colorado",
+  "tier": 4,
+  "tier_label": "Impossible",
+  "clues": [
+   "38th state admitted Aug 1, 1876",
+   "Shares Four Corners with 3 states",
+   "Capital: Denver"
+  ],
+  "verified": true,
+  "verified_by": "wikipedia+deepseek",
+  "wiki": [
+   "Colorado",
+   "2024 United States House of Representatives elections in Colorado"
+  ]
+ },
+ "Wyoming": {
+  "state": "Wyoming",
+  "tier": 4,
+  "tier_label": "Impossible",
+  "clues": [
+   "44th state, admitted July 10, 1890",
+   "Home to Grand Teton and Yellowstone",
+   "Capital: Cheyenne"
+  ],
+  "verified": true,
+  "verified_by": "wikipedia+deepseek",
+  "wiki": [
+   "Wyoming",
+   "Wyoming Legislature",
+   "2026 United States House of Representatives election in Wyoming"
+  ]
+ },
+ "Rhode Island": {
+  "state": "Rhode Island",
+  "tier": 4,
+  "tier_label": "Impossible",
+  "clues": [
+   "Founded 1636 by Roger Williams",
+   "Nicknamed the Ocean State",
+   "Capital: Providence"
+  ],
+  "verified": true,
+  "verified_by": "wikipedia+deepseek",
+  "wiki": [
+   "Rhode Island",
+   "2026 Rhode Island gubernatorial election",
+   "Rhode Island General Assembly"
+  ]
+ },
+ "New Hampshire": {
+  "state": "New Hampshire",
+  "tier": 4,
+  "tier_label": "Impossible",
+  "clues": [
+   "Nickname: The Granite State",
+   "First presidential primary state",
+   "Capital: Concord"
+  ],
+  "verified": true,
+  "verified_by": "wikipedia+deepseek",
+  "wiki": [
+   "New Hampshire",
+   "2026 New Hampshire elections"
+  ]
+ },
+ "Kansas": {
+  "state": "Kansas",
+  "tier": 4,
+  "tier_label": "Impossible",
+  "clues": [
+   "Highest point: Mount Sunflower",
+   "Became a free state in 1861",
+   "Capital: Topeka"
+  ],
+  "verified": true,
+  "verified_by": "wikipedia+deepseek",
+  "wiki": [
+   "Kansas",
+   "2026 United States Senate election in Kansas"
+  ]
+ },
+ "Vermont": {
+  "state": "Vermont",
+  "tier": 4,
+  "tier_label": "Impossible",
+  "clues": [
+   "Green Mountain Boys militia formed",
+   "Green Mountains run north-south",
+   "Capital: Montpelier"
+  ],
+  "verified": true,
+  "verified_by": "wikipedia+deepseek",
+  "wiki": [
+   "Vermont",
+   "Vermont Senate"
+  ]
+ },
+ "South Dakota": {
+  "state": "South Dakota",
+  "tier": 4,
+  "tier_label": "Impossible",
+  "clues": [
+   "Gold found in Black Hills in 1874",
+   "Missouri River splits state in two",
+   "Capital: Pierre"
+  ],
+  "verified": true,
+  "verified_by": "wikipedia+deepseek",
+  "wiki": [
+   "South Dakota",
+   "South Dakota State University"
+  ]
+ },
+ "Florida": {
+  "state": "Florida",
+  "tier": 0,
+  "tier_label": "Easy",
+  "clues": [
+   "St. Augustine founded in 1565",
+   "Only state on Gulf and Atlantic",
+   "Capital: Tallahassee"
+  ],
+  "verified": true,
+  "verified_by": "wikipedia+deepseek",
+  "wiki": [
+   "Florida",
+   "2024 United States House of Representatives elections in Florida"
+  ]
+ },
+ "Idaho": {
+  "state": "Idaho",
+  "tier": 1,
+  "tier_label": "Medium",
+  "clues": [
+   "US 95 spans over 538 miles",
+   "Forest Service holds about 38%",
+   "Capital: Boise"
+  ],
+  "verified": true,
+  "verified_by": "wikipedia+deepseek",
+  "wiki": [
+   "Idaho",
+   "U.S. Route 95 in Idaho"
+  ]
+ },
+ "South Carolina": {
+  "state": "South Carolina",
+  "tier": 2,
+  "tier_label": "Hard",
+  "clues": [
+   "Named for King Charles I of England",
+   "Borders the Atlantic Ocean",
+   "Capital: Columbia"
+  ],
+  "verified": true,
+  "verified_by": "wikipedia+deepseek",
+  "wiki": [
+   "South Carolina",
+   "List of state highways in South Carolina"
+  ]
+ },
+ "New Mexico": {
+  "state": "New Mexico",
+  "tier": 2,
+  "tier_label": "Hard",
+  "clues": [
+   "Zia sun symbol on gold flag",
+   "Borders Chihuahua and Sonora",
+   "Capital: Santa Fe"
+  ],
+  "verified": true,
+  "verified_by": "wikipedia+deepseek",
+  "wiki": [
+   "New Mexico",
+   "Flag of New Mexico"
+  ]
+ },
+ "Oklahoma": {
+  "state": "Oklahoma",
+  "tier": 0,
+  "tier_label": "Easy",
+  "clues": [
+   "Name means 'red people' in Choctaw",
+   "Nicknamed 'The Sooner State'",
+   "Borders Texas, Kansas, and 4 more"
+  ],
+  "verified": true,
+  "verified_by": "wikipedia+deepseek",
+  "wiki": [
+   "Oklahoma",
+   "2026 Oklahoma elections"
+  ]
+ },
+ "Indiana": {
+  "state": "Indiana",
+  "tier": 3,
+  "tier_label": "Very Hard",
+  "clues": [
+   "Admitted as 19th state in 1816",
+   "Borders Lake Michigan to northwest",
+   "Capital: Indianapolis"
+  ],
+  "verified": true,
+  "verified_by": "wikipedia+deepseek",
+  "wiki": [
+   "Indiana",
+   "2026 United States House of Representatives elections in Indiana"
+  ]
+ }
+}

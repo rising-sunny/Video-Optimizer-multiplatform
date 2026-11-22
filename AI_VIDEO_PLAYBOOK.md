@@ -405,6 +405,13 @@ concreta + sujeto nombrado**, duración corta. Ej: "72 Seconds: The Wow! Signal"
 
 ## Changelog
 
+- **2026-11-22c** — **The Lost Atlas: primer largo horizontal, "Name All 50 US States by Outline (Easy to Impossible)".** Prototipo 1920x1080, 8:46, 5 niveles (cuenta de 5/5/6/7/8 s), 50 estados
+  con 3 pistas verificadas (mismo motor Wikipedia+juez que los Shorts), minimapa de EE. UU. al revelar, ruta de 50 marcas, tarjetas de nivel, punto de control y cierre con rangos. Codigo:
+  `lostatlas/long_*.py` + `make_long.py` (`python -m lostatlas.make_long --render DIR`; `--stills`/`--limit` para probar). Escenas bajo demanda (50 a la vez no caben en 4 GB de RAM).
+  Por que ese tema (vidIQ): "us geography quiz" 15,6 mil/mes con competencia 34, "us states" +89 %, los titulos "Easy to Impossible" puntuan 95-97. **Gotchas:** (1) el filtro de palabras
+  prohibidas por subcadena rechazaba "Indianapolis" (contiene "Indiana") y "Oklahoma City": ahora es por palabra completa (tambien afecta a los Shorts); (2) Natural Earth trae los atolones del
+  noroeste de Hawai y la cola de las Aleutianas: se filtran por distancia; (3) un `loudnorm` de una pasada dejo picos de +1,8 dBFS en la mezcla larga: cadena compresor+loudnorm -15+limitador
+  (-15,4 LUFS, -1,3 dBFS) en `make_long.MASTER`. NO se sube solo: la autorizacion de subida automatica de este canal cubre los Shorts diarios, no los largos.
 - **2026-11-22b** — **Barredor de videos publicados (`automation/published-cleanup/`).** El usuario pidio que todo video ya publicado se borre de la VPS. Prueba por video: YouTube
   confirma `public`/`unlisted` + `processed` (un Short programado y aun privado no cuenta) y, en `video-automation`, todas las plataformas de `publication.json` estan `published`.
   Primera pasada: 42 archivos, 2,83 GB (disco 91 % -> 87 %). Se conservaron: un job con Instagram `uploading`, lo modificado hace < 6 h, variantes `_ig`, y todo lo sin registro
