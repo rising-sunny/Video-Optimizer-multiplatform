@@ -31,34 +31,34 @@ def smooth_noise(rng, h, w, scale):
 
 
 @lru_cache(maxsize=None)
-def tooth():
+def tooth(w=W, h=H):
     """Grano fino 0..1: rompe la tinta como el papel con textura."""
     rng = np.random.default_rng(3)
-    t = 0.5 * smooth_noise(rng, H, W, 2) + 0.5 * rng.standard_normal((H, W)).astype(np.float32)
+    t = 0.5 * smooth_noise(rng, h, w, 2) + 0.5 * rng.standard_normal((h, w)).astype(np.float32)
     return np.clip(0.5 + 0.32 * t, 0, 1).astype(np.float32)
 
 
 @lru_cache(maxsize=None)
-def paper():
+def paper(w=W, h=H):
     rng = np.random.default_rng(7)
-    lum = sum(smooth_noise(rng, H, W, s) * a for s, a in ((2, 1.5), (5, 1.8), (24, 2.4), (140, 3.6)))
-    fib = np.zeros((H, W), np.float32)
+    lum = sum(smooth_noise(rng, h, w, s) * a for s, a in ((2, 1.5), (5, 1.8), (24, 2.4), (140, 3.6)))
+    fib = np.zeros((h, w), np.float32)
     for _ in range(2600):
-        x, y, a, l = rng.uniform(0, W), rng.uniform(0, H), rng.uniform(0, np.pi), rng.uniform(6, 24)
+        x, y, a, l = rng.uniform(0, w), rng.uniform(0, h), rng.uniform(0, np.pi), rng.uniform(6, 24)
         cv2.line(fib, (int(x), int(y)), (int(x + l * np.cos(a)), int(y + l * np.sin(a))),
                  float(rng.choice([-1, 1]) * rng.uniform(2, 6)), 1, cv2.LINE_AA)
     lum += cv2.GaussianBlur(fib, (0, 0), 0.7)
-    img = np.empty((H, W, 3), np.float32)
+    img = np.empty((h, w, 3), np.float32)
     for c, v in enumerate(PAPER[::-1]):
         img[..., c] = v
     img += lum[..., None] * np.array([1.2, 1.0, 0.85], np.float32)
-    fox = np.zeros((H, W), np.float32)
+    fox = np.zeros((h, w), np.float32)
     for _ in range(16):
-        fox[int(rng.uniform(0, H)), int(rng.uniform(0, W))] = rng.uniform(0.5, 1.0)
+        fox[int(rng.uniform(0, h)), int(rng.uniform(0, w))] = rng.uniform(0.5, 1.0)
     fox = cv2.GaussianBlur(fox, (0, 0), 70)
     img -= (fox / fox.max())[..., None] * np.array([14, 8, 3], np.float32)
-    yy, xx = np.mgrid[0:H, 0:W].astype(np.float32)
-    r = np.maximum(np.abs(xx / W - 0.5), np.abs(yy / H - 0.5)) * 2
+    yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
+    r = np.maximum(np.abs(xx / w - 0.5), np.abs(yy / h - 0.5)) * 2
     img -= ((np.clip(r - 0.5, 0, 1) / 0.5) ** 2 * 26)[..., None] * np.array([1.0, 0.7, 0.45], np.float32)
     return np.clip(img, 0, 255).astype(np.uint8)
 
@@ -72,7 +72,7 @@ def ink(img, mask, x, y, color=INK, opacity=1.0):
     m = mask[y0 - y:y1 - y, x0 - x:x1 - x].astype(np.float32)
     if mask.dtype == np.uint8:
         m /= 255
-    a = np.clip(m * opacity * (0.78 + 0.44 * tooth()[y0:y1, x0:x1]), 0, 1)
+    a = np.clip(m * opacity * (0.78 + 0.44 * tooth(img.shape[1], img.shape[0])[y0:y1, x0:x1]), 0, 1)
     col = np.array(color[::-1], np.float32) / 255
     roi = img[y0:y1, x0:x1].astype(np.float32)
     roi *= 1 - a[..., None] * (1 - col)
