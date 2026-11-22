@@ -1,0 +1,52 @@
+[
+ {
+  "year": 1912,
+  "title": "The sinking of the Titanic",
+  "verified": false,
+  "clues": [
+   "Over 1,500 lives lost at sea",
+   "Left Southampton bound for New York",
+   "RMS Titanic sinks"
+  ]
+ },
+ {
+  "year": 1789,
+  "title": "The storming of the Bastille",
+  "verified": false,
+  "clues": [
+   "Held just seven prisoners that day",
+   "Date celebrated every 14 July",
+   "Crowd storms the Bastille"
+  ]
+ },
+ {
+  "year": 1969,
+  "title": "Apollo 11 lands on the Moon",
+  "verified": false,
+  "clues": [
+   "Launched on a Saturn V rocket",
+   "Two men walk on another world",
+   "Apollo 11 touches the Moon"
+  ]
+ },
+ {
+  "year": 1453,
+  "title": "The fall of Constantinople",
+  "verified": false,
+  "clues": [
+   "Giant cannons batter ancient walls",
+   "Sultan Mehmed II is 21 years old",
+   "The Byzantine Empire falls"
+  ]
+ },
+ {
+  "year": -323,
+  "title": "The death of Alexander the Great",
+  "verified": false,
+  "clues": [
+   "He was only 32 years old",
+   "His generals split the empire",
+   "Alexander the Great dies"
+  ]
+ }
+]

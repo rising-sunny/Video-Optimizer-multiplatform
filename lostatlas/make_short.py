@@ -16,8 +16,10 @@ import numpy as np
 
 from . import geo
 from .questions import GEO_DEMO
+from .questions_year import YEAR_DEMO
 from .scenes import TRANSITION, IntroScene, OutroScene, RoundScene
 from .style import FPS, H, W
+from .year_scene import YearRoundScene
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -43,8 +45,9 @@ def slide(prev, new, k):
 class Timeline:
     def __init__(self, questions, episode=1):
         w50, w110 = geo.load("50m"), geo.load("110m")
-        self.scenes = [IntroScene(episode, len(questions))]
-        self.scenes += [RoundScene(q, i, len(questions), w50, w110) for i, q in enumerate(questions)]
+        task = "name the year" if "year" in questions[0] else "name the country"
+        self.scenes = [IntroScene(episode, len(questions), task)]
+        self.scenes += [(YearRoundScene if "year" in q else RoundScene)(q, i, len(questions), w50, w110) for i, q in enumerate(questions)]
         self.scenes.append(OutroScene())
         self.starts = np.cumsum([0] + [s.dur for s in self.scenes])
         self.total = float(self.starts[-1])
@@ -96,12 +99,13 @@ if __name__ == "__main__":
     ap.add_argument("--round", type=int, help="indice de ronda 0-based para --stills")
     ap.add_argument("--out", default=None)
     ap.add_argument("--no-audio", action="store_true")
+    ap.add_argument("--template", choices=["geo", "year"], default="geo")
     ap.add_argument("--episode", type=int, default=1)
     ap.add_argument("--bgm", help="titulo de Incompetech (p. ej. Zanzibar) o ruta a un MP3 propio (p. ej. de la Biblioteca de Audio de YouTube)")
     ap.add_argument("--bgm-start", type=float, default=0.0)
     ap.add_argument("--audio-only", action="store_true", help="solo mezcla de audio en MP3 (para comparar pistas)")
     a = ap.parse_args()
-    qs = GEO_DEMO
+    qs = YEAR_DEMO if a.template == "year" else GEO_DEMO
     bgm, attribution = None, None
     if a.bgm:
         if Path(a.bgm).exists():

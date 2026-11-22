@@ -109,6 +109,19 @@ def _load_bgm(path, start, total):
     return np.ascontiguousarray(a[:, :n])
 
 
+def ratchet():
+    n = int(0.02 * SR)
+    t = _t(n)
+    return _bp(_rng.standard_normal(n), 2200, 8000) * np.exp(-t / 0.0022) * 0.7
+
+
+def lock_thunk():
+    n = int(0.35 * SR)
+    t = _t(n)
+    return (_bp(_rng.standard_normal(n), 1200, 6000) * np.exp(-t / 0.004) * 0.8 + np.sin(2 * np.pi * 118 * t) * np.exp(-t / 0.05)
+            + np.sin(2 * np.pi * 2350 * t) * np.exp(-t / 0.10) * 0.22)
+
+
 def build_audio(tl, path, bgm=None, bgm_start=0.0):
     total = tl.total
     n = int(total * SR)
@@ -146,6 +159,12 @@ def build_audio(tl, path, bgm=None, bgm_start=0.0):
             _put(sfx, tick(accent=True), b + CS, 0.55)
             for s in range(1, int(CD)):
                 _put(sfx, tick(tock=s % 2 == 1, accent=s >= int(CD) - 2), b + CS + s, 0.62 if s < int(CD) - 2 else 0.85)
+            if hasattr(sc, "cell_crossings"):                        # odometro: ratchet por celda y clac al trabarse
+                for d in range(4):
+                    for tc in sc.cell_crossings(d):
+                        _put(sfx, ratchet(), b + tc, 0.16 * (0.7 if d < 3 else 1.0), pan=0.3 + 0.13 * d)
+                    if d < 3:
+                        _put(sfx, lock_thunk(), b + sc.locks[d], 0.55, pan=0.3 + 0.13 * d)
             _put(sfx, stamp_hit(), b + REV, 0.95)
             _put(sfx, pencil_tap(620), b + REV + 0.55, 0.35, 0.7)           # aparece el globo
             if bgm is None:

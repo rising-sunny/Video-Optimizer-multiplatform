@@ -235,11 +235,16 @@ class RoundScene:
         self.red = [np.maximum(0.22 * self.fill, 0.92 * h) for h in self.hatch]
 
         # --- pistas (maquina de escribir: tinta irregular)
-        self.clues = [self._clue_mask(t, 70 + 7 * k + idx) for k, t in enumerate(q["clues"])]
-        self.bg = self._static()
-        self.stamp = make_stamp(("IDENTIFIED",), country.upper(), seed=idx)
-        self._stamp_cache = {}
+        self.caption = f"Fig. {idx + 1}.  Outline, Lambert equal-area projection"
+        self.answer_label = country.upper()
+        self._common_init()
         self.globe = make_globe(world110, world50, country, polys, v.lon0, v.lat0)
+
+    def _common_init(self):
+        self.clues = [self._clue_mask(t, 70 + 7 * k + self.idx) for k, t in enumerate(self.q["clues"])]
+        self.bg = self._static()
+        self.stamp = make_stamp(("IDENTIFIED",), self.answer_label, seed=self.idx)
+        self._stamp_cache = {}
         self.dials = [self._dial_face(k) for k in range(3)]
 
     # ------------------------------------------------------------------ piezas estaticas
@@ -277,7 +282,7 @@ class RoundScene:
                 m[y:y + 40, o - 12:o] = 255
                 m[y:y + 40, o + PW:o + PW + 12] = 255
         ink(img, m, PX0 - o, PY0 - o)
-        put_text(img, f"Fig. {self.idx + 1}.  Outline, Lambert equal-area projection", SERIF_I, 25, PX0, PY0 + PH + 44, opacity=0.75, align="l")
+        put_text(img, self.caption, SERIF_I, 25, PX0, PY0 + PH + 44, opacity=0.75, align="l")
         for k, y in enumerate(ROW_Y):
             S.rule(img, PX0, y, PX0 + PW, y, 1, 10 + k, opacity=0.8)
             put_text(img, ROMAN[k], SERIF_I, 40, PX0 + 4, y - 26, opacity=0.5, align="l")
@@ -306,11 +311,9 @@ class RoundScene:
         return m
 
     # ------------------------------------------------------------------ cuadro
-    def frame(self, t):
-        img = self.bg.copy()
+    def _panel(self, img, t, v):
         ctx_k = S.ease_out(t / 0.5)
         ink(img, self.ctx, PX0, PY0, INK, ctx_k)
-        v = int(t * 7.5) % 3                      # el trazo "hierve" ~7 fps
         revealed = t >= REV
         draw_k = S.ease_out((t - 0.15) / 1.0)
         if draw_k < 1:
@@ -323,6 +326,19 @@ class RoundScene:
         else:
             ink(img, self.red[v], PX0, PY0, RED, S.ease_out((t - REV) / 0.25))
             ink(img, self.outline[v], PX0, PY0, RED, 0.55 * S.ease_out((t - REV) / 0.25))
+
+    def _after_reveal(self, img, s):
+        if s > 0.35:
+            gi, gr = self.globe
+            gx, gy = PX0 + PW - 120 - gi.shape[0] // 2, PY0 + 112 - gi.shape[0] // 2 + 8
+            k = S.ease_out((s - 0.35) / 0.3)
+            ink(img, gi, gx, gy, INK, k)
+            ink(img, gr, gx, gy, RED, k)
+
+    def frame(self, t):
+        img = self.bg.copy()
+        v = int(t * 7.5) % 3                      # el trazo "hierve" ~7 fps
+        self._panel(img, t, v)
 
         # pistas
         for k, ((mask, adv), t0) in enumerate(zip(self.clues, CLUE_T)):
@@ -337,12 +353,7 @@ class RoundScene:
             self._dial(img, t, 1.0 if s < 0 else 1 - s / 0.12, v)
         if s >= 0:
             self._stamp_on(img, s)
-            if s > 0.35:
-                gi, gr = self.globe
-                gx, gy = PX0 + PW - 120 - gi.shape[0] // 2, PY0 + 112 - gi.shape[0] // 2 + 8
-                k = S.ease_out((s - 0.35) / 0.3)
-                ink(img, gi, gx, gy, INK, k)
-                ink(img, gr, gx, gy, RED, k)
+            self._after_reveal(img, s)
             if s < 0.32:                            # golpe: sacudida de camara
                 a = 10 * math.exp(-s * 13)
                 M = np.float32([[1, 0, a * math.sin(s * 95)], [0, 1, a * math.cos(s * 80)]])
@@ -387,8 +398,9 @@ class RoundScene:
 class IntroScene:
     dur = 2.4
 
-    def __init__(self, episode=1, n_rounds=5):
+    def __init__(self, episode=1, n_rounds=5, task="name the country"):
         self.n = n_rounds
+        self.task = task
         th = np.linspace(0, 2 * np.pi, 160)
         c = (540, 710)
         rings = [np.stack([c[0] + 250 * np.cos(th), c[1] + 250 * np.sin(th)], 1),
@@ -412,7 +424,7 @@ class IntroScene:
         put_text(img, "LOST ATLAS", SERIF_B, size, 540, 1130, INK, o, tracking=4)
         S.rule(img, 190, 1222, 890, 1222, 3, 4, o)
         S.rule(img, 190, 1232, 890, 1232, 1, 5, o)
-        put_text(img, f"name the country - {self.n} rounds - 5 seconds each", MONO, 31, 540, 1300, INK, o * 0.9)
+        put_text(img, f"{self.task} - {self.n} rounds - 5 seconds each", MONO, 31, 540, 1300, INK, o * 0.9)
         if t > 1.15:
             m = self.stamp
             sc = 1 + 0.5 * max(0, 1 - (t - 1.15) / 0.1)
