@@ -21,7 +21,8 @@ CLUE_SIZE = 38
 # ---- tiempos de una ronda (segundos) ---------------------------------------------------------
 CS, CD = 0.6, 5.0                  # inicio y duracion de la cuenta regresiva
 REV = CS + CD                      # sello
-ROUND_DUR = 7.8
+ROUND_DUR = CS + 7.0               # 3,5 compases a 120 BPM: la frase musical cierra justo al final
+TRANSITION = 0.45                  # la hoja anterior se desliza y deja ver la nueva
 CLUE_T = (0.6, 2.1, 3.6)
 CPS = 30                           # letras por segundo de la maquina de escribir
 

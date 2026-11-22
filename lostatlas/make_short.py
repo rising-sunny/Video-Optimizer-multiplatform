@@ -16,10 +16,28 @@ import numpy as np
 
 from . import geo
 from .questions import GEO_DEMO
-from .scenes import IntroScene, OutroScene, RoundScene
+from .scenes import TRANSITION, IntroScene, OutroScene, RoundScene
 from .style import FPS, H, W
 
 ROOT = Path(__file__).resolve().parent.parent
+
+
+def slide(prev, new, k):
+    """La hoja anterior se desliza hacia la izquierda y proyecta una sombra corta sobre la nueva."""
+    e = k * k * (3 - 2 * k)
+    x = int(round(W * e))
+    if x <= 0:
+        return prev
+    if x >= W:
+        return new
+    edge = W - x
+    out = new.copy()
+    out[:, :edge] = prev[:, x:]
+    wsh = min(90, x)
+    f = (1 - 0.36 * np.exp(-np.arange(wsh, dtype=np.float32) / 26))[None, :, None]
+    out[:, edge:edge + wsh] = (out[:, edge:edge + wsh].astype(np.float32) * f).astype(np.uint8)
+    out[:, max(edge - 3, 0):edge] = (out[:, max(edge - 3, 0):edge] * 0.8).astype(np.uint8)
+    return out
 
 
 class Timeline:
@@ -30,6 +48,7 @@ class Timeline:
         self.scenes.append(OutroScene())
         self.starts = np.cumsum([0] + [s.dur for s in self.scenes])
         self.total = float(self.starts[-1])
+        self._last = {}
 
     def locate(self, t):
         k = int(np.searchsorted(self.starts, t, side="right") - 1)
@@ -39,10 +58,10 @@ class Timeline:
     def frame(self, t):
         k, tau = self.locate(t)
         img = self.scenes[k].frame(tau)
-        if k > 0 and tau < 0.2:                       # fundido corto entre escenas
-            prev = self.scenes[k - 1].frame(self.scenes[k - 1].dur - 1 / FPS)
-            a = tau / 0.2
-            img = cv2.addWeighted(prev, 1 - a, img, a, 0)
+        if k > 0 and tau < TRANSITION:
+            if k - 1 not in self._last:
+                self._last = {k - 1: self.scenes[k - 1].frame(self.scenes[k - 1].dur - 1 / FPS)}
+            img = slide(self._last[k - 1], img, tau / TRANSITION)
         return img
 
 
