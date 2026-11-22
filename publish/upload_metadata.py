@@ -8,6 +8,8 @@ def channel_brand(channel):
     """Nombre de marca del canal, en texto ('Stunning Facts of History')."""
     if channel == 'nostalgic-mood':
         return 'Nostalgic Mood'
+    if channel == 'the-lost-atlas':
+        return 'The Lost Atlas'
     return 'Stunning Facts of History' if channel == 'stunning-facts-of-history' else 'Stunning Revelations'
 
 

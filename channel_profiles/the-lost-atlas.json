@@ -1,0 +1,27 @@
+{
+  "channel_identity": {
+    "channel_id": "UC1Q7CL8eXIY0r_cuTg36ytQ",
+    "channel_name": "The Lost Atlas",
+    "channel_handle": "TheLostAtlas-Trivia",
+    "language": "en",
+    "niche": "History and geography quiz Shorts with a 5-second countdown: name the country, the year, the empire",
+    "positioning": "Expedition-atlas aesthetic (paper, ink, one stamp-red), hand-drawn maps, mechanical clock. No AI imagery: every frame is code over open data."
+  },
+  "production_policy": {
+    "preferred_format": "code_generated_quiz_short",
+    "automatic_scaling": false,
+    "shorts_campaign_enabled": true,
+    "long_ambient_enabled": false,
+    "upload_privacy_first": "unlisted",
+    "auto_upload_authorized": false,
+    "note": "CLAUDE.md does not authorize automatic uploads for this channel yet: ask the user before publishing."
+  },
+  "render_spec": {"resolution": "1080x1920", "fps": 30, "target_seconds": 44, "engine": "python procedural (lostatlas/)", "templates": ["geo", "year", "empire"]},
+  "audio": {"music_source": "Incompetech (Kevin MacLeod, CC BY 4.0) or YouTube Audio Library", "note": "attribution is mandatory in the description (attribution_*.txt)"},
+  "metadata_rules": {
+    "title_pattern": "<Challenge in 1 line> <emoji> | <Geography|History> Quiz #shorts",
+    "description_disclosure": "Say it is a quiz made with code over open data; credit the music and the maps; ask viewers to comment their score",
+    "tags_base": ["quiz", "trivia", "geography quiz", "history quiz", "guess the country", "guess the year", "history trivia", "general knowledge", "brain test", "shorts"],
+    "attribution_required": ["music (CC BY)", "historical maps: aourednik/historical-basemaps (GPL-3.0) for the empire template"]
+  }
+}
