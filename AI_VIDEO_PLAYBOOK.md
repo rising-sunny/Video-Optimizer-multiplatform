@@ -405,6 +405,11 @@ concreta + sujeto nombrado**, duración corta. Ej: "72 Seconds: The Wow! Signal"
 
 ## Changelog
 
+- **2026-11-22b** — **Barredor de videos publicados (`automation/published-cleanup/`).** El usuario pidio que todo video ya publicado se borre de la VPS. Prueba por video: YouTube
+  confirma `public`/`unlisted` + `processed` (un Short programado y aun privado no cuenta) y, en `video-automation`, todas las plataformas de `publication.json` estan `published`.
+  Primera pasada: 42 archivos, 2,83 GB (disco 91 % -> 87 %). Se conservaron: un job con Instagram `uploading`, lo modificado hace < 6 h, variantes `_ig`, y todo lo sin registro
+  (`runtime/manual-documentary`, `james-caird-1916`...). Sustituye la regla de 2026-11-08 de conservar el `video.mp4` final: el demonio de recuperacion omite todo job con
+  `publication.json` (`caption_cleanup.py`, `autonomous_generation.py`), asi que no lo vuelve a leer. Registro en `~/published_cleanup/deleted.log`. Cron 04:30 UTC.
 - **2026-11-22** — **The Lost Atlas (@TheLostAtlas-Trivia): Shorts de quiz con contador, un video por dia.** Paquete `lostatlas/` (en `main`; la rama `lostatlas-proto` conserva el historial con los videos de prueba):
   plantillas `geo` (adivina el pais por su contorno), `year` (odometro mecanico de 4 tambores) y `empire` (mapas historicos de aourednik/historical-basemaps, GPL-3.0,
   no versionados); estetica de atlas de expedicion (papel, tinta, un rojo de sello, trazos a mano), audio y transiciones procedurales. Canal registrado como `the-lost-atlas`
