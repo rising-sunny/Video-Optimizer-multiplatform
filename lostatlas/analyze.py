@@ -30,6 +30,15 @@ def _table(title, rows, cols):
         print("   " + " | ".join(f"{str(round(r.get(c), 2) if isinstance(r.get(c), float) else r.get(c, ''))[:14]:>14s}" for c in cols))
 
 
+def _safe(title, fn):
+    """Una seccion que falla (p. ej. un 500 de Google en canales sin datos) no debe tumbar el informe entero."""
+    try:
+        return fn()
+    except Exception as exc:                                  # noqa: BLE001
+        print(f"\n== {title}\n   (no disponible: {str(exc).splitlines()[0][:110]})")
+        return []
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--days", type=int, default=28)
@@ -57,7 +66,7 @@ def main():
     print(f"\n== Ultimos {a.days} dias")
     print("   " + (", ".join(f"{k}={round(v, 1) if isinstance(v, float) else v}" for k, v in tot[0].items()) if tot else "(sin datos todavia)"))
 
-    rows = retencion_por_video(ya, dias=a.days, limite=a.videos)
+    rows = _safe("Por video", lambda: retencion_por_video(ya, dias=a.days, limite=a.videos))
     ids = [r["video"] for r in rows]
     titles = {}
     for i in range(0, len(ids), 50):
@@ -66,9 +75,11 @@ def main():
     for r in rows:
         r["titulo"] = titles.get(r["video"], r["video"])
     _table("Por video (ordenado por vistas)", rows, ["titulo", "views", "engagedViews", "averageViewPercentage", "subscribersGained"])
-    _table("Enganche (engagedViews/views: proxy del swipe rate)", tasa_de_enganche(ya, dias=a.days, limite=a.videos, minimo_views=1), ["video", "views", "engagedViews", "enganche"])
-    _table("Fuentes de trafico", fuentes_de_trafico(ya, dias=a.days), ["insightTrafficSourceType", "views", "estimatedMinutesWatched"])
-    _table("Evolucion mensual", evolucion_mensual(ya, dias=365), ["month", "views", "estimatedMinutesWatched", "subscribersGained"])
+    eng = _safe("Enganche", lambda: tasa_de_enganche(ya, dias=a.days, limite=a.videos, minimo_views=1))
+    if eng or not eng:
+        _table("Enganche (engagedViews/views: proxy del swipe rate)", eng, ["video", "views", "engagedViews", "enganche"])
+    _table("Fuentes de trafico", _safe("Fuentes de trafico", lambda: fuentes_de_trafico(ya, dias=a.days)), ["insightTrafficSourceType", "views", "estimatedMinutesWatched"])
+    _table("Evolucion mensual", _safe("Evolucion mensual", lambda: evolucion_mensual(ya, dias=365)), ["month", "views", "estimatedMinutesWatched", "subscribersGained"])
 
 
 if __name__ == "__main__":

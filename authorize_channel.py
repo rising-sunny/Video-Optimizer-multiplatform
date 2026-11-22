@@ -4,9 +4,9 @@
 En la VPS no hay navegador: el servidor de OAuth escucha en 127.0.0.1 y se llega con un tunel SSH.
 
   1) En la VPS:    python authorize_channel.py the-lost-atlas
-  2) En tu PC:     ssh -L 8765:127.0.0.1:8765 root@5.78.125.169      (dejar abierta la terminal)
+  2) En tu PC:     ssh -L 8767:127.0.0.1:8767 root@5.78.125.169      (dejar abierta la terminal)
   3) En tu PC, abri en el navegador la URL que imprime el paso 1, elegi la cuenta Y EL CANAL
-     "The Lost Atlas" y acepta. Google vuelve a http://localhost:8765 (llega por el tunel) y
+     "The Lost Atlas" y acepta. Google vuelve a http://localhost:8767 (llega por el tunel) y
      el token queda guardado solo. No hay que pegar ningun codigo en ningun lado.
 
 Guarda: antes de grabar el token confirma que el canal autorizado es el del registro
@@ -97,7 +97,7 @@ def authorize(key, port, timeout):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("channel", choices=sorted(CHANNELS))
-    ap.add_argument("--port", type=int, default=8765)
+    ap.add_argument("--port", type=int, default=8767)
     ap.add_argument("--timeout", type=int, default=1200)
     ap.add_argument("--check", action="store_true")
     a = ap.parse_args()
