@@ -65,7 +65,7 @@ class Timeline:
         return img
 
 
-def render(questions, out_dir, episode=1, with_audio=True):
+def render(questions, out_dir, episode=1, with_audio=True, bgm=None, bgm_start=0.0):
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     tl = Timeline(questions, episode)
@@ -74,7 +74,7 @@ def render(questions, out_dir, episode=1, with_audio=True):
     if with_audio:
         from .sound import build_audio
         wav = out_dir / "mix.wav"
-        build_audio(tl, wav)
+        build_audio(tl, wav, bgm, bgm_start)
         cmd += ["-i", str(wav), "-af", "loudnorm=I=-14:TP=-1.5:LRA=7,aresample=44100", "-c:a", "aac", "-b:a", "160k", "-ar", "44100", "-shortest"]
     cmd += ["-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p", "-movflags", "+faststart", str(mp4)]
     p = subprocess.Popen(cmd, stdin=subprocess.PIPE)
@@ -97,8 +97,31 @@ if __name__ == "__main__":
     ap.add_argument("--out", default=None)
     ap.add_argument("--no-audio", action="store_true")
     ap.add_argument("--episode", type=int, default=1)
+    ap.add_argument("--bgm", help="titulo de Incompetech (p. ej. Zanzibar) o ruta a un MP3 propio (p. ej. de la Biblioteca de Audio de YouTube)")
+    ap.add_argument("--bgm-start", type=float, default=0.0)
+    ap.add_argument("--audio-only", action="store_true", help="solo mezcla de audio en MP3 (para comparar pistas)")
     a = ap.parse_args()
     qs = GEO_DEMO
+    bgm, attribution = None, None
+    if a.bgm:
+        if Path(a.bgm).exists():
+            bgm = Path(a.bgm)
+        else:
+            from .music_lib import fetch
+            bgm, attribution, _ = fetch(a.bgm)
+    if a.audio_only:
+        from .sound import build_audio
+        tl = Timeline(qs, a.episode)
+        out = Path(a.out or ROOT / "auto_videos" / "lostatlas" / "music_preview")
+        out.mkdir(parents=True, exist_ok=True)
+        name = (a.bgm or "original").replace(" ", "_")
+        wav = out / f"{name}.wav"
+        build_audio(tl, wav, bgm, a.bgm_start)
+        mp3 = out / f"{name}.mp3"
+        subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(wav), "-af", "loudnorm=I=-14:TP=-1.5:LRA=7", "-b:a", "128k", str(mp3)], check=True)
+        wav.unlink()
+        print(mp3)
+        sys.exit(0)
     if a.stills:
         tl = Timeline(qs, a.episode)
         base = float(tl.starts[1 + a.round]) if a.round is not None else 0.0
@@ -111,4 +134,6 @@ if __name__ == "__main__":
             print(f)
     else:
         out = a.out or ROOT / "auto_videos" / "lostatlas" / time.strftime("%Y%m%d_%H%M%S")
-        print(render(qs, out, a.episode, not a.no_audio))
+        print(render(qs, out, a.episode, not a.no_audio, bgm, a.bgm_start))
+        if attribution:
+            (Path(out) / "attribution.txt").write_text("Music:\n" + attribution + "\n", encoding="utf-8")

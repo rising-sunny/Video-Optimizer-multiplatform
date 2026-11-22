@@ -1,4 +1,5 @@
 """Audio procedural (sin samples, sin licencias): efectos + musica original, todo anclado a los tiempos del video."""
+import subprocess
 import wave
 
 import numpy as np
@@ -99,7 +100,16 @@ def pencil_tap(f=520):
     return (np.sin(2 * np.pi * np.cumsum(fr) / SR) * np.exp(-t / 0.03) + _bp(_rng.standard_normal(n), 2000, 6000) * np.exp(-t / 0.006) * 0.6) * 0.8
 
 
-def build_audio(tl, path):
+def _load_bgm(path, start, total):
+    cmd = ["ffmpeg", "-loglevel", "error", "-ss", str(start), "-i", str(path), "-t", str(total + 1), "-f", "f32le", "-ac", "2", "-ar", str(SR), "-"]
+    a = np.frombuffer(subprocess.run(cmd, capture_output=True, check=True).stdout, np.float32).reshape(-1, 2).T
+    n = int(total * SR)
+    while a.shape[1] < n:                                   # pista corta: se repite
+        a = np.concatenate([a, a], axis=1)
+    return np.ascontiguousarray(a[:, :n])
+
+
+def build_audio(tl, path, bgm=None, bgm_start=0.0):
     total = tl.total
     n = int(total * SR)
     sfx = np.zeros((2, n), np.float32)
@@ -116,12 +126,14 @@ def build_audio(tl, path):
         if isinstance(sc, IntroScene):
             _put(sfx, pen(1.3), b, 0.13)
             _put(sfx, stamp_hit(), b + 1.15, 0.8)
-            music.intro_music(mus, b)
+            if bgm is None:
+                music.intro_music(mus, b)
         elif isinstance(sc, OutroScene):
             _put(sfx, pen(1.9), b + 0.45, 0.12)
             for i in range(5):
                 _put(sfx, pencil_tap(480 + 60 * i), b + 0.5 + 0.22 * i + 0.30, 0.45)
-            music.outro_music(mus, b)
+            if bgm is None:
+                music.outro_music(mus, b)
         elif isinstance(sc, RoundScene):
             r = k - 1
             _put(sfx, pen(1.0), b + 0.15 + TRANSITION * 0.4, 0.12)
@@ -136,10 +148,24 @@ def build_audio(tl, path):
                 _put(sfx, tick(tock=s % 2 == 1, accent=s >= int(CD) - 2), b + CS + s, 0.62 if s < int(CD) - 2 else 0.85)
             _put(sfx, stamp_hit(), b + REV, 0.95)
             _put(sfx, pencil_tap(620), b + REV + 0.55, 0.35, 0.7)           # aparece el globo
-            music.round_music(mus, b, r, CS)
+            if bgm is None:
+                music.round_music(mus, b, r, CS)
 
-    peak_m = np.abs(mus).max() + 1e-9
-    mix = sfx * 1.0 + mus / peak_m * 0.30
+    if bgm is not None:
+        mus = _load_bgm(bgm, bgm_start, total)
+        mus = mus / (np.sqrt((mus ** 2).mean()) + 1e-9) * 0.085           # nivel por RMS: igual para cualquier pista
+        env = np.minimum(1, np.minimum(t / 0.8, (total - t) / 1.6)).astype(np.float32)
+        for k, sc in enumerate(tl.scenes):                                 # la musica se agacha un instante en cada sello
+            if isinstance(sc, RoundScene):
+                i0 = int((float(tl.starts[k]) + REV - 0.03) * SR)
+                d = np.ones(n)
+                d[i0:i0 + int(0.6 * SR)] = np.linspace(0.45, 1.0, int(0.6 * SR)) ** 0.7
+                env = env * np.convolve(d, np.ones(401) / 401, "same").astype(np.float32)
+        mus = mus * env
+        mix = sfx + mus
+    else:
+        peak_m = np.abs(mus).max() + 1e-9
+        mix = sfx * 1.0 + mus / peak_m * 0.30
     mix = mix / (np.abs(mix).max() + 1e-9)
     pcm = (mix * 0.85 * np.minimum(1, np.minimum(t / 0.3, (total - t) / 0.7))).T
     with wave.open(str(path), "wb") as w:

@@ -91,3 +91,6 @@ Thumbs.db
 .DS_Store
 desktop.ini
 token_*.json
+
+# lostatlas: musica descargada (no versionar MP3)
+lostatlas/data/music/
