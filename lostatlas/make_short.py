@@ -148,6 +148,14 @@ if __name__ == "__main__":
             print(f)
     else:
         out = a.out or ROOT / "auto_videos" / "lostatlas" / time.strftime("%Y%m%d_%H%M%S")
-        print(render(qs, out, a.episode, not a.no_audio, bgm, a.bgm_start))
+        mp4 = render(qs, out, a.episode, not a.no_audio, bgm, a.bgm_start)
+        print(mp4)
+        extra = None
+        if a.template == "empire":
+            from .hist import ATTRIBUTION
+            extra = "Maps:\n" + ATTRIBUTION
         if attribution:
-            (Path(out) / "attribution.txt").write_text("Music:\n" + attribution + "\n", encoding="utf-8")
+            (Path(out) / "attribution.txt").write_text("Music:\n" + attribution + "\n" + (("\n" + extra + "\n") if extra else ""), encoding="utf-8")
+        from .publish_pack import write_package
+        meta = write_package(out, mp4, a.template, qs, ("Music:\n" + attribution) if attribution else None, extra)
+        print(f"metadata.json listo ({meta['title']}) - fact_check={meta['fact_check']}. Subir: python -m lostatlas.upload {out}")

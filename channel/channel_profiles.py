@@ -10,6 +10,7 @@ CHANNELS = {
     DEFAULT_CHANNEL: {"name": "@StunningFactsofHistory", "profile": "daily_shorts/channel_strategy_profile.json", "token": "token.json", "channel_id": "UCXQ1_6A-JkBeQsMkiDcunGA", "format": "traditional"},
     "stunning-revelations": {"name": "@Stunning-Revelations", "profile": "channel_profiles/stunning-revelations.json", "token": "token_stunning-revelations.json", "channel_id": "UC66EnGiys6V3gKe-J0XD-_Q", "format": "micro_documentary"},
     "nostalgic-mood": {"name": "@thenostalgicmood", "profile": "channel_profiles/nostalgic-mood.json", "token": "token_nostalgic-mood.json", "channel_id": "UCmJPkyu-VyieqHVa9hbyS4w", "format": "traditional"},
+    "the-lost-atlas": {"name": "@TheLostAtlas-Trivia", "profile": "channel_profiles/the-lost-atlas.json", "token": "token_the-lost-atlas.json", "channel_id": "UC1Q7CL8eXIY0r_cuTg36ytQ", "format": "traditional"},
 }
 _active = DEFAULT_CHANNEL
 
