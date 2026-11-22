@@ -405,7 +405,7 @@ concreta + sujeto nombrado**, duración corta. Ej: "72 Seconds: The Wow! Signal"
 
 ## Changelog
 
-- **2026-11-22** — **The Lost Atlas (@TheLostAtlas-Trivia): Shorts de quiz con contador, un video por dia.** Paquete `lostatlas/` (rama `lostatlas-proto`):
+- **2026-11-22** — **The Lost Atlas (@TheLostAtlas-Trivia): Shorts de quiz con contador, un video por dia.** Paquete `lostatlas/` (en `main`; la rama `lostatlas-proto` conserva el historial con los videos de prueba):
   plantillas `geo` (adivina el pais por su contorno), `year` (odometro mecanico de 4 tambores) y `empire` (mapas historicos de aourednik/historical-basemaps, GPL-3.0,
   no versionados); estetica de atlas de expedicion (papel, tinta, un rojo de sello, trazos a mano), audio y transiciones procedurales. Canal registrado como `the-lost-atlas`
   en `channel/channel_profiles.py` (token por `authorize_channel.py` con tunel SSH al puerto 8767, sin navegador en la VPS; verifica el canal antes de guardar).
