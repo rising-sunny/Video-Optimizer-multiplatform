@@ -7,12 +7,32 @@ y por video: vistas, retencion, enganche (proxy del swipe rate), suscriptores ga
 """
 import argparse
 
-from googleapiclient.discovery import build
+import time
 
-from channel.youtube_analytics_client import _tabla, consultar, evolucion_mensual, fuentes_de_trafico, retencion_por_video, tasa_de_enganche
+from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
+
+import channel.youtube_analytics_client as yac
+from channel.youtube_analytics_client import _tabla, evolucion_mensual, fuentes_de_trafico, retencion_por_video, tasa_de_enganche
 from publish.youtube_uploader import _get_credentials
 
 KEY = "the-lost-atlas"
+_orig_consultar = yac.consultar
+
+
+def consultar(service, *args, **kw):
+    """La Analytics API devuelve 500/503 intermitentes en canales nuevos y sin datos: reintentar antes de rendirse.
+    Se aplica tambien a las funciones del cliente (retencion_por_video, etc.), que buscan `consultar` en su modulo."""
+    for k in range(4):
+        try:
+            return _orig_consultar(service, *args, **kw)
+        except HttpError as exc:
+            if getattr(exc.resp, "status", 0) not in (500, 502, 503, 504) or k == 3:
+                raise
+            time.sleep(1.5 * (k + 1))
+
+
+yac.consultar = consultar
 
 
 def _bar(x, goal, width=24):
@@ -53,16 +73,16 @@ def main():
     subs, views, nvid = int(st.get("subscriberCount", 0)), int(st.get("viewCount", 0)), int(st.get("videoCount", 0))
     print(f"{ch['snippet']['title']}  ({ch['id']})\n   suscriptores={subs}  vistas={views}  videos={nvid}")
 
-    year = _tabla(consultar(ya, "views,estimatedMinutesWatched,subscribersGained", dias=365))
+    year = _safe("Horas 365 d", lambda: _tabla(consultar(ya, "views,estimatedMinutesWatched,subscribersGained", dias=365)))
     hours = (year[0].get("estimatedMinutesWatched", 0) / 60) if year else 0
-    s90 = _tabla(consultar(ya, "views", dias=90))
+    s90 = _safe("Vistas 90 d", lambda: _tabla(consultar(ya, "views", dias=90)))
     sv90 = s90[0]["views"] if s90 else 0
     print("\n== Programa de Socios de YouTube")
     print(f"   suscriptores   {subs:>6d} / 1000   {_bar(subs, 1000)}")
     print(f"   horas (365 d)  {hours:>6.1f} / 4000   {_bar(hours, 4000)}")
     print(f"   vistas 90 d    {sv90:>6d} (la via alternativa pide 10 M de vistas de Shorts)")
 
-    tot = _tabla(consultar(ya, "views,estimatedMinutesWatched,averageViewPercentage,subscribersGained,likes,comments", dias=a.days))
+    tot = _safe("Ultimos dias", lambda: _tabla(consultar(ya, "views,estimatedMinutesWatched,averageViewPercentage,subscribersGained,likes,comments", dias=a.days)))
     print(f"\n== Ultimos {a.days} dias")
     print("   " + (", ".join(f"{k}={round(v, 1) if isinstance(v, float) else v}" for k, v in tot[0].items()) if tot else "(sin datos todavia)"))
 
@@ -79,7 +99,7 @@ def main():
     if eng or not eng:
         _table("Enganche (engagedViews/views: proxy del swipe rate)", eng, ["video", "views", "engagedViews", "enganche"])
     _table("Fuentes de trafico", _safe("Fuentes de trafico", lambda: fuentes_de_trafico(ya, dias=a.days)), ["insightTrafficSourceType", "views", "estimatedMinutesWatched"])
-    _table("Evolucion mensual", _safe("Evolucion mensual", lambda: evolucion_mensual(ya, dias=365)), ["month", "views", "estimatedMinutesWatched", "subscribersGained"])
+    _table("Evolucion mensual", _safe("Evolucion mensual", lambda: evolucion_mensual(ya, dias=365)), ["month", "views", "averageViewPercentage", "subscribersGained", "subscribersLost"])
 
 
 if __name__ == "__main__":
