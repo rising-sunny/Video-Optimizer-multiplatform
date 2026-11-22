@@ -94,3 +94,4 @@ token_*.json
 
 # lostatlas: musica descargada (no versionar MP3)
 lostatlas/data/music/
+lostatlas/data/historical/

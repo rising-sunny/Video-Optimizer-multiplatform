@@ -1,0 +1,102 @@
+[
+ {
+  "country": "Roman Empire",
+  "map_year": 100,
+  "select": {
+   "NAME": [
+    "Roman Empire"
+   ]
+  },
+  "note": "c. 100 A.D.",
+  "clues": [
+   "Called the Mediterranean 'Our Sea'",
+   "Hadrian built a wall in Britain",
+   "Capital: Rome"
+  ],
+  "verified": false,
+  "labels": true,
+  "max_km": 99999,
+  "near_deg": 75,
+  "caption": "Fig. 1.  The world, c. 100 A.D.  Borders approximate."
+ },
+ {
+  "country": "Ottoman Empire",
+  "map_year": 1600,
+  "select": {
+   "NAME": [
+    "Ottoman Empire"
+   ]
+  },
+  "note": "1600 A.D.",
+  "clues": [
+   "Janissaries were its elite troops",
+   "Conquered Constantinople in 1453",
+   "Capital: Istanbul"
+  ],
+  "verified": false,
+  "labels": true,
+  "max_km": 99999,
+  "near_deg": 75,
+  "caption": "Fig. 2.  The world, 1600 A.D.  Borders approximate."
+ },
+ {
+  "country": "Mongol Empire",
+  "map_year": 1279,
+  "select": {
+   "SUBJECTO": [
+    "Mongol Empire"
+   ]
+  },
+  "note": "1279 A.D.",
+  "clues": [
+   "Largest contiguous land empire ever",
+   "Founded by Genghis Khan in 1206",
+   "Kublai Khan was its Great Khan"
+  ],
+  "verified": false,
+  "labels": true,
+  "max_km": 99999,
+  "near_deg": 75,
+  "caption": "Fig. 3.  The world, 1279 A.D.  Borders approximate."
+ },
+ {
+  "country": "Inca Empire",
+  "map_year": 1530,
+  "select": {
+   "NAME": [
+    "Inca Empire"
+   ]
+  },
+  "note": "1530 A.D.",
+  "clues": [
+   "Recorded data on knotted cords",
+   "Built Machu Picchu in the Andes",
+   "Capital: Cusco"
+  ],
+  "verified": false,
+  "labels": true,
+  "max_km": 99999,
+  "near_deg": 75,
+  "caption": "Fig. 4.  The world, 1530 A.D.  Borders approximate."
+ },
+ {
+  "country": "Achaemenid Empire",
+  "map_year": "bc500",
+  "select": {
+   "NAME": [
+    "Achaemenid Empire"
+   ]
+  },
+  "note": "c. 500 B.C.",
+  "clues": [
+   "Its Royal Road ran 2,500 km",
+   "Founded by Cyrus the Great",
+   "The first Persian Empire"
+  ],
+  "verified": false,
+  "labels": true,
+  "max_km": 99999,
+  "near_deg": 75,
+  "caption": "Fig. 5.  The world, c. 500 B.C.  Borders approximate."
+ }
+]

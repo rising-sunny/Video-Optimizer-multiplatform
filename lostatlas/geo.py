@@ -104,4 +104,4 @@ class View:
         x = (gx - self.pw / 2) / self.S + self.cx
         y = self.cy - (gy - self.ph / 2) / self.S
         lon, lat = laea_inv(x, y, self.lon0, self.lat0)
-        return lon.min(), lon.max(), lat.min(), lat.max()
+        return float(np.nanmin(lon)), float(np.nanmax(lon)), float(np.nanmin(lat)), float(np.nanmax(lat))

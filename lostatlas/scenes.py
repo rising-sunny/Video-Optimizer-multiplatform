@@ -127,19 +127,23 @@ class RoundScene:
     def __init__(self, q, idx, total, world50, world110):
         self.q, self.idx, self.total = q, idx, total
         country = q["country"]
-        polys = geo.main_polys(world50[country])
+        polys = geo.main_polys(world50[country], q.get("max_km", 3000))
         v = self.view = geo.View(polys, PW, PH, center=q.get("center"))
         tgt_rings = [v.px(r) for p in polys for r in p]
         tgt_outer = [v.px(p[0]) for p in polys]
         tgt_holes = [v.px(r) for p in polys for r in p[1:]]
-        near_rings, near_outer = [], []
+        near_rings, near_outer, best = [], [], {}
         for name, plist in world50.items():
             if name == country:
                 continue
             for p in plist:
-                if geo.ang_dist_deg(v.lon0, v.lat0, *geo.bbox_center(p[0])) < 42:
-                    near_outer.append(v.px(p[0]))
+                if geo.ang_dist_deg(v.lon0, v.lat0, *geo.bbox_center(p[0])) < q.get("near_deg", 42):
+                    px = v.px(p[0])
+                    near_outer.append(px)
                     near_rings.extend(v.px(r) for r in p)
+                    a = float(np.ptp(px[:, 0]) * np.ptp(px[:, 1]))
+                    if a > best.get(name, (0,))[0]:
+                        best[name] = (a, px)
 
         land = np.zeros((PH, PW), np.uint8)
         for r in near_outer + tgt_outer:
@@ -170,8 +174,8 @@ class RoundScene:
         span = max(lo1 - lo0, la1 - la0)
         step = next((s for s in (1, 2, 5, 10, 15, 20, 30) if span / s <= 6), 30)
 
-        def label(txt, x, y):
-            m = S.text_mask(txt, MONO, 20).astype(np.float32) / 255 * 0.75
+        def label(txt, x, y, fname=MONO, size=20, alpha=0.75):
+            m = S.text_mask(txt, fname, size).astype(np.float32) / 255 * alpha
             x, y = int(x), int(y)
             x0, y0 = max(x, 0), max(y, 0)
             x1, y1 = min(x + m.shape[1], PW), min(y + m.shape[0], PH)
@@ -180,6 +184,9 @@ class RoundScene:
             if x1 > x0 and y1 > y0:
                 lab[y0:y1, x0:x1] = np.maximum(lab[y0:y1, x0:x1], m[y0 - y:y1 - y, x0 - x:x1 - x])
                 reserve.append((x0 - 4, y0 - 2, x1 + 4, y1 + 2))
+
+        if q.get("note"):                                   # fecha del mapa: la pista principal de las rondas de imperios
+            label(q["note"], 30, 22, SERIF_B, 38, 0.95)
 
         def dashed(px):
             for j in range(0, len(px) - 1, 10):
@@ -205,6 +212,20 @@ class RoundScene:
             if ins.any():
                 k = np.where(ins)[0][np.argmax(px[ins, 1])]
                 label(f"{abs(int(lon))}°{'E' if lon >= 0 else 'W'}", px[k, 0] + 6, px[k, 1] - 26)
+
+        if q.get("labels"):                                 # nombres de los vecinos, a la manera de un atlas antiguo
+            placed = 0
+            for name, (a, px) in sorted(best.items(), key=lambda kv: -kv[1][0]):
+                if placed >= 16 or name == "None" or len(name) > 26:
+                    continue
+                m = S.text_mask(name, SERIF_I, 21)
+                tw, th = m.shape[1] - 14, m.shape[0]
+                cx_, cy_ = (px[:, 0].min() + px[:, 0].max()) / 2, (px[:, 1].min() + px[:, 1].max()) / 2
+                if np.ptp(px[:, 0]) < tw * 0.9 or not (24 < cy_ < PH - 24) or not (tw / 2 + 12 < cx_ < PW - tw / 2 - 12):
+                    continue
+                n0 = len(reserve)
+                label(name, cx_ - tw / 2 - 7, cy_ - th / 2, SERIF_I, 21, 0.62)
+                placed += len(reserve) - n0
 
         # barra de escala
         km = next((k for k in (2500, 2000, 1000, 500, 250, 200, 100, 50, 25, 10) if k / v.km_per_px <= 230), 10)
@@ -235,7 +256,7 @@ class RoundScene:
         self.red = [np.maximum(0.22 * self.fill, 0.92 * h) for h in self.hatch]
 
         # --- pistas (maquina de escribir: tinta irregular)
-        self.caption = f"Fig. {idx + 1}.  Outline, Lambert equal-area projection"
+        self.caption = q.get("caption") or f"Fig. {idx + 1}.  Outline, Lambert equal-area projection"
         self.answer_label = country.upper()
         self._common_init()
         self.globe = make_globe(world110, world50, country, polys, v.lon0, v.lat0)
