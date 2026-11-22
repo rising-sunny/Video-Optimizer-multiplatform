@@ -64,6 +64,26 @@ def make(qs, template, ddir, n, ordinal, episode):
     return track, folder, mp4
 
 
+def ensure_tags(receipt, ddir):
+    """YouTube a veces muestra 0 tags justo tras subir (visto el 2026-11-22). Las pasadas posteriores del cron los verifican y reponen."""
+    if receipt.get('tags_ok'): return
+    try:
+        folder = Path(receipt['folder']); meta = json.loads((folder / 'metadata.json').read_text())
+        os.environ['YOUTUBE_TITLE_MODE'] = 'off'
+        from publish.youtube_uploader import get_youtube_service
+        from publish.youtube_tags import finalize_youtube_tags
+        yt = get_youtube_service(interactive=False, channel_profile=CHANNEL)
+        vid = receipt['youtube']['video_id']
+        sn = yt.videos().list(part='snippet', id=vid).execute()['items'][0]['snippet']
+        if not sn.get('tags'):
+            sn['tags'] = finalize_youtube_tags(meta['tags'])
+            yt.videos().update(part='snippet', body={'id': vid, 'snippet': {k: sn[k] for k in ('title', 'description', 'tags', 'categoryId')}}).execute()
+            log(f"{date}: tags repuestos en {vid} ({len(sn['tags'])})")
+        receipt['tags_ok'] = True; atomic(ddir / 'receipt.json', receipt)
+    except Exception as e:
+        log(f"{date}: aviso: no se pudieron verificar los tags ({str(e)[:100]})")
+
+
 def main():
     if STOP.exists(): raise Skip('interruptor STOP activo')
     if free_gb() < MIN_FREE_GB: raise Skip(f'disco insuficiente ({free_gb():.1f} GB libres)')
@@ -71,7 +91,7 @@ def main():
     template = args.template or TEMPLATES[ordinal % len(TEMPLATES)]
     ddir = ROOT / 'days' / date; ddir.mkdir(parents=True, exist_ok=True)
     receipt = load(ddir / 'receipt.json', {'date': date})
-    if receipt.get('youtube', {}).get('ok'): log(f'{date}: ya publicado; nada que hacer'); return
+    if receipt.get('youtube', {}).get('ok'): log(f'{date}: ya publicado; nada que hacer'); ensure_tags(receipt, ddir); return
     receipt.pop('skipped', None)
     published = [p for p in (ROOT / 'days').iterdir() if p.is_dir() and load(p / 'receipt.json', {}).get('youtube', {}).get('ok')]
     episode = len(published) + 1
